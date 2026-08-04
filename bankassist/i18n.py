@@ -75,7 +75,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "unknown": (
             "Waa'ee kanaa odeeffannoo mirkanaa'e waan hin qabneef tilmaamuu hin barbaadu. "
-            "Gaaffii keessan garee tajaajila maamiltootaa keenyaaf dabarseera — dhiyootti isin qunnamu."
+            "Gaaffii keessan garee tajaajila maamiltootaa keenyaaf dabarseera — "
+            "dhiyootti isin qunnamu."
         ),
         "account_help": (
             "Nageenya keessaniif, marii kana keessatti odeeffannoo herrega dhuunfaa arguu "
@@ -124,7 +125,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "unknown": (
             "Arrintan macluumaad la xaqiijiyey kama hayo, mana doonayo inaan qiyaaso. "
-            "Su'aashaada waxaan u gudbiyey kooxda adeegga macaamiisha — dhawaan way kula soo xiriiri doonaan."
+            "Su'aashaada waxaan u gudbiyey kooxda adeegga macaamiisha — "
+            "dhawaan way kula soo xiriiri doonaan."
         ),
         "account_help": (
             "Amnigaaga awgiis, wadahadalkan kuma eegi karo macluumaadka xisaabta gaarka ah. "

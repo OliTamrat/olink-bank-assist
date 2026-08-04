@@ -12,6 +12,8 @@ Safety doctrine (mirrors the dispatch agents):
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,8 +22,11 @@ from sqlalchemy.orm import Session
 from . import classifier
 from .i18n import t
 from .llm import LLMUnavailable, generate_answer
+from .logging_config import log_event
 from .models import AuditLog, Bank, Conversation, Handoff, Message
 from .retrieval import RetrievedChunk, retrieve
+
+logger = logging.getLogger(__name__)
 
 MAX_FALLBACK_CHUNKS = 2
 
@@ -73,6 +78,7 @@ def _create_handoff(
 def handle_message(
     db: Session, bank: Bank, conversation: Conversation, text: str
 ) -> ChatResult:
+    started = time.perf_counter()
     detected = classifier.detect_language(text)
     language = detected or conversation.language or bank.default_language
     conversation.language = language
@@ -122,4 +128,16 @@ def handle_message(
         )
     )
     db.commit()
+    # Metadata only — chat text is personal data and must never be logged.
+    log_event(
+        logger,
+        "chat_handled",
+        bank=bank.slug,
+        channel=conversation.channel,
+        intent=intent,
+        language=result.language,
+        handoff=result.handoff_created,
+        sources=len(result.sources),
+        duration_ms=round((time.perf_counter() - started) * 1000, 1),
+    )
     return result

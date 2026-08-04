@@ -4,3 +4,5 @@ __pycache__/
 bankassist.db
 .env
 .pytest_cache/
+*.egg-info/
+mig-check.db

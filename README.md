@@ -48,7 +48,46 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 - Admin panel: <http://localhost:8100/admin> (slug `demo` + the printed token)
 - API docs: <http://localhost:8100/docs>
 
-Run tests: `.venv/bin/python -m pytest`
+Quality gate (CI runs exactly this):
+
+```bash
+.venv/bin/ruff check . && .venv/bin/mypy bankassist \
+  && .venv/bin/pytest -q && .venv/bin/python -m bankassist.evals
+```
+
+## Database migrations
+
+Production schema is managed by **Alembic** — `migrations/versions/0001_initial.py`
+is the baseline. `BANKASSIST_DATABASE_URL` is the single source of truth for
+the URL (migrations/env.py reads it; alembic.ini has no URL).
+
+```bash
+alembic upgrade head        # apply
+alembic downgrade base      # roll back (dev only)
+```
+
+`init_db()` (create_all) remains for tests and throwaway dev databases only —
+deployed environments always migrate.
+
+## Golden-question evals — the pre-deploy gate
+
+`python -m bankassist.evals` runs 14 golden questions through the full agent
+pipeline (products, how-tos, Amharic, and every guardrail) and exits non-zero
+on any failure. CI runs it in extractive mode on every push. Before shipping
+any model, prompt, or knowledge-base change, run it in the target
+configuration (`GEMINI_API_KEY=... python -m bankassist.evals`). Guardrail
+cases are enforced by code and must never fail in either mode.
+
+## Docker
+
+```bash
+docker build -t bankassist .
+docker run -p 8000:8000 -e BANKASSIST_DATABASE_URL=... bankassist
+```
+
+Uvicorn binds `$PORT` (default 8000) — deploy Cloud Run/ECS with a matching
+`--port` or the startup TCP probe fails. CI builds the image and smoke-tests
+`/health` on every push.
 
 ## Configuration
 
@@ -58,6 +97,14 @@ Run tests: `.venv/bin/python -m pytest`
 | `GEMINI_API_KEY` | unset | Enables LLM answers; unset = extractive fallback |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Generation model |
 | `APP_BASE_URL` | `http://localhost:8100` | Public URL, used for Telegram webhooks |
+| `BANKASSIST_LOG_LEVEL` | `INFO` | JSON log level |
+| `BANKASSIST_CHAT_RATE_PER_IP` | `60` | Chat messages/min per client IP (`<=0` disables) |
+| `BANKASSIST_CHAT_RATE_PER_CONVERSATION` | `20` | Chat messages/min per conversation (`<=0` disables) |
+
+Logs are **structured JSON** (one object per line — Cloud Logging/ECS
+friendly). Doctrine: request and `chat_handled` events carry metadata only —
+**chat text is never logged**. The `/chat` endpoint is rate-limited per IP and
+per conversation (in-memory sliding window; swap for Redis when multi-instance).
 
 The assistant is **fully demoable with no API key** — extractive mode quotes
 the knowledge base directly. Add a Gemini key and answers become conversational
@@ -80,17 +127,22 @@ any model failure).
 ```
 olink-bank-assist/
   bankassist/
-    api.py         FastAPI app: chat, widget/admin pages, Telegram webhook, admin CRUD
-    agent.py       Orchestration: classify -> guardrails -> retrieve -> answer
-    classifier.py  Language detection + rules-based intent classification
-    retrieval.py   Dependency-free BM25 over per-bank knowledge chunks
-    llm.py         Gemini REST (httpx, no SDK) with strict context-only prompt
-    telegram.py    Bot API send/setWebhook
-    i18n.py        Assistant strings in en/am/om/ti/so
-    models.py      Bank, Document, Chunk, Conversation, Message, Handoff, AuditLog
-    seed.py        Demo Bank Ethiopia + 13-document knowledge base (EN + AM)
-  static/          widget.html (embeddable chat), admin.html (KB/convos/handoffs)
-  tests/           29 tests: tenancy, guardrails, retrieval, i18n detection, webhook
+    api.py            FastAPI app: chat, widget/admin pages, Telegram webhook, admin CRUD
+    agent.py          Orchestration: classify -> guardrails -> retrieve -> answer
+    classifier.py     Language detection + rules-based intent classification
+    retrieval.py      Dependency-free BM25 over per-bank knowledge chunks
+    llm.py            Gemini REST (httpx, no SDK) with strict context-only prompt
+    telegram.py       Bot API send/setWebhook
+    i18n.py           Assistant strings in en/am/om/ti/so
+    models.py         Bank, Document, Chunk, Conversation, Message, Handoff, AuditLog
+    seed.py           Demo Bank Ethiopia + 13-document knowledge base (EN + AM)
+    evals.py          Golden-question eval runner (also `python -m bankassist.evals`)
+    ratelimit.py      Sliding-window rate limiter for /chat
+    logging_config.py Structured JSON logging (metadata only, never chat text)
+    static/           widget.html (embeddable chat), admin.html (KB/convos/handoffs)
+  migrations/         Alembic environment + versions (0001 baseline)
+  tests/              35 tests: tenancy, guardrails, retrieval, i18n, webhook, evals, limits
+  .github/workflows/  CI: ruff + mypy strict + pytest + evals + migration round-trip + Docker
 ```
 
 Retrieval is deliberately lexical (BM25) for the MVP: zero dependencies, works

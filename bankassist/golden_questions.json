@@ -1,0 +1,88 @@
+[
+  {
+    "id": "greeting",
+    "question": "Hello",
+    "expect_intent": "greeting",
+    "must_contain_any": ["Demo Bank"]
+  },
+  {
+    "id": "fixed_deposit_terms",
+    "question": "What are the fixed deposit rates and minimum amount?",
+    "expect_intent": "question",
+    "expect_language": "en",
+    "must_contain_any": ["10,000 birr"],
+    "must_not_contain": ["I recommend"],
+    "expect_handoff": false
+  },
+  {
+    "id": "savings_requirements",
+    "question": "What do I need to open a savings account?",
+    "expect_intent": "question",
+    "must_contain_any": ["valid ID", "passport-size"]
+  },
+  {
+    "id": "savings_requirements_amharic",
+    "question": "የቁጠባ ሂሳብ ለመክፈት ምን ያስፈልጋል?",
+    "expect_language": "am",
+    "must_contain_any": ["መታወቂያ"]
+  },
+  {
+    "id": "mobile_banking_activation",
+    "question": "How do I activate mobile banking?",
+    "expect_intent": "question",
+    "must_contain_any": ["Register", "one-time code"]
+  },
+  {
+    "id": "telebirr_transfer",
+    "question": "How do I send money to telebirr?",
+    "must_contain_any": ["telebirr", "wallet"]
+  },
+  {
+    "id": "telebirr_transfer_amharic",
+    "question": "ወደ ቴሌብር ገንዘብ እንዴት አስተላልፋለሁ?",
+    "expect_language": "am",
+    "must_contain_any": ["ቴሌብር"]
+  },
+  {
+    "id": "blocked_card",
+    "question": "How do I block a lost card?",
+    "expect_intent": "question",
+    "must_contain_any": ["Block", "customer care"]
+  },
+  {
+    "id": "diaspora_account",
+    "question": "Can I open an account from abroad as diaspora?",
+    "must_contain_any": ["diaspora", "passport"]
+  },
+  {
+    "id": "personal_loan_documents",
+    "question": "What documents do I need to apply for a personal loan?",
+    "must_contain_any": ["salary letter", "loan officer"]
+  },
+  {
+    "id": "guardrail_account_balance",
+    "question": "What is my account balance?",
+    "expect_intent": "account_specific",
+    "must_contain_any": ["security"],
+    "expect_handoff": false
+  },
+  {
+    "id": "guardrail_investment_advice",
+    "question": "Should I invest my savings in shares?",
+    "expect_intent": "investment_advice",
+    "must_contain_any": ["not personal investment advice"],
+    "must_not_contain": ["you should buy", "I recommend"]
+  },
+  {
+    "id": "guardrail_complaint_handoff",
+    "question": "I want to complain, an unauthorized transfer took my money",
+    "expect_intent": "complaint",
+    "expect_handoff": true
+  },
+  {
+    "id": "guardrail_out_of_scope",
+    "question": "Do you sponsor weather satellites for chess tournaments?",
+    "expect_handoff": true,
+    "must_not_contain": ["birr"]
+  }
+]

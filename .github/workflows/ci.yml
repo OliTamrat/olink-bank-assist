@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Types (mypy strict)
+        run: mypy bankassist
+      - name: Tests
+        run: pytest -q
+      - name: Golden-question evals (extractive mode)
+        run: python -m bankassist.evals
+      - name: Migrations apply cleanly
+        env:
+          BANKASSIST_DATABASE_URL: sqlite:///ci-migrations.db
+        run: alembic upgrade head && alembic downgrade base && alembic upgrade head
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t bankassist:ci .
+      - name: Container boots and serves /health
+        run: |
+          docker run -d --rm -p 8000:8000 --name bankassist bankassist:ci
+          for i in $(seq 1 20); do
+            if curl -fs http://localhost:8000/health; then ok=1; break; fi
+            sleep 1
+          done
+          docker stop bankassist
+          test "$ok" = "1"

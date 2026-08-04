@@ -1,5 +1,15 @@
 # Olink Bank Assist — Claude Code Context
 
+## CRITICAL: Git Commit Rules (GOLDEN RULE)
+
+- **Every commit is authored AND committed by Oli Tamrat
+  (`Oli Tamrat <olitamrat@gmail.com>`) — required for IP registration.**
+- **NEVER include Claude attribution, `Co-Authored-By` lines, session
+  trailers, or any AI author/co-author reference in commit messages or git
+  metadata.** Commit messages read as if written solely by the developer.
+- Before committing, ensure `git config user.name "Oli Tamrat"` and
+  `git config user.email "olitamrat@gmail.com"` are set in this repo.
+
 **Read `README.md` for the service itself.** This file is product strategy,
 the phased roadmap, and the rules that must not regress.
 
@@ -73,19 +83,42 @@ repos. Do not add Bank Assist code to any other repo.
 
 ## Current phase
 
-**Phase 1 MVP complete (2026-08-04).** 29 tests green; smoke-tested end to
-end in EN + AM (retrieval answers, advice disclaimer, account refusal,
+**Phase 1 MVP complete (2026-08-04); infrastructure hardened same day.**
+35 tests green, mypy `--strict` clean, ruff clean. Smoke-tested end to end in
+EN + AM (retrieval answers, advice disclaimer, account refusal,
 unknown→handoff, Telegram webhook with mocked send). Seeded fictional
 **Demo Bank Ethiopia** (13 docs, EN+AM, illustrative figures — deliberately
 not branded as any real institution).
 
+Infrastructure in place (founder direction 2026-08-04: "build the foundation
+right"):
+- **CI** (`.github/workflows/ci.yml`): ruff + mypy strict + pytest + golden
+  evals + Alembic up/down/up round-trip, on Python 3.11 and 3.12, plus a
+  Docker build that boots the container and curls `/health`.
+- **Alembic migrations** — baseline `0001`. Deployed environments migrate;
+  `init_db()` create_all is tests/dev only. URL comes from
+  `BANKASSIST_DATABASE_URL` only (env.py reads settings; alembic.ini has none).
+- **Golden-question eval gate** — `python -m bankassist.evals`, 14 cases
+  (products, how-tos, Amharic, all guardrails). Run in target config before
+  any model/prompt/KB change ships.
+- **Structured JSON logging** — `request` + `chat_handled` events, metadata
+  only. **Chat text is never logged** (it's personal data).
+- **Rate limiting** on `/chat` — per-IP and per-conversation sliding windows,
+  env-tunable, per-process (Redis behind the same `allow()` when
+  multi-instance).
+- **Dockerfile** — non-root, binds `$PORT` (default 8000; match `--port` on
+  deploy). Static files live inside the package so the installed wheel serves
+  them.
+
 ## Roadmap over the horizon
 
-### Phase 1 — Demo bot ✅ (this repo, done)
+### Phase 1 — Demo bot ✅ (this repo, done; infra hardened)
 Remaining polish, not blockers:
-- [ ] Set `GEMINI_API_KEY` and eyeball answer quality in all 5 languages
-- [ ] **Linguist review of OM/TI/SO strings** in `i18n.py` (EN/AM reviewed;
-      others are first drafts — use the Onekof TSV review workflow)
+- [ ] Set `GEMINI_API_KEY` and eyeball answer quality in all 5 languages,
+      then run `python -m bankassist.evals` in that mode
+- [ ] Linguist review of OM/TI/SO strings in `i18n.py` — **founder decision
+      2026-08-04: parked, explicitly NOT a blocker.** Revisit before a real
+      bank pilot (Onekof TSV workflow).
 - [ ] Load a real bank's *public* website content via the admin panel →
       that's the sales demo. No partnership needed for public info.
 - [ ] Deploy demo instance (any cloud is fine pre-PII; Cloud Run pattern from
@@ -164,3 +197,16 @@ lender (smaller, faster procurement, hungrier).
   character-class pattern like `"uvicorn bankassi[s]t"` (exit 144 otherwise).
 - Telegram `sendMessage` failures are logged, never raised — a Telegram
   outage must not 500 the webhook (Telegram retries the whole update).
+- **Schema changes need an Alembic migration** (never edit a committed one —
+  dispatch rule). `init_db()`/create_all is for tests and throwaway dev DBs
+  only; CI asserts `upgrade head → downgrade base → upgrade head` works.
+- Static files live at `bankassist/static/` **inside the package**
+  (package-data) so the Docker `pip install .` image serves them; a top-level
+  `static/` dir will silently not ship.
+- Rate limiters live on `app.state`, created in the lifespan — each
+  TestClient context gets fresh ones, so tests can't trip each other's
+  limits. Keep it that way.
+- Ruff is configured with `flake8-bugbear.extend-immutable-calls` for
+  `fastapi.Depends`/`fastapi.Header` — don't scatter `noqa: B008`.
+- Log through `log_event()` and never include chat text or tokens in log
+  fields; the JSON formatter emits whatever it's given.

@@ -2,11 +2,12 @@
 name = "bankassist"
 version = "0.1.0"
 description = "Olink Bank Assist — white-label AI banking assistant for Ethiopian banks (Phase 1 MVP)"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.111",
     "uvicorn>=0.30",
     "sqlalchemy>=2.0",
+    "alembic>=1.13",
     "httpx>=0.27",
     "pydantic>=2.7",
 ]
@@ -21,12 +22,27 @@ dev = [
 [tool.setuptools]
 packages = ["bankassist"]
 
+[tool.setuptools.package-data]
+bankassist = ["static/*", "*.json"]
+
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Depends()/Header() in defaults is the canonical FastAPI dependency idiom.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header"]
 
 [tool.mypy]
+python_version = "3.11"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
