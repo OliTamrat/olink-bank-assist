@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bank Assist — Admin</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: "Noto Sans Ethiopic", "Segoe UI", system-ui, sans-serif; background: #0b1220; color: #e2e8f0; min-height: 100vh; }
+  header { padding: 16px 24px; border-bottom: 1px solid #1e293b; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 16px; font-weight: 700; }
+  header input { background: #111a2c; border: 1px solid #273449; color: #e2e8f0; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  header button, .btn { background: #0f766e; border: none; color: #fff; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn.secondary { background: #273449; }
+  .btn.danger { background: #7f1d1d; }
+  nav { display: flex; gap: 4px; padding: 12px 24px 0; }
+  nav button { background: none; border: none; color: #94a3b8; padding: 8px 14px; font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent; }
+  nav button.active { color: #fff; border-bottom-color: #0f766e; }
+  main { padding: 20px 24px; max-width: 1100px; }
+  .card { background: #111a2c; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .card h3 { font-size: 14.5px; margin-bottom: 6px; }
+  .meta { font-size: 12px; color: #64748b; margin-bottom: 8px; }
+  .card pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; color: #cbd5e1; max-height: 130px; overflow: hidden; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  form.doc input, form.doc textarea, form.doc select {
+    width: 100%; background: #0b1220; border: 1px solid #273449; color: #e2e8f0;
+    border-radius: 8px; padding: 9px 11px; font-size: 13.5px; margin-bottom: 10px; font-family: inherit;
+  }
+  form.doc textarea { min-height: 180px; resize: vertical; }
+  .pill { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 99px; background: #273449; margin-right: 6px; }
+  .pill.open { background: #78350f; }
+  .pill.closed { background: #14532d; }
+  .msgline { padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; font-size: 13.5px; white-space: pre-wrap; }
+  .msgline.user { background: #1e3a5f; }
+  .msgline.assistant { background: #16233c; }
+  #status { font-size: 12px; color: #64748b; margin-left: auto; }
+  .empty { color: #64748b; font-size: 13.5px; padding: 12px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bank Assist Admin</h1>
+  <input id="slug" placeholder="bank slug (e.g. demo)" size="14">
+  <input id="token" placeholder="admin token" size="28" type="password">
+  <button onclick="connect()">Connect</button>
+  <span id="status"></span>
+</header>
+<nav>
+  <button id="tab-docs" class="active" onclick="showTab('docs')">Knowledge Base</button>
+  <button id="tab-convos" onclick="showTab('convos')">Conversations</button>
+  <button id="tab-handoffs" onclick="showTab('handoffs')">Handoffs</button>
+</nav>
+<main id="main"><div class="empty">Enter your bank slug and admin token, then Connect.</div></main>
+
+<script>
+var state = { slug: localStorage.getItem("ba_slug") || "", token: localStorage.getItem("ba_token") || "", tab: "docs" };
+document.getElementById("slug").value = state.slug;
+document.getElementById("token").value = state.token;
+
+function api(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({ "X-Admin-Token": state.token, "Content-Type": "application/json" }, opts.headers || {});
+  return fetch("/admin/api/" + encodeURIComponent(state.slug) + path, opts).then(function (r) {
+    if (r.status === 401) throw new Error("Invalid admin token");
+    if (!r.ok && r.status !== 204) throw new Error("Request failed (" + r.status + ")");
+    return r.status === 204 ? null : r.json();
+  });
+}
+function setStatus(text) { document.getElementById("status").textContent = text; }
+function connect() {
+  state.slug = document.getElementById("slug").value.trim();
+  state.token = document.getElementById("token").value.trim();
+  localStorage.setItem("ba_slug", state.slug);
+  localStorage.setItem("ba_token", state.token);
+  showTab(state.tab);
+}
+function showTab(tab) {
+  state.tab = tab;
+  ["docs", "convos", "handoffs"].forEach(function (t) {
+    document.getElementById("tab-" + t).classList.toggle("active", t === tab);
+  });
+  if (!state.slug || !state.token) return;
+  if (tab === "docs") loadDocs();
+  if (tab === "convos") loadConvos();
+  if (tab === "handoffs") loadHandoffs();
+}
+function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+
+// ------------------------------------------------ documents
+function docForm(doc) {
+  doc = doc || { title: "", content: "", category: "general", language: "en" };
+  return '<form class="doc card" onsubmit="return saveDoc(event, \'' + (doc.id || "") + '\')">' +
+    '<input name="title" placeholder="Title" required value="' + esc(doc.title) + '">' +
+    '<div class="row"><select name="category">' +
+      ["general", "products", "how-to", "financial-education", "fees"].map(function (c) {
+        return '<option' + (c === doc.category ? " selected" : "") + '>' + c + "</option>";
+      }).join("") + "</select>" +
+    '<select name="language">' +
+      ["en", "am", "om", "ti", "so"].map(function (l) {
+        return '<option' + (l === doc.language ? " selected" : "") + '>' + l + "</option>";
+      }).join("") + "</select></div>" +
+    '<textarea name="content" placeholder="Official content the assistant may quote. Separate topics with blank lines." required>' + esc(doc.content) + "</textarea>" +
+    '<div class="row"><button class="btn" type="submit">Save</button>' +
+    (doc.id ? '<button class="btn danger" type="button" onclick="deleteDoc(\'' + doc.id + '\')">Delete</button>' : "") +
+    "</div></form>";
+}
+function loadDocs() {
+  api("/documents").then(function (docs) {
+    setStatus(docs.length + " documents");
+    var html = '<div class="card"><h3>Add document</h3>' + docForm(null) + "</div>";
+    html += docs.map(function (d) {
+      return '<div class="card"><h3>' + esc(d.title) + "</h3>" +
+        '<div class="meta"><span class="pill">' + esc(d.category) + '</span><span class="pill">' + esc(d.language) + "</span> updated " + d.updated_at.slice(0, 16).replace("T", " ") + "</div>" +
+        docForm(d) + "</div>";
+    }).join("");
+    document.getElementById("main").innerHTML = html || '<div class="empty">No documents yet.</div>';
+  }).catch(function (e) { setStatus(e.message); });
+}
+function saveDoc(e, id) {
+  e.preventDefault();
+  var f = e.target;
+  var body = JSON.stringify({ title: f.title.value, content: f.content.value, category: f.category.value, language: f.language.value });
+  var req = id ? api("/documents/" + id, { method: "PUT", body: body }) : api("/documents", { method: "POST", body: body });
+  req.then(function () { loadDocs(); }).catch(function (err) { setStatus(err.message); });
+  return false;
+}
+function deleteDoc(id) {
+  if (!confirm("Delete this document? The assistant will stop answering from it.")) return;
+  api("/documents/" + id, { method: "DELETE" }).then(loadDocs).catch(function (e) { setStatus(e.message); });
+}
+
+// ------------------------------------------------ conversations
+function loadConvos() {
+  api("/conversations").then(function (rows) {
+    setStatus(rows.length + " conversations");
+    document.getElementById("main").innerHTML = rows.length ? rows.map(function (c) {
+      return '<div class="card"><div class="meta"><span class="pill">' + esc(c.channel) + "</span>" +
+        (c.language ? '<span class="pill">' + esc(c.language) + "</span>" : "") +
+        c.created_at.slice(0, 16).replace("T", " ") + "</div>" +
+        '<button class="btn secondary" onclick="loadMsgs(\'' + c.id + '\')">View messages</button>' +
+        '<div id="m-' + c.id + '"></div></div>';
+    }).join("") : '<div class="empty">No conversations yet.</div>';
+  }).catch(function (e) { setStatus(e.message); });
+}
+function loadMsgs(id) {
+  api("/conversations/" + id + "/messages").then(function (msgs) {
+    document.getElementById("m-" + id).innerHTML = "<div style='margin-top:10px'>" + msgs.map(function (m) {
+      return '<div class="msgline ' + m.role + '"><strong>' + m.role + (m.intent ? " · " + esc(m.intent) : "") + ":</strong> " + esc(m.text) + "</div>";
+    }).join("") + "</div>";
+  }).catch(function (e) { setStatus(e.message); });
+}
+
+// ------------------------------------------------ handoffs
+function loadHandoffs() {
+  api("/handoffs").then(function (rows) {
+    setStatus(rows.filter(function (h) { return h.status === "open"; }).length + " open handoffs");
+    document.getElementById("main").innerHTML = rows.length ? rows.map(function (h) {
+      return '<div class="card"><div class="meta"><span class="pill ' + h.status + '">' + esc(h.status) + '</span><span class="pill">' + esc(h.reason) + "</span>" + h.created_at.slice(0, 16).replace("T", " ") + "</div>" +
+        "<pre>" + esc(h.detail) + "</pre>" +
+        (h.status === "open" ? '<div class="row"><button class="btn" onclick="closeHandoff(\'' + h.id + '\')">Mark handled</button></div>' : "") +
+        "</div>";
+    }).join("") : '<div class="empty">No handoffs. When the assistant cannot answer or a customer complains, it appears here.</div>';
+  }).catch(function (e) { setStatus(e.message); });
+}
+function closeHandoff(id) {
+  api("/handoffs/" + id + "/close", { method: "POST" }).then(loadHandoffs).catch(function (e) { setStatus(e.message); });
+}
+
+if (state.slug && state.token) showTab("docs");
+</script>
+</body>
+</html>

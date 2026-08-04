@@ -1,0 +1,166 @@
+# Olink Bank Assist — Claude Code Context
+
+**Read `README.md` for the service itself.** This file is product strategy,
+the phased roadmap, and the rules that must not regress.
+
+## What this project is
+
+**Olink Bank Assist** — a white-label AI banking assistant for Ethiopian banks
+and microfinance institutions, by Olink Technologies. Each bank deploys a
+branded assistant its customers talk to about accounts, transfers, loans,
+fees, saving, and financial education — in **Amharic, Afaan Oromo, Tigrinya,
+Somali, or English** — over a web chat widget and Telegram (Ethiopia's
+dominant messaging channel). Phase 3 adds authenticated account servicing.
+
+**This repo is the product's only home.** It briefly incubated inside
+`olink-dispatch` (`bank-assist/` on branch `claude/ethiopian-banking-chatbots-pkdp1c`,
+PR #12, closed unmerged) — founder decision 2026-08-04: products never share
+repos. Do not add Bank Assist code to any other repo.
+
+## Why this wins in Ethiopia (the strategic moat)
+
+1. **Data residency is law.** Personal Data Protection Proclamation
+   No. 1321/2024, Art. 22: personal data collected in Ethiopia must be stored
+   on servers located in Ethiopia. Foreign SaaS chatbot vendors can't easily
+   comply. Olink already has the Ethio Telecom ECS deployment path and
+   pricing worked out (see Onekof Tier 1) and INSA-certification experience
+   (Onekof P1–P6, certified 2026-07-03). Lead every bank pitch with this.
+2. **Telegram-first.** Ethiopian banks already run Telegram presences; a bot
+   means zero install friction on cheap Android phones.
+3. **Native-language support gap.** Tens of millions of new digital banking
+   users (telebirr 50M+); support is English-first while customers think in
+   Amharic/Afaan Oromo. The 5-language i18n capability is proven in Olink
+   School Bus.
+4. **Agent discipline is proven.** The safety doctrine below is the
+   olink-dispatch agent playbook (tool-output-is-truth, intent allowlists,
+   approval queues, audit logs) applied to banking.
+
+## Stack
+
+- **API:** FastAPI, Python 3.12, SQLAlchemy 2.x; SQLite dev / Postgres prod
+- **LLM:** Gemini via REST (httpx, no SDK), `gemini-2.5-flash` default, with a
+  deterministic extractive fallback — the demo works with **no API key**
+- **Retrieval:** dependency-free BM25 (Ge'ez-script aware), per-tenant
+- **Channels:** embeddable widget (`static/widget.html`), Telegram webhook
+- **Admin:** single-page panel (`static/admin.html`) — KB CRUD, transcripts,
+  handoff queue
+
+## Safety doctrine (NEVER regress)
+
+1. **Tool output is truth.** Answers come from the bank's knowledge base.
+   LLM mode prompts context-only; no-key mode quotes retrieved chunks
+   verbatim. The bot must never invent a rate, fee, or requirement — one
+   hallucinated interest rate screenshot kills a bank deal.
+2. **Allowlist, not blocklist.** Only greeting / product-question /
+   investment-education intents are answered autonomously
+   (`AUTO_ANSWER_INTENTS` in `classifier.py`). The intent rules are
+   deterministic regexes — the safety floor never depends on a model.
+3. **Account-specific → fixed security template.** The bot has no account
+   access in Phases 1–2 and must never claim otherwise.
+4. **Education, never advice.** Investment answers always append the
+   education-not-advice disclaimer in the user's language. No personalized
+   recommendations — investment advisory is an ECMA-licensed activity.
+5. **Unknown → handoff, not guessing.** Empty retrieval files a `Handoff`
+   row; every knowledge gap becomes visible content work for the bank.
+6. **Multi-tenant from day one.** Every query filters `bank_id`; tests assert
+   cross-tenant isolation (documents, chats, conversations, admin tokens).
+   Don't break them.
+7. **Secrets fail closed, compare constant-time** (`hmac.compare_digest` for
+   admin tokens and Telegram webhook secrets — same doctrine as the dispatch
+   cron secret).
+8. **Audit log** (`actor/action/entity_type/entity_id/metadata`) on handoffs
+   and every admin mutation. `entity_id` is TEXT — always `str(uuid)`.
+
+## Current phase
+
+**Phase 1 MVP complete (2026-08-04).** 29 tests green; smoke-tested end to
+end in EN + AM (retrieval answers, advice disclaimer, account refusal,
+unknown→handoff, Telegram webhook with mocked send). Seeded fictional
+**Demo Bank Ethiopia** (13 docs, EN+AM, illustrative figures — deliberately
+not branded as any real institution).
+
+## Roadmap over the horizon
+
+### Phase 1 — Demo bot ✅ (this repo, done)
+Remaining polish, not blockers:
+- [ ] Set `GEMINI_API_KEY` and eyeball answer quality in all 5 languages
+- [ ] **Linguist review of OM/TI/SO strings** in `i18n.py` (EN/AM reviewed;
+      others are first drafts — use the Onekof TSV review workflow)
+- [ ] Load a real bank's *public* website content via the admin panel →
+      that's the sales demo. No partnership needed for public info.
+- [ ] Deploy demo instance (any cloud is fine pre-PII; Cloud Run pattern from
+      olink-dispatch works — remember `--port` must match uvicorn)
+- [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`
+      (needs public HTTPS)
+
+### Phase 2 — First pilot (one bank or MFI)
+Target: a bank innovation department, or a microfinance institution / digital
+lender (smaller, faster procurement, hungrier).
+- Their real knowledge base, their brand color/logo on the widget
+- **Analytics dashboard**: deflection rate, top questions, language mix —
+  "top questions" is product intelligence banks don't have; it sells renewals
+- Embedding retrieval behind the same `retrieve()` interface (BM25 stays as
+  fallback); LLM intent refinement **above** the rules floor, never replacing it
+- Human-agent console for the handoff queue (or webhook into the bank's
+  existing contact-center tool)
+- **Move hosting in-country (Ethio Telecom ECS) before real customer chat
+  logs exist** — chat content is personal data under Art. 22 even without
+  account linkage. Reuse Onekof's `deploy-et.sh` pattern and ECS sizing.
+- Contract must include: golden-question eval suite run before every KB/model
+  change; the education-vs-advice line in writing.
+
+### Phase 3 — Authenticated account servicing
+- OTP-based session auth; **read-only first** (balance, mini-statement),
+  then card block. Core banking integration goes through the bank's
+  middleware/ESB team (most Ethiopian banks run T24/Flexcube).
+- INSA certification for this product (Onekof playbook)
+- Per-action audit with customer identity; retention policy decided with the
+  bank, never "forever"
+- NBE consumer-protection directives review before launch
+
+### Phase 4 — Scale & financial education layer
+- ESX / capital-markets explainers, savings nudges; possible co-brand with
+  ECMA's investor-education mandate (a partnership angle beyond single banks)
+- Additional channels: WhatsApp Business, USSD/IVR for feature phones
+- Multi-bank operations: shared model improvements, per-tenant KBs strictly
+  isolated
+- Business model: setup fee + monthly SaaS tiered by conversation volume
+  (banks are used to enterprise pricing; don't price per-seat)
+
+## Reuse map (use resources, never code-mix repos)
+
+| Need | Source | What to copy (patterns, not imports) |
+|---|---|---|
+| Agent guardrails, approval queues, audit log | `olink-dispatch` | Doctrine already ported into this repo |
+| 5-language i18n + linguist TSV review | `Olink-School-Bus`, `onekof-platform` | Review workflow for `i18n.py` |
+| Ethiopia deployment, INSA, Art. 22 residency | `onekof-platform` | `deploy-et.sh`, ECS pricing brief, counsel brief format |
+| Cloud Run + Secret Manager + cron patterns | `olink-dispatch` | Deploy flags, fail-closed cron secret |
+| Stripe/subscription machinery (Phase 4) | `olink-dispatch` | httpx-REST webhook idempotency (`stripe_events` claim-first) |
+
+## Workflow rules
+
+1. Plan before code for non-trivial changes; surface tradeoffs explicitly.
+2. Tests before merge — guardrail behavior and tenancy isolation must stay
+   covered; new intents need classifier tests.
+3. Never commit `.env` or real bank content; the seeded bank stays fictional.
+4. Conventional Commits; `main` deployable; work in feature branches.
+5. Demo figures are always labeled "illustrative" — never present them as a
+   real institution's terms.
+
+## Gotchas
+
+- **Extractive mode is a feature, not a bug** — the assistant must stay fully
+  demoable with no LLM key; never make the model a hard dependency.
+- The retrieval "informative match" gate (stopwords + df ≤ max(1, n/2) in
+  `retrieval.py`) is what makes the bot say "I don't know" instead of
+  answering chess questions with mobile-banking excerpts. Tune with care and
+  keep `test_unknown_question_creates_handoff_instead_of_guessing` green.
+- Language detection: Ethiopic script defaults to Amharic with a Tigrinya
+  orthographic tell (the ኣ series). Users can pin a language; an explicit
+  `language` in the chat payload pins the conversation.
+- FastAPI dependency caching means `require_admin` and route handlers share
+  one DB session per request — safe to mutate the `Bank` from either.
+- `pkill -f <pattern>` matches its own shell in sandbox environments — use a
+  character-class pattern like `"uvicorn bankassi[s]t"` (exit 144 otherwise).
+- Telegram `sendMessage` failures are logged, never raised — a Telegram
+  outage must not 500 the webhook (Telegram retries the whole update).

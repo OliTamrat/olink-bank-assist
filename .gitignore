@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+bankassist.db
+.env
+.pytest_cache/
