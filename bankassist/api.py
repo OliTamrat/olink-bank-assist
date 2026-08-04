@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hmac
 import logging
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -19,17 +20,23 @@ from .agent import handle_message
 from .config import get_settings
 from .db import get_db, init_db
 from .i18n import LANGUAGE_NAMES, SUPPORTED_LANGUAGES
+from .logging_config import configure_logging, log_event
 from .models import AuditLog, Bank, Conversation, Document, Handoff, Message, new_token
+from .ratelimit import SlidingWindowLimiter
 from .retrieval import reindex_document
 
 logger = logging.getLogger(__name__)
 
-_STATIC = Path(__file__).resolve().parent.parent / "static"
+_STATIC = Path(__file__).resolve().parent / "static"
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    configure_logging(settings.log_level)
     init_db()
+    app.state.ip_limiter = SlidingWindowLimiter(settings.chat_rate_per_ip)
+    app.state.conversation_limiter = SlidingWindowLimiter(settings.chat_rate_per_conversation)
     yield
 
 
@@ -40,6 +47,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _access_log(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    started = time.perf_counter()
+    response = await call_next(request)
+    if request.url.path != "/health":
+        log_event(
+            logger,
+            "request",
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+            duration_ms=round((time.perf_counter() - started) * 1000, 1),
+        )
+    return response
 
 
 # ---------------------------------------------------------------- helpers
@@ -113,7 +138,8 @@ class HealthOut(BaseModel):
 @app.get("/health", response_model=HealthOut)
 def health() -> HealthOut:
     settings = get_settings()
-    return HealthOut(status="ok", llm="gemini" if settings.gemini_api_key else "extractive-fallback")
+    mode = "gemini" if settings.gemini_api_key else "extractive-fallback"
+    return HealthOut(status="ok", llm=mode)
 
 
 @app.get("/banks/{slug}/public")
@@ -131,7 +157,17 @@ def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @app.post("/chat/{slug}", response_model=ChatResponse)
-def chat(slug: str, payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+def chat(
+    slug: str, payload: ChatRequest, request: Request, db: Session = Depends(get_db)
+) -> ChatResponse:
+    client_ip = request.client.host if request.client else "unknown"
+    ip_limiter: SlidingWindowLimiter = request.app.state.ip_limiter
+    if not ip_limiter.allow(f"{slug}:{client_ip}"):
+        raise HTTPException(status_code=429, detail="Too many requests, please slow down")
+    conversation_limiter: SlidingWindowLimiter = request.app.state.conversation_limiter
+    if payload.conversation_id and not conversation_limiter.allow(payload.conversation_id):
+        raise HTTPException(status_code=429, detail="Too many requests, please slow down")
+
     bank = _get_bank(db, slug)
     conversation: Conversation | None = None
     if payload.conversation_id:
@@ -171,7 +207,9 @@ def admin_page() -> FileResponse:
 
 
 @app.post("/webhooks/telegram/{slug}")
-async def telegram_webhook(slug: str, request: Request, db: Session = Depends(get_db)) -> dict[str, bool]:
+async def telegram_webhook(
+    slug: str, request: Request, db: Session = Depends(get_db)
+) -> dict[str, bool]:
     bank = _get_bank(db, slug)
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
     if not bank.telegram_webhook_secret or not hmac.compare_digest(
@@ -230,7 +268,9 @@ def telegram_connect(
 
 
 @app.get("/admin/api/{slug}/documents")
-def list_documents(bank: Bank = Depends(require_admin), db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def list_documents(
+    bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
     docs = db.execute(
         select(Document).where(Document.bank_id == bank.id).order_by(Document.updated_at.desc())
     ).scalars().all()
@@ -332,7 +372,10 @@ def list_handoffs(
     bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
 ) -> list[dict[str, Any]]:
     rows = db.execute(
-        select(Handoff).where(Handoff.bank_id == bank.id).order_by(Handoff.created_at.desc()).limit(200)
+        select(Handoff)
+        .where(Handoff.bank_id == bank.id)
+        .order_by(Handoff.created_at.desc())
+        .limit(200)
     ).scalars().all()
     return [
         {

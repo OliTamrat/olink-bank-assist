@@ -26,9 +26,13 @@ BM25_B = 0.75
 # Function words that must never count as "we found relevant knowledge".
 # They still contribute to BM25 ranking; they just can't be the only match.
 _STOPWORDS = frozenset(
-    "a an and are about at be by can do does for from how i in is it me my of on "
-    "or our please tell that the this to we what when where which who why will "
-    "with you your yes no not".split()
+    [
+        "a", "an", "and", "are", "about", "at", "be", "by", "can", "do", "does",
+        "for", "from", "how", "i", "in", "is", "it", "me", "my", "of", "on",
+        "or", "our", "please", "tell", "that", "the", "this", "to", "we",
+        "what", "when", "where", "which", "who", "why", "will", "with", "you",
+        "your", "yes", "no", "not",
+    ]
 )
 
 

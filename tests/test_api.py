@@ -65,7 +65,10 @@ def test_document_create_update_delete_reindexes(client: TestClient, demo_bank: 
     created = client.post(
         "/admin/api/demo/documents",
         headers=headers,
-        json={"title": "Zeta Premium Account", "content": "The Zeta Premium Account has a 42 birr fee."},
+        json={
+            "title": "Zeta Premium Account",
+            "content": "The Zeta Premium Account has a 42 birr fee.",
+        },
     )
     assert created.status_code == 201
     doc_id = created.json()["id"]
@@ -76,7 +79,10 @@ def test_document_create_update_delete_reindexes(client: TestClient, demo_bank: 
     updated = client.put(
         f"/admin/api/demo/documents/{doc_id}",
         headers=headers,
-        json={"title": "Zeta Premium Account", "content": "The Zeta Premium Account now has a 99 birr fee."},
+        json={
+            "title": "Zeta Premium Account",
+            "content": "The Zeta Premium Account now has a 99 birr fee.",
+        },
     )
     assert updated.status_code == 200
     answer = client.post("/chat/demo", json={"message": "What is the Zeta Premium fee?"}).json()
