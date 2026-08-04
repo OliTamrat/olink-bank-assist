@@ -1,5 +1,15 @@
 # Olink Bank Assist — Claude Code Context
 
+## CRITICAL: Git Commit Rules (GOLDEN RULE)
+
+- **Every commit is authored AND committed by Oli Tamrat
+  (`Oli Tamrat <olitamrat@gmail.com>`) — required for IP registration.**
+- **NEVER include Claude attribution, `Co-Authored-By` lines, session
+  trailers, or any AI author/co-author reference in commit messages or git
+  metadata.** Commit messages read as if written solely by the developer.
+- Before committing, ensure `git config user.name "Oli Tamrat"` and
+  `git config user.email "olitamrat@gmail.com"` are set in this repo.
+
 **Read `README.md` for the service itself.** This file is product strategy,
 the phased roadmap, and the rules that must not regress.
 
