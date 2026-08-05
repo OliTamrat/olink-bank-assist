@@ -103,6 +103,27 @@ right"):
   any model/prompt/KB change ships.
 - **Structured JSON logging** — `request` + `chat_handled` events, metadata
   only. **Chat text is never logged** (it's personal data).
+
+**CBE sales-demo tenant added (2026-08-05).** `bankassist/seed_cbe.py` seeds
+a second tenant (`slug=cbe`) from Commercial Bank of Ethiopia's real public
+information — 12 documents (10 EN, 2 AM), CBE's maroon brand color, and a
+mandatory `Bank.disclaimer` banner ("Unofficial prototype... Not affiliated
+with, endorsed by, or an official channel of CBE") rendered in the widget so
+it's never mistaken for CBE's own product. Every figure is sourced —
+`SOURCES.md` documents each one with a citation and pull date, and is
+explicit about which figures were contested across sources and therefore
+described qualitatively rather than guessed (exact fixed-deposit rates,
+telebirr transfer fee tiers, ATM fee percentages, precise branch hours).
+`combanketh.et` itself returns 403 to automated fetches — content is drawn
+from secondary sources that corroborate CBE's public material.
+`tests/test_cbe_demo.py` (6 tests) locks in the disclaimer, guardrails, and
+two retrieval-ranking fixes found while building this: BM25 has no stemming,
+so a document's verbose comparisons to another topic can out-rank the
+document actually about the query (e.g. "Fixed Time Deposit" out-ranked
+"Ordinary Savings Account" for a savings-rate question because it repeated
+"regular savings account" three times) — fixed by writing the target
+document densely in the query's own terms, not by changing the shared
+retrieval algorithm. Same pattern to watch for in any future bank's content.
 - **Rate limiting** on `/chat` — per-IP and per-conversation sliding windows,
   env-tunable, per-process (Redis behind the same `allow()` when
   multi-instance).
@@ -119,8 +140,10 @@ Remaining polish, not blockers:
 - [ ] Linguist review of OM/TI/SO strings in `i18n.py` — **founder decision
       2026-08-04: parked, explicitly NOT a blocker.** Revisit before a real
       bank pilot (Onekof TSV workflow).
-- [ ] Load a real bank's *public* website content via the admin panel →
-      that's the sales demo. No partnership needed for public info.
+- [x] Load a real bank's *public* website content → done 2026-08-05, see CBE
+      tenant above. Loaded via a seed script rather than the admin panel UI
+      (admin panel has no bulk-import, just single-document CRUD — fine for
+      12 docs, would want a bulk path before doing a second real bank).
 - [ ] Deploy demo instance (any cloud is fine pre-PII; Cloud Run pattern from
       olink-dispatch works — remember `--port` must match uvicorn)
 - [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`

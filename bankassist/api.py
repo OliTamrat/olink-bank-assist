@@ -150,6 +150,7 @@ def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         "slug": bank.slug,
         "primary_color": bank.primary_color,
         "default_language": bank.default_language,
+        "disclaimer": bank.disclaimer,
         "languages": [
             {"code": code, "name": LANGUAGE_NAMES[code]} for code in SUPPORTED_LANGUAGES
         ],
