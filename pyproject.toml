@@ -10,6 +10,12 @@ dependencies = [
     "alembic>=1.13",
     "httpx>=0.27",
     "pydantic>=2.7",
+    # sqlalchemy alone has no Postgres driver; without this, setting
+    # BANKASSIST_DATABASE_URL to a postgresql:// URL fails at engine-creation
+    # time with ModuleNotFoundError. SQLAlchemy's plain "postgresql://" scheme
+    # defaults to psycopg2 specifically — this is that driver, binary wheel so
+    # no build toolchain/libpq-dev needed in the Docker image.
+    "psycopg2-binary>=2.9",
 ]
 
 [project.optional-dependencies]
