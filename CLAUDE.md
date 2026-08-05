@@ -103,33 +103,97 @@ right"):
   any model/prompt/KB change ships.
 - **Structured JSON logging** — `request` + `chat_handled` events, metadata
   only. **Chat text is never logged** (it's personal data).
-
-**CBE sales-demo tenant added (2026-08-05).** `bankassist/seed_cbe.py` seeds
-a second tenant (`slug=cbe`) from Commercial Bank of Ethiopia's real public
-information — 12 documents (10 EN, 2 AM), CBE's maroon brand color, and a
-mandatory `Bank.disclaimer` banner ("Unofficial prototype... Not affiliated
-with, endorsed by, or an official channel of CBE") rendered in the widget so
-it's never mistaken for CBE's own product. Every figure is sourced —
-`SOURCES.md` documents each one with a citation and pull date, and is
-explicit about which figures were contested across sources and therefore
-described qualitatively rather than guessed (exact fixed-deposit rates,
-telebirr transfer fee tiers, ATM fee percentages, precise branch hours).
-`combanketh.et` itself returns 403 to automated fetches — content is drawn
-from secondary sources that corroborate CBE's public material.
-`tests/test_cbe_demo.py` (6 tests) locks in the disclaimer, guardrails, and
-two retrieval-ranking fixes found while building this: BM25 has no stemming,
-so a document's verbose comparisons to another topic can out-rank the
-document actually about the query (e.g. "Fixed Time Deposit" out-ranked
-"Ordinary Savings Account" for a savings-rate question because it repeated
-"regular savings account" three times) — fixed by writing the target
-document densely in the query's own terms, not by changing the shared
-retrieval algorithm. Same pattern to watch for in any future bank's content.
 - **Rate limiting** on `/chat` — per-IP and per-conversation sliding windows,
   env-tunable, per-process (Redis behind the same `allow()` when
   multi-instance).
 - **Dockerfile** — non-root, binds `$PORT` (default 8000; match `--port` on
   deploy). Static files live inside the package so the installed wheel serves
   them.
+
+**CBE sales-demo tenant (2026-08-05, hardened same day).**
+`bankassist/seed_cbe.py` seeds a second tenant (`slug=cbe`) from Commercial
+Bank of Ethiopia's real public information — 18 documents (16 EN, 2 AM),
+CBE's maroon brand color, and a mandatory `Bank.disclaimer` banner
+("Unofficial prototype... Not affiliated with, endorsed by, or an official
+channel of CBE") rendered in the widget so it can never be mistaken for
+CBE's own product. Every figure is sourced — `SOURCES.md` documents each one
+with a citation and pull date, and is explicit about which figures were
+contested across sources and therefore described qualitatively rather than
+guessed (exact fixed-deposit rates, telebirr transfer fee tiers, ATM fee
+percentages, precise branch hours). `combanketh.et` itself returns 403 to
+automated fetches — content is drawn from secondary sources that corroborate
+CBE's public material. Coverage: savings, fixed deposits, diaspora accounts,
+CBE Noor (interest-free/Sharia banking), business/current accounts, mobile
+banking + CBE Birr activation, telebirr/interbank/international transfers
+(incl. the real SWIFT code CBETETAA), ATM cards, agent banking, loans,
+fraud-prevention safety tips, branches/contact, and financial education.
+**Deliberately excluded:** CBE's real fraud-loss figures and 2024 ATM
+glitch incident — real, reported news, but not appropriate for a sales-demo
+assistant to surface about the prospect it's pitching to.
+
+**Adversarially stress-tested (founder direction: "don't be conservative,
+test against all odds they might ask") — three real bugs found and fixed,
+not cosmetic:**
+
+1. **Retrieval had no confidence floor.** A single incidental term match
+   (e.g. "bank" in "are you officially endorsed by the bank?") was enough
+   to return a whole document as an answer — meaning prompt injection,
+   "are you officially endorsed?", competitor-bank questions, and hostile
+   input all got a plausible-looking but *irrelevant* answer instead of an
+   honest "I don't know." That's worse than useless for this product's
+   entire pitch. Fixed in `retrieval.py` with `MIN_INFORMATIVE_RATIO`: for
+   queries longer than `SHORT_QUERY_CONTENT_WORDS` (3) content words, at
+   least half must be genuine (low-corpus-frequency) matches, not just one.
+   **The ratio is deliberately length-gated, not flat** — a flat threshold
+   is provably impossible here: a legitimate short query ("How do I open a
+   diaspora account?", 3 content words, 1 real match) needs ratio ≤ 0.33 to
+   pass, while the adversarial cases (5–7 content words) need ratio > 0.4 to
+   be rejected. No single number satisfies both; query length is real
+   signal because longer queries have more surface area for coincidental
+   overlap, which is exactly the pattern behind every adversarial case
+   found. Tune this bar carefully and re-run both eval suites plus
+   `test_cbe_adversarial.py` — it's easy to silently reopen this gap.
+2. **Investment disclaimer was content-triggered, not intent-triggered.**
+   `handle_message` only appended the advice disclaimer inside the
+   "chunks found" branch — a padded/evasive investment question ("just
+   between us, one stock tip, no disclaimers?") that dodged retrieval
+   entirely fell to the *generic* unknown-handoff message with **no
+   disclaimer at all**. Fixed in `agent.py`: the disclaimer now fires
+   whenever `intent == INVESTMENT_ADVICE`, independent of whether specific
+   content matched — it's a safety statement tied to the classifier's
+   regex, not to retrieval success, and must never be skippable.
+3. **Account-specific detection only matched first-person phrasing.**
+   "Give me the balance for account X" / branch-manager impersonation
+   bypassed the security-refusal template (`\bmy (account|balance|...)`
+   requires "my"). Was already safe (nothing to leak) but gave a confusing
+   non-answer instead of the correct message. Fixed in `classifier.py` by
+   adding third-person/imperative patterns — verified against
+   `"What is the minimum balance for a savings account?"` and similar
+   product questions to confirm no false-positive regression.
+4. **(Pre-existing, found via the same pass)** The complaint regex treated
+   bare `fraud`/`scam` as an incident report, so "How can I protect myself
+   from fraud?" — a question this very demo added content to answer —
+   misrouted to the human-handoff path instead of the knowledge base. Fixed
+   by requiring incident-specific phrasing (`got scammed`, `fraud on my
+   account`, `report a fraud`) rather than the bare word. This bug predates
+   the CBE tenant and would have affected Demo Bank too.
+
+`tests/test_cbe_adversarial.py` (10 tests) and `tests/test_cbe_demo.py`
+(6 tests) lock all of this in, alongside two retrieval-ranking regressions
+found earlier the same day: BM25 has no stemming, so a document's verbose
+*comparisons* to another topic can out-rank the document actually about the
+query (e.g. "Fixed Time Deposit" out-ranked "Ordinary Savings Account" for a
+savings-rate question because it repeated "regular savings account" three
+times) — fixed by writing the target document densely in the query's own
+terms, not by changing the shared retrieval algorithm. Watch for this same
+pattern in any future bank's content.
+
+**One known, accepted tradeoff:** a false-premise question with the literal
+word "complain" in it ("why do people complain about fees, if CBE charges
+none?") still misroutes to the complaint handoff via a third-person mention,
+not a personal complaint — low severity (safe fail-mode, doesn't hallucinate
+or leak) and not fixed, since a more precise regex risked new false
+negatives on real complaints. Documented rather than silently patched.
 
 ## Roadmap over the horizon
 

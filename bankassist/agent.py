@@ -106,7 +106,14 @@ def handle_message(
         chunks = retrieve(db, bank.id, text)
         if not chunks:
             _create_handoff(db, bank, conversation, "unanswered_question", text[:2000])
-            result = ChatResult(t(language, "unknown"), intent, language, handoff_created=True)
+            reply = t(language, "unknown")
+            # The disclaimer is triggered by intent (a regex match, decided
+            # before retrieval ever runs), not by whether specific content
+            # was found — it must never be skippable just because a pressure
+            # or padded phrasing dodged the knowledge base too.
+            if intent == classifier.INVESTMENT_ADVICE:
+                reply = f"{reply}\n\n{t(language, 'advice_disclaimer')}"
+            result = ChatResult(reply, intent, language, handoff_created=True)
         else:
             reply = _answer_from_knowledge(bank, text, chunks, language)
             if intent == classifier.INVESTMENT_ADVICE:

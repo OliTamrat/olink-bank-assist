@@ -31,6 +31,25 @@ sheet or branch visit.**
 | ~1,900+ branches | — | [banksdaily.com](https://banksdaily.com/info/combank-ethiopia) |
 | Head office: Ras Desta Damtew St, Kirkos, Addis Ababa | — | banksdaily.com |
 | Interbank RTGS transfer fee, ATM fee tiers, exact telebirr fee amounts, precise branch hours | **not used as stated figures** — described qualitatively instead | multiple secondary sources disagreed; see note above |
+| CBE Noor customer count | 8M+ | [2merkato.com](https://www.2merkato.com/news/banking-and-finance/7693-ethiopia-cbe-celebrates-10-years-of-interest-free-banking-with-cbe-noor), corroborated by [birrmetrics.com](https://birrmetrics.com/cbes-islamic-banking-arm-tops-8-million-customers/) |
+| CBE Noor deposits | 266 billion birr | 2merkato.com, corroborated by birrmetrics.com |
+| CBE Noor product count / structure (Wadi'ah, Mudarabah, Murabahah, Kafala) | — | 2merkato.com |
+| CBE Noor governance (Sharia Advisory Committee, IFRS/AAOIFI) | — | 2merkato.com |
+| Current account minimum | 500 birr | [apexhab.com](https://www.apexhab.com/2025/06/04/commercial-banks-and-their-services-with-document-requirements-in-ethiopia/) |
+| 7 current-account types (4 ECX-related, 3 general) | — | apexhab.com |
+| Current account required documents | ID, 2 photos, MoA, business license | apexhab.com |
+| CBE SWIFT/BIC code | CBETETAA | corroborated by 4 independent financial-data sites: [bank.codes](https://bank.codes/swift-code/ethiopia/cbetetaa/), [Wise](https://wise.com/gb/swift-codes/CBETETAAFIN), [Transfez](https://www.transfez.com/en/swift-codes/cbetetaa), [theswiftcodes.com](https://www.theswiftcodes.com/ethiopia/cbetetaa/) |
+| CBE Connect (diaspora remittance platform) | — | [birrmetrics.com](https://birrmetrics.com/cbe-connect-opens-the-floodgates-for-money-coming-home-outbound-flow-still-on-pause/) |
+| CBE Birr agent eligibility (nationality, 1yr business, TIN, trade license) | — | [mfw4a.org](https://www.mfw4a.org/news/ethiopia-commercial-bank-ready-launch-agent-banking) |
+| "Follow only official channels" fraud-safety guidance | — | [addisinsight.net](https://addisinsight.net/2025/02/28/commercial-bank-of-ethiopia-tightens-access-to-customer-accounts-amid-escalating-fraud-crisis/), corroborated by birrmetrics.com |
+
+**Deliberately excluded:** CBE's fraud-loss figures and the 2024 ATM/system
+glitch incident are real, widely reported news but are not included in the
+knowledge base — a sales-demo assistant has no reason to surface a
+prospect's own negative press, and it isn't customer-facing information a
+bank chatbot would proactively volunteer. The general safety guidance CBE
+itself has publicly issued (official-channels-only, never share your PIN)
+is included, since that's genuinely useful, bank-endorsed customer content.
 
 ## Not verified — flagged for the sales conversation
 

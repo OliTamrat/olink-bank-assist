@@ -197,6 +197,115 @@ _DOCS: list[dict[str, str]] = [
         ),
     },
     {
+        "title": "CBE Noor — Interest-Free (Sharia-Compliant) Banking",
+        "category": "products",
+        "language": "en",
+        "content": (
+            "CBE Noor is CBE's interest-free banking service, operated "
+            "according to Sharia principles. CBE was the first Ethiopian "
+            "bank to offer interest-free banking, and CBE Noor has grown to "
+            "over 8 million customers, with deposits mobilized under the "
+            "interest-free window exceeding 266 billion birr — more than "
+            "half of the domestic market for interest-free banking in "
+            "Ethiopia.\n\n"
+            "CBE Noor offers more than 30 deposit and financing products "
+            "structured under Sharia-compliant principles, including a "
+            "Wadi'ah-based savings account, an Amana-based current/checking "
+            "account, and Mudarabah savings and term deposit accounts. It "
+            "also provides full trade finance services (including "
+            "Murabahah-structured import financing and export financing) "
+            "and Kafala (Sharia-compliant guarantee) services. CBE also "
+            "offers an interest-free deposit saving service for customers "
+            "saving toward Hajj and Umrah.\n\n"
+            "All CBE Noor products are supervised by an independent Sharia "
+            "Advisory Committee and comply with IFRS and AAOIFI standards. "
+            "To open a CBE Noor account, visit any CBE branch — the same ID "
+            "and photo requirements apply as for a conventional account; "
+            "ask specifically for CBE Noor / interest-free banking."
+        ),
+    },
+    {
+        "title": "Business and Current Accounts",
+        "category": "products",
+        "language": "en",
+        "content": (
+            "CBE's Current Account is designed for businesses and "
+            "individuals who need frequent transactions and cheque "
+            "facilities. It is a non-interest-bearing account, with a "
+            "minimum opening balance of 500 birr.\n\n"
+            "CBE offers seven types of current accounts in total: four are "
+            "related to the Ethiopian Commodity Exchange (ECX) for "
+            "commodity traders, and three address the needs of different "
+            "customer segments, including the ordinary current account "
+            "available to businesses and individuals generally.\n\n"
+            "Required documents to open a current account: a renewed ID "
+            "card, two passport-size photos, and — for a business — the "
+            "company's Memorandum of Association and a valid business "
+            "license. Visit a branch to open a current account; a bank "
+            "officer will confirm which of the seven account types fits "
+            "your business."
+        ),
+    },
+    {
+        "title": "International Transfers and Receiving Money from Abroad",
+        "category": "how-to",
+        "language": "en",
+        "content": (
+            "CBE's SWIFT/BIC code is CBETETAA — use this when someone "
+            "abroad is sending you money by international bank transfer, "
+            "along with your CBE account number and branch details.\n\n"
+            "CBE also receives inbound remittances through partnerships "
+            "with licensed money transfer operators, and through 'CBE "
+            "Connect', CBE's digital platform for diaspora Ethiopians to "
+            "send money home directly into a CBE account or mobile wallet. "
+            "For diaspora and international transfer questions, CBE's "
+            "diaspora desk can be reached at cbediaspora@combanketh.et."
+        ),
+    },
+    {
+        "title": "Agent Banking (CBE Birr Agents)",
+        "category": "products",
+        "language": "en",
+        "content": (
+            "CBE Birr agents are businesses — such as shops, supermarkets, "
+            "or fuel stations — authorized by CBE, under National Bank of "
+            "Ethiopia rules, to offer basic banking services like cash-in "
+            "and cash-out on behalf of the bank. This extends CBE's reach "
+            "into areas without a full branch.\n\n"
+            "To become a CBE Birr agent, a business generally needs "
+            "Ethiopian nationality of the owner, a valid and lawful "
+            "business, at least one year of business experience, a renewed "
+            "trade license and Tax Identification Number (TIN), and a "
+            "valid ID. Interested businesses should inquire at a CBE "
+            "branch or through CBE's official channels for the current "
+            "application process."
+        ),
+    },
+    {
+        "title": "Fraud Prevention and Account Safety",
+        "category": "general",
+        "language": "en",
+        "content": (
+            "To protect yourself from fraud and scams, follow these basic "
+            "safety rules: never share your PIN, password, or any SMS/app "
+            "one-time code with anyone, including someone claiming to be "
+            "calling from CBE — CBE staff will never ask for these, and "
+            "sharing them is the most common way fraud happens. Do not "
+            "click links in unsolicited messages claiming to be from the "
+            "bank, and be alert to scams that impersonate CBE, such as "
+            "fake 'gift' or 'giveaway' promotions asking you to share a "
+            "post or click a link. Always check that you are using the "
+            "official CBE app (Google Play Store or Apple App Store) or "
+            "the official combanketh.et website, and follow only CBE's "
+            "official social media pages for accurate information — this "
+            "is CBE's own published advice for protecting yourself from "
+            "fraud.\n\n"
+            "If you suspect fraud on your account, or lose your card or "
+            "phone, contact CBE customer care immediately to secure your "
+            "account, then visit a branch as soon as possible."
+        ),
+    },
+    {
         "title": "Branches, Hours, and Customer Care",
         "category": "general",
         "language": "en",

@@ -67,7 +67,15 @@ _GREETING_RE = re.compile(
 
 _ACCOUNT_RE = re.compile(
     r"\bmy (account|balance|card|statement|loan|pin|transaction)|"
-    r"\b(check|what('| i)?s) my\b|\bባላንስ|ቀሪ ሂሳቤ|ሂሳቤ|ካርዴ|"
+    r"\b(check|what('| i)?s) my\b|"
+    # Third-person / social-engineering phrasing for the same request — a
+    # caller impersonating staff or a relative won't say "my" balance, but
+    # this is still a request for individual account data and must get the
+    # same security refusal, not fall through to a generic "I don't know".
+    r"\b(give|tell|send) (me|us|her|him|them) (the |her |his |their )?balance\b|"
+    r"\bbalance (for|of|on) account\b|"
+    r"\boverride (the )?security\b|"
+    r"\bባላንስ|ቀሪ ሂሳቤ|ሂሳቤ|ካርዴ|"
     r"herrega koo|kaardii koo|xisaabtayda|kaarkayga",
     re.IGNORECASE,
 )
@@ -81,8 +89,10 @@ _ADVICE_RE = re.compile(
 )
 
 _COMPLAINT_RE = re.compile(
-    r"\b(complaint|complain|fraud|scam|stole|stolen|unauthorized|unauthorised|"
-    r"missing money|lost my money|terrible|worst|angry|not working|failed transfer)|"
+    r"\b(complaint|complain|stole|stolen|unauthorized|unauthorised|"
+    r"missing money|lost my money|terrible|worst|angry|not working|failed transfer|"
+    r"(got|been|was) scammed|victim of fraud|fraud on my account|"
+    r"report(ed|ing)? (a )?fraud)|"
     r"ቅሬታ|ተጭበርብሬ|ጠፋብኝ|ማጭበርበር",
     re.IGNORECASE,
 )
