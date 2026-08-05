@@ -104,10 +104,38 @@ function docForm(doc) {
     (doc.id ? '<button class="btn danger" type="button" onclick="deleteDoc(\'' + doc.id + '\')">Delete</button>' : "") +
     "</div></form>";
 }
+function bulkImportForm() {
+  return '<div class="card"><h3>Bulk import</h3>' +
+    '<div class="meta">Paste a JSON array of documents, or choose a .json file — each item needs title + content, category/language are optional (default general/en).</div>' +
+    '<textarea id="bulk-json" placeholder=\'[{"title": "Savings Accounts", "content": "...", "category": "products", "language": "en"}]\'></textarea>' +
+    '<div class="row"><input type="file" id="bulk-file" accept="application/json" onchange="bulkFileChosen(event)">' +
+    '<button class="btn" type="button" onclick="submitBulkImport()">Import</button></div></div>';
+}
+function bulkFileChosen(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () { document.getElementById("bulk-json").value = reader.result; };
+  reader.readAsText(file);
+}
+function submitBulkImport() {
+  var raw = document.getElementById("bulk-json").value.trim();
+  var docs;
+  try {
+    docs = JSON.parse(raw);
+    if (!Array.isArray(docs)) throw new Error("Expected a JSON array of documents");
+  } catch (e) {
+    setStatus("Invalid JSON: " + e.message);
+    return;
+  }
+  api("/documents/bulk", { method: "POST", body: JSON.stringify({ documents: docs }) })
+    .then(function (res) { setStatus("Imported " + res.created + " documents"); loadDocs(); })
+    .catch(function (err) { setStatus(err.message); });
+}
 function loadDocs() {
   api("/documents").then(function (docs) {
     setStatus(docs.length + " documents");
-    var html = '<div class="card"><h3>Add document</h3>' + docForm(null) + "</div>";
+    var html = bulkImportForm() + '<div class="card"><h3>Add document</h3>' + docForm(null) + "</div>";
     html += docs.map(function (d) {
       return '<div class="card"><h3>' + esc(d.title) + "</h3>" +
         '<div class="meta"><span class="pill">' + esc(d.category) + '</span><span class="pill">' + esc(d.language) + "</span> updated " + d.updated_at.slice(0, 16).replace("T", " ") + "</div>" +

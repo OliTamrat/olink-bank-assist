@@ -127,6 +127,10 @@ class DocumentIn(BaseModel):
     language: str = "en"
 
 
+class DocumentBulkIn(BaseModel):
+    documents: list[DocumentIn] = Field(min_length=1, max_length=200)
+
+
 class HealthOut(BaseModel):
     status: str
     llm: str
@@ -299,6 +303,43 @@ def create_document(
     _audit(db, bank, "document_created", "document", doc.id, {"chunks": n_chunks})
     db.commit()
     return {"id": doc.id, "chunks": n_chunks}
+
+
+@app.post("/admin/api/{slug}/documents/bulk", status_code=201)
+def bulk_create_documents(
+    payload: DocumentBulkIn, bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    # All-or-nothing: reject the whole batch on any bad language code rather than
+    # importing a partial knowledge base and leaving the admin to spot which rows
+    # silently failed. This is the onboarding path for a bank's real KB, where a
+    # dozens-of-documents batch getting half-imported is worse than getting none.
+    bad = [
+        {"index": i, "title": d.title, "language": d.language}
+        for i, d in enumerate(payload.documents)
+        if d.language not in SUPPORTED_LANGUAGES
+    ]
+    if bad:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "Unsupported language code", "invalid_documents": bad},
+        )
+
+    created: list[Document] = []
+    for item in payload.documents:
+        doc = Document(
+            bank_id=bank.id, title=item.title, content=item.content,
+            category=item.category, language=item.language,
+        )
+        db.add(doc)
+        created.append(doc)
+    db.flush()
+    total_chunks = sum(reindex_document(db, doc) for doc in created)
+    _audit(
+        db, bank, "documents_bulk_imported", "document", "bulk",
+        {"count": len(created), "chunks": total_chunks},
+    )
+    db.commit()
+    return {"created": len(created), "ids": [d.id for d in created]}
 
 
 @app.put("/admin/api/{slug}/documents/{document_id}")
