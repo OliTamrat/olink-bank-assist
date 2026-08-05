@@ -13,15 +13,37 @@ push to `main` that passes CI — no manual steps after today.
    dedicated project is cleaner for billing/IAM isolation on a new product;
    reusing one is faster. Either works — the commands below are the same,
    just substitute `$PROJECT_ID`.
-2. **Which Postgres?** SQLite (the local default) does not work on Cloud
-   Run — it can scale to zero and back, and can run more than one instance
-   under load, so local-disk SQLite would silently lose or fork data.
-   Recommended: **Supabase** (same pattern `olink-dispatch` already uses)
-   or **Neon** (same pattern `gada-global-5k` already uses) — both are a
-   connection string away, no VPC connector needed. Cloud SQL is the
-   all-GCP alternative but needs a Serverless VPC Connector to reach from
-   Cloud Run, which is meaningfully more one-time setup for a
-   single-service MVP. Pick whichever you already have on hand.
+2. **Postgres: decided.** Use your existing Olink Supabase **organization**
+   (same account, `olink-dispatch` already lives there) but create a **new,
+   separate Supabase project** dedicated to bank-assist — never point at
+   `olink-dispatch`'s database. Bank Assist's tables hold sourced content
+   about three real, named banks (CBE, Dashen, Awash); it must not sit next
+   to trucking-fleet data in the same project, share a connection pool
+   with it, or be reachable through it in any way. Steps:
+   1. [supabase.com/dashboard](https://supabase.com/dashboard) → your
+      existing Olink organization → **New project**.
+   2. Name it `bank-assist` (or similar), pick a region close to your
+      Cloud Run region (`us-east1` below → pick a Supabase US region),
+      set a strong database password, create.
+   3. Once provisioned: **Project Settings → Database → Connection
+      string** → copy the **URI** form (not the psql command). It looks
+      like `postgresql://postgres.[ref]:[password]@aws-x-xx-xxxx-x.pooler.supabase.com:6543/postgres`.
+   4. Use the **pooled** connection string (port 6543, "Transaction" mode)
+      for `BANKASSIST_DATABASE_URL` — Cloud Run's request-scoped
+      connections suit a pooler better than a direct connection (port
+      5432). Note this app uses **psycopg2** (sync SQLAlchemy), not
+      asyncpg — psycopg2 doesn't do the automatic server-side prepared-
+      statement caching that breaks under pgBouncer transaction mode, so
+      the `statement_cache_size=0` fix documented in olink-dispatch's
+      CLAUDE.md (an asyncpg-specific gotcha) does not apply here and no
+      matching code exists or is needed. If you ever do see prepared-
+      statement/pooling errors in production logs, the standard fallback
+      is switching to the direct connection string (port 5432).
+   5. This new project is **only** for bank-assist. Don't add
+      `olink-dispatch`'s tables to it, and don't add bank-assist's tables
+      to `olink-dispatch`'s project — two separate Supabase projects
+      under one Olink organization, same as this is a separate GitHub repo
+      under one Olink account.
 
 ## One-time GCP setup
 
@@ -62,7 +84,7 @@ gcloud iam service-accounts keys create bankassist-deployer-key.json \
 
 # Secrets Cloud Run reads at startup — never baked into the image or the
 # workflow file.
-echo -n "postgresql://...(your Supabase/Neon connection string)..." | \
+echo -n "postgresql://...(your new bank-assist Supabase project's pooled connection string, port 6543)..." | \
   gcloud secrets create bankassist-database-url --data-file=-
 echo -n "your-gemini-api-key" | \
   gcloud secrets create bankassist-gemini-api-key --data-file=-
@@ -99,10 +121,12 @@ Seed the tenants against the live database once (run locally, pointed at
 the same `BANKASSIST_DATABASE_URL` you put in Secret Manager):
 
 ```bash
-BANKASSIST_DATABASE_URL="postgresql://..." .venv/bin/python -m alembic upgrade head
-BANKASSIST_DATABASE_URL="postgresql://..." .venv/bin/python -m bankassist.seed
-BANKASSIST_DATABASE_URL="postgresql://..." .venv/bin/python -m bankassist.seed_cbe
-# (seed_dashen / seed_awash once those land)
+export BANKASSIST_DATABASE_URL="postgresql://..."  # your new Supabase project's pooled URL
+.venv/bin/python -m alembic upgrade head
+.venv/bin/python -m bankassist.seed         # fictional Demo Bank
+.venv/bin/python -m bankassist.seed_cbe
+.venv/bin/python -m bankassist.seed_dashen
+.venv/bin/python -m bankassist.seed_awash
 ```
 
 ## Wire up auto-deploy

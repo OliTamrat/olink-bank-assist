@@ -316,6 +316,24 @@ Remaining polish, not blockers:
       Actions CI/CD setup (written 2026-08-05, not yet executed — this
       sandbox has no gcloud/GCP credentials, so a human needs to run the
       one-time setup). Remember `--port` must match uvicorn.
+      **Postgres decided (2026-08-05): a new, separate Supabase project**
+      inside the existing Olink Supabase organization — never
+      `olink-dispatch`'s project, never shared/linked. `DEPLOY.md` has the
+      project-creation steps and connection-string format.
+      **Found while wiring this up: `pyproject.toml` had no Postgres
+      driver at all** — `sqlalchemy` alone doesn't ship one, so setting
+      `BANKASSIST_DATABASE_URL` to any `postgresql://` URL would have
+      failed immediately with `ModuleNotFoundError` at `create_engine()`
+      time. Added `psycopg2-binary` (verified: `create_engine()` now
+      resolves the `psycopg2` driver for the plain `postgresql://` scheme,
+      no URL changes needed anywhere). Also: this app is **sync SQLAlchemy
+      with psycopg2**, not asyncpg — do not import the asyncpg-specific
+      `statement_cache_size=0` / pgBouncer-prepared-statement fix from
+      olink-dispatch's CLAUDE.md into this repo; it's for a different
+      driver with a different (protocol-level) prepared-statement caching
+      behavior that psycopg2 doesn't have. If pooling issues ever do show
+      up in production logs, the standard fallback is the direct
+      (port 5432, non-pooled) connection string, not that fix.
 - [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`
       (needs public HTTPS)
 
