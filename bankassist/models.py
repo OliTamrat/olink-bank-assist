@@ -34,6 +34,10 @@ class Bank(Base):
     primary_color: Mapped[str] = mapped_column(String(16), default="#0f766e")
     default_language: Mapped[str] = mapped_column(String(8), default="en")
     admin_token: Mapped[str] = mapped_column(String(64), default=new_token)
+    # Shown as a banner in the widget. Used for pre-contract sales demos built
+    # from a prospect's public info, so the prototype is never mistaken for
+    # that institution's own official channel. Null for a bank's live tenant.
+    disclaimer: Mapped[str | None] = mapped_column(String(300), nullable=True)
     telegram_bot_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     telegram_webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

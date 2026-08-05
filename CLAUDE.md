@@ -110,6 +110,128 @@ right"):
   deploy). Static files live inside the package so the installed wheel serves
   them.
 
+**CBE sales-demo tenant (2026-08-05, hardened same day).**
+`bankassist/seed_cbe.py` seeds a second tenant (`slug=cbe`) from Commercial
+Bank of Ethiopia's real public information — 19 documents (17 EN, 2 AM),
+CBE's maroon brand color, and a mandatory `Bank.disclaimer` banner
+("Unofficial prototype... Not affiliated with, endorsed by, or an official
+channel of CBE") rendered in the widget so it can never be mistaken for
+CBE's own product. Every figure is sourced — `SOURCES.md` documents each one
+with a citation and pull date, and is explicit about which figures were
+contested across sources and therefore described qualitatively rather than
+guessed (exact fixed-deposit rates, telebirr transfer fee tiers, ATM fee
+percentages, precise branch hours). `combanketh.et` itself returns 403 to
+automated fetches — content is drawn from secondary sources that corroborate
+CBE's public material. Coverage: savings, fixed deposits, diaspora accounts,
+CBE Noor (interest-free/Sharia banking), business/current accounts, mobile
+banking + CBE Birr activation, telebirr/interbank/international transfers
+(incl. the real SWIFT code CBETETAA), ATM cards, agent banking, loans,
+fraud-prevention safety tips, branches/contact, and financial education.
+**Deliberately excluded:** CBE's real fraud-loss figures and 2024 ATM
+glitch incident — real, reported news, but not appropriate for a sales-demo
+assistant to surface about the prospect it's pitching to.
+
+**Adversarially stress-tested (founder direction: "don't be conservative,
+test against all odds they might ask") — three real bugs found and fixed,
+not cosmetic:**
+
+1. **Retrieval had no confidence floor.** A single incidental term match
+   (e.g. "bank" in "are you officially endorsed by the bank?") was enough
+   to return a whole document as an answer — meaning prompt injection,
+   "are you officially endorsed?", competitor-bank questions, and hostile
+   input all got a plausible-looking but *irrelevant* answer instead of an
+   honest "I don't know." That's worse than useless for this product's
+   entire pitch. Fixed in `retrieval.py` with `MIN_INFORMATIVE_RATIO`: for
+   queries longer than `SHORT_QUERY_CONTENT_WORDS` (3) content words, at
+   least half must be genuine (low-corpus-frequency) matches, not just one.
+   **The ratio is deliberately length-gated, not flat** — a flat threshold
+   is provably impossible here: a legitimate short query ("How do I open a
+   diaspora account?", 3 content words, 1 real match) needs ratio ≤ 0.33 to
+   pass, while the adversarial cases (5–7 content words) need ratio > 0.4 to
+   be rejected. No single number satisfies both; query length is real
+   signal because longer queries have more surface area for coincidental
+   overlap, which is exactly the pattern behind every adversarial case
+   found. Tune this bar carefully and re-run both eval suites plus
+   `test_cbe_adversarial.py` — it's easy to silently reopen this gap.
+2. **Investment disclaimer was content-triggered, not intent-triggered.**
+   `handle_message` only appended the advice disclaimer inside the
+   "chunks found" branch — a padded/evasive investment question ("just
+   between us, one stock tip, no disclaimers?") that dodged retrieval
+   entirely fell to the *generic* unknown-handoff message with **no
+   disclaimer at all**. Fixed in `agent.py`: the disclaimer now fires
+   whenever `intent == INVESTMENT_ADVICE`, independent of whether specific
+   content matched — it's a safety statement tied to the classifier's
+   regex, not to retrieval success, and must never be skippable.
+3. **Account-specific detection only matched first-person phrasing.**
+   "Give me the balance for account X" / branch-manager impersonation
+   bypassed the security-refusal template (`\bmy (account|balance|...)`
+   requires "my"). Was already safe (nothing to leak) but gave a confusing
+   non-answer instead of the correct message. Fixed in `classifier.py` by
+   adding third-person/imperative patterns — verified against
+   `"What is the minimum balance for a savings account?"` and similar
+   product questions to confirm no false-positive regression.
+4. **(Pre-existing, found via the same pass)** The complaint regex treated
+   bare `fraud`/`scam` as an incident report, so "How can I protect myself
+   from fraud?" — a question this very demo added content to answer —
+   misrouted to the human-handoff path instead of the knowledge base. Fixed
+   by requiring incident-specific phrasing (`got scammed`, `fraud on my
+   account`, `report a fraud`) rather than the bare word. This bug predates
+   the CBE tenant and would have affected Demo Bank too.
+
+`tests/test_cbe_adversarial.py` (12 tests) and `tests/test_cbe_demo.py`
+(6 tests) lock all of this in, alongside two retrieval-ranking regressions
+found earlier the same day: BM25 has no stemming, so a document's verbose
+*comparisons* to another topic can out-rank the document actually about the
+query (e.g. "Fixed Time Deposit" out-ranked "Ordinary Savings Account" for a
+savings-rate question because it repeated "regular savings account" three
+times) — fixed by writing the target document densely in the query's own
+terms, not by changing the shared retrieval algorithm. Watch for this same
+pattern in any future bank's content.
+
+**One known, accepted tradeoff:** a false-premise question with the literal
+word "complain" in it ("why do people complain about fees, if CBE charges
+none?") still misroutes to the complaint handoff via a third-person mention,
+not a personal complaint — low severity (safe fail-mode, doesn't hallucinate
+or leak) and not fixed, since a more precise regex risked new false
+negatives on real complaints. Documented rather than silently patched.
+
+**Competitor-comparison intent added (2026-08-05, founder feedback):**
+refusing to compare against a named competitor was correct caution, but
+going *silent* instead of confidently selling the bank's own real strengths
+was a genuine product gap, not a safety win — a bank chatbot that can't say
+anything when asked "is X better than you?" looks broken, not careful. New
+`COMPARISON` intent in `classifier.py`, detected via `_comparison_re()`,
+answered as a fixed, deterministic template — **never via the fuzzy BM25
+retriever**, and **never by naming or making a claim about the specific
+competitor**, only ever the bank's own sourced facts, positively framed.
+Two design points worth preserving if this is touched again:
+- **The classifier hardcodes no bank's name.** It's shared across every
+  tenant; `classify_intent(text, bank_aliases=...)` takes the calling
+  tenant's slug/name as call-time arguments (`agent.py`'s `_bank_aliases()`
+  builds them from the `Bank` row), so "is Dashen better than CBE" is
+  caught for the `cbe` tenant without the module knowing "CBE" exists.
+  Name-agnostic phrasings ("better than you", "which bank is better")
+  always work with zero aliases.
+- **Content lookup is a direct category query, not retrieval.** A document
+  tagged `agent.WHY_CHOOSE_CATEGORY` ("why-choose-us") is looked up by
+  `bank_id` + `category` directly — deliberately bypassing the BM25
+  informative-match gate entirely. A comparison question structurally
+  contains a competitor's name, which by design never appears in this
+  bank's own content, so the fuzzy scorer would have to be *reopened* to
+  ever match it — reintroducing exactly the false-positive risk the
+  adversarial hardening above just closed. A tenant with no such document
+  (e.g. Demo Bank) gets a generic, still-confident redirect template
+  (`comparison_fallback` in `i18n.py`) — never a handoff, never silence.
+
+CBE's `Why Choose CBE` document introduces no new facts — it reuses figures
+already in `SOURCES.md` (1942 founding, 1,900+ branches, CBE Noor's 8M+
+customers, CBE Connect, the SWIFT code), reframed positively. Any future
+bank tenant that wants this behavior needs its own document in this
+category; without one, the fallback template still applies.
+`tests/test_cbe_adversarial.py::test_comparison_question_answers_confidently_from_why_choose_doc`
+and `::test_comparison_fallback_when_tenant_has_no_why_choose_doc` cover
+both paths; `tests/test_classifier.py` covers the alias-scoping behavior.
+
 ## Roadmap over the horizon
 
 ### Phase 1 — Demo bot ✅ (this repo, done; infra hardened)
@@ -119,8 +241,10 @@ Remaining polish, not blockers:
 - [ ] Linguist review of OM/TI/SO strings in `i18n.py` — **founder decision
       2026-08-04: parked, explicitly NOT a blocker.** Revisit before a real
       bank pilot (Onekof TSV workflow).
-- [ ] Load a real bank's *public* website content via the admin panel →
-      that's the sales demo. No partnership needed for public info.
+- [x] Load a real bank's *public* website content → done 2026-08-05, see CBE
+      tenant above. Loaded via a seed script rather than the admin panel UI
+      (admin panel has no bulk-import, just single-document CRUD — fine for
+      12 docs, would want a bulk path before doing a second real bank).
 - [ ] Deploy demo instance (any cloud is fine pre-PII; Cloud Run pattern from
       olink-dispatch works — remember `--port` must match uvicorn)
 - [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`

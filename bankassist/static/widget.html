@@ -40,9 +40,14 @@
   }
   button:disabled { opacity: .5; cursor: default; }
   .notice { text-align: center; font-size: 11px; color: #94a3b8; padding: 4px 10px 8px; background:#fff; }
+  .disclaimer {
+    text-align: center; font-size: 11.5px; font-weight: 600; color: #7c2d12;
+    background: #fef3c7; padding: 7px 12px; border-bottom: 1px solid #fde68a; display: none;
+  }
 </style>
 </head>
 <body>
+<div class="disclaimer" id="disclaimer"></div>
 <header>
   <div>
     <div class="name" id="bankName">…</div>
@@ -90,6 +95,11 @@
       document.getElementById("bankName").textContent = cfg.name;
       document.title = cfg.name + " — Assistant";
       document.documentElement.style.setProperty("--brand", cfg.primary_color);
+      if (cfg.disclaimer) {
+        var d = document.getElementById("disclaimer");
+        d.textContent = cfg.disclaimer;
+        d.style.display = "block";
+      }
       var auto = document.createElement("option");
       auto.value = ""; auto.textContent = "Auto";
       langSel.appendChild(auto);

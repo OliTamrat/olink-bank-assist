@@ -48,6 +48,14 @@ def demo_bank(client: TestClient, db_session: Session) -> object:
 
 
 @pytest.fixture()
+def cbe_bank(client: TestClient, db_session: Session) -> object:
+    from bankassist.seed_cbe import seed as seed_cbe
+
+    bank, _ = seed_cbe()
+    return bank
+
+
+@pytest.fixture()
 def second_bank(client: TestClient, db_session: Session) -> object:
     from bankassist.models import Bank, Document
     from bankassist.retrieval import reindex_document

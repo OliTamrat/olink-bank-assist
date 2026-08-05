@@ -42,6 +42,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "fallback_intro": "Here is what I found in {bank}'s official information:",
         "sources_label": "Sources",
+        "comparison_intro": (
+            "I can't make claims about other banks, but here's what makes "
+            "{bank} strong:"
+        ),
+        "comparison_fallback": (
+            "I can't compare specific banks, but I'd be glad to tell you "
+            "about {bank}'s accounts, services, and features — what would "
+            "you like to know?"
+        ),
     },
     "am": {
         "greeting": (
@@ -67,6 +76,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "fallback_intro": "ከ{bank} ይፋዊ መረጃ ያገኘሁት ይህ ነው፡",
         "sources_label": "ምንጮች",
+        "comparison_intro": (
+            "ስለ ሌሎች ባንኮች መግለጫ መስጠት አልችልም፣ ነገር ግን {bank}ን ጠንካራ "
+            "የሚያደርገው ይህ ነው፡"
+        ),
+        "comparison_fallback": (
+            "የተለዩ ባንኮችን ማወዳደር አልችልም፣ ነገር ግን ስለ {bank} ሂሳቦች፣ "
+            "አገልግሎቶች እና ባህሪያት በደስታ እነግርዎታለሁ — ምን ማወቅ ይፈልጋሉ?"
+        ),
     },
     "om": {
         "greeting": (
@@ -93,6 +110,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "fallback_intro": "Odeeffannoo ifaa {bank} irraa kanan argadhe kana:",
         "sources_label": "Maddawwan",
+        "comparison_intro": (
+            "Waa'ee baankilee biroo ibsa kennuu hin danda'u, garuu wanti "
+            "{bank} jabeessu kanaadha:"
+        ),
+        "comparison_fallback": (
+            "Baankilee addaa wal bira qabuu hin danda'u, garuu waa'ee "
+            "herregaa, tajaajilaa fi amaloota {bank} gammachuudhaan "
+            "isinitti himuu nan barbaada — maal beekuu barbaaddu?"
+        ),
     },
     "ti": {
         "greeting": (
@@ -117,6 +143,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "fallback_intro": "ካብ ወግዓዊ ሓበሬታ {bank} ዝረኸብክዎ እዚ እዩ፡",
         "sources_label": "ምንጭታት",
+        "comparison_intro": (
+            "ብዛዕባ ካልኦት ባንክታት መግለጺ ክህብ ኣይክእልን፣ እንተኾነ ን{bank} ብርቱዕ "
+            "ዝገብሮ እዚ እዩ፡"
+        ),
+        "comparison_fallback": (
+            "ፍሉያት ባንክታት ከወዳድር ኣይክእልን፣ እንተኾነ ብዛዕባ ናይ {bank} ሕሳባት፣ "
+            "ኣገልግሎታትን ባህርያትን ብሓጎስ ክነግረኩም እኽእል እየ — እንታይ ክትፈልጡ ትደልዩ?"
+        ),
     },
     "so": {
         "greeting": (
@@ -142,6 +176,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
         "fallback_intro": "Waa kan waxa aan ka helay macluumaadka rasmiga ah ee {bank}:",
         "sources_label": "Ilaha",
+        "comparison_intro": (
+            "Ma bixin karo faallo ku saabsan bangiyada kale, laakiin waa kan "
+            "{bank} xoog ka dhigaya:"
+        ),
+        "comparison_fallback": (
+            "Ma barbardhigi karo bangiyo gaar ah, laakiin waan kuu sheegi "
+            "lahaa xisaabaadka, adeegyada, iyo astaamaha {bank} — maxaad "
+            "rabtaa inaad ogaato?"
+        ),
     },
 }
 

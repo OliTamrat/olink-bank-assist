@@ -101,6 +101,31 @@ def _score_corpus(
     return results
 
 
+MIN_INFORMATIVE_RATIO = 0.5
+SHORT_QUERY_CONTENT_WORDS = 3
+"""A chunk only counts as "found" if a real fraction of the query's own
+content words show up as non-generic matches in it — not just any single
+incidental overlap. Without this, a question like "Are you officially
+endorsed by CBE?" matches on one or two weak, unrelated terms and returns
+an irrelevant document instead of the honest "I don't know" — a
+wrong-looking answer erodes trust as much as a wrong one.
+
+The ratio only applies once a query has more than SHORT_QUERY_CONTENT_WORDS
+content words. Below that, a single informative match is enough. This is a
+deliberate, tested asymmetry, not an oversight: false-positive risk (an
+irrelevant chunk sneaking past the gate) grows with query length, because
+longer queries have more surface area for coincidental overlap — that's
+exactly the adversarial pattern this gate defends against, and every
+adversarial case found in practice was 5+ content words. A short, specific
+query like "How do I open a diaspora account?" (3 content words: open,
+diaspora, account) has essentially no room for that kind of accident — if
+"diaspora" matches at all, it's matching the right document. Provably no
+single ratio can satisfy both constraints at once (the short diaspora query
+needs ratio <= 1/3 to pass; the adversarial cases need ratio > 0.4 to be
+rejected) — see tests/test_cbe_adversarial.py for the cases that pinned
+this down."""
+
+
 def retrieve(db: Session, bank_id: str, query: str, top_k: int = 4) -> list[RetrievedChunk]:
     """Top-k chunks for this bank only. Empty list means: we do not know."""
     rows = db.execute(
@@ -113,10 +138,18 @@ def retrieve(db: Session, bank_id: str, query: str, top_k: int = 4) -> list[Retr
 
     by_id = {chunk.id: (chunk, title) for chunk, title in rows}
     corpus = [(chunk.id, tokenize(chunk.text)) for chunk, _ in rows]
-    scored = _score_corpus(corpus, tokenize(query))
+    query_tokens = tokenize(query)
+    content_tokens = [t for t in query_tokens if t not in _STOPWORDS]
+    if not content_tokens:
+        min_informative = 0
+    elif len(content_tokens) <= SHORT_QUERY_CONTENT_WORDS:
+        min_informative = 1
+    else:
+        min_informative = math.ceil(len(content_tokens) * MIN_INFORMATIVE_RATIO)
+    scored = _score_corpus(corpus, query_tokens)
 
     hits = sorted(
-        (item for item in scored if item[1] > 0 and item[2] >= 1),
+        (item for item in scored if item[1] > 0 and item[2] >= max(1, min_informative)),
         key=lambda item: item[1],
         reverse=True,
     )[:top_k]
