@@ -93,6 +93,68 @@ def test_document_create_update_delete_reindexes(client: TestClient, demo_bank: 
     assert "99 birr" not in answer["reply"]
 
 
+def test_bulk_document_import_creates_and_reindexes_all(
+    client: TestClient, demo_bank: Any
+) -> None:
+    headers = {"X-Admin-Token": demo_bank.admin_token}
+    resp = client.post(
+        "/admin/api/demo/documents/bulk",
+        headers=headers,
+        json={
+            "documents": [
+                {
+                    "title": "Kappa Business Loan",
+                    "content": "The Kappa Business Loan carries a 7 birr processing fee.",
+                    "category": "products",
+                },
+                {
+                    "title": "Omega Diaspora Account",
+                    "content": "The Omega Diaspora Account requires a passport copy.",
+                    "language": "am",
+                },
+            ]
+        },
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["created"] == 2
+    assert len(data["ids"]) == 2
+
+    answer = client.post("/chat/demo", json={"message": "What is the Kappa loan fee?"}).json()
+    assert "7 birr" in answer["reply"]
+
+
+def test_bulk_document_import_rejects_whole_batch_on_bad_language(
+    client: TestClient, demo_bank: Any
+) -> None:
+    headers = {"X-Admin-Token": demo_bank.admin_token}
+    before = client.get("/admin/api/demo/documents", headers=headers).json()
+
+    resp = client.post(
+        "/admin/api/demo/documents/bulk",
+        headers=headers,
+        json={
+            "documents": [
+                {"title": "Valid Doc", "content": "Fine content."},
+                {"title": "Bad Doc", "content": "Bad content.", "language": "fr"},
+            ]
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["invalid_documents"][0]["title"] == "Bad Doc"
+
+    after = client.get("/admin/api/demo/documents", headers=headers).json()
+    assert len(after) == len(before)  # nothing partially imported
+
+
+def test_bulk_document_import_requires_admin_token(client: TestClient, demo_bank: Any) -> None:
+    resp = client.post(
+        "/admin/api/demo/documents/bulk",
+        json={"documents": [{"title": "X", "content": "Y"}]},
+    )
+    assert resp.status_code == 401
+
+
 def test_telegram_webhook_rejects_bad_secret(
     client: TestClient, demo_bank: Any, db_session: Any
 ) -> None:

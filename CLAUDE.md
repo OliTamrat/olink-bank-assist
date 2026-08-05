@@ -308,10 +308,21 @@ Remaining polish, not blockers:
       bank pilot (Onekof TSV workflow).
 - [x] Load a real bank's *public* website content → done 2026-08-05, now
       three tenants (CBE, Dashen, Awash) — see above and `seed_common.py`.
-      Loaded via seed scripts rather than the admin panel UI (admin panel
-      has no bulk-import, just single-document CRUD — fine at ~15-19 docs
-      per bank via a script, would want a bulk import path before this
-      pattern scales past a handful of prospect demos).
+      Loaded via seed scripts rather than the admin panel UI at the time.
+- [x] Admin panel bulk-import → done 2026-08-05.
+      `POST /admin/api/{slug}/documents/bulk` accepts `{"documents": [...]}`
+      (same shape as the single-document `DocumentIn`, up to 200 per
+      request), reindexes every document, and is **all-or-nothing**: any
+      unsupported `language` code in the batch rejects the whole request
+      with 422 (`invalid_documents` lists which entries) rather than
+      importing half a knowledge base and leaving gaps for the admin to
+      notice later. `admin.html`'s Knowledge Base tab has a matching Bulk
+      Import card — paste a JSON array or pick a `.json` file (read
+      client-side via `FileReader`, no upload endpoint needed). This is the
+      real onboarding path for **Phase 2's "their real knowledge base"** —
+      a bank/MFI's content team exports or is handed a JSON list, not a
+      one-off Python seed script written per-tenant the way CBE/Dashen/Awash
+      were.
 - [ ] Deploy demo instance — `DEPLOY.md` has the full Cloud Run + GitHub
       Actions CI/CD setup (written 2026-08-05, not yet executed — this
       sandbox has no gcloud/GCP credentials, so a human needs to run the
