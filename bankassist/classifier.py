@@ -57,6 +57,7 @@ GREETING = "greeting"
 ACCOUNT_SPECIFIC = "account_specific"
 INVESTMENT_ADVICE = "investment_advice"
 COMPLAINT = "complaint"
+COMPARISON = "comparison"  # "is X better than us?" — answer confidently, never via retrieval
 QUESTION = "question"  # product / how-to / education — the answerable bucket
 
 _GREETING_RE = re.compile(
@@ -97,8 +98,45 @@ _COMPLAINT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Deliberately does NOT hardcode a competitor's name or a fixed bank name —
+# this classifier is shared across every tenant. The bank-name-agnostic
+# alternatives ("than you", "than this bank", "which bank is better") always
+# apply; a tenant's own name/slug is spliced in by _comparison_re() below so
+# "is Dashen better than CBE" is caught for the CBE tenant without this
+# module knowing "CBE" exists. Scoped to clear comparison phrasing; a rarer
+# shape like "what does X offer that we don't" isn't covered and falls
+# through to the ordinary retrieval path (a safe, if less confident,
+# default) — a deliberate scoping choice, not an oversight.
+_COMPARISON_GENERIC = (
+    r"\bis .*(better|worse) than (you|this bank)\b|"
+    r"\bcompare (you|this bank) (to|with)\b|"
+    r"\bwhy (choose|use|pick|should i (choose|use|pick)) you\b|"
+    r"\bwhich (bank )?is better\b|"
+    r"\bis there a better bank\b|"
+    r"\bshould i (switch|move|change) banks?\b"
+)
 
-def classify_intent(text: str) -> str:
+
+def _comparison_re(bank_aliases: tuple[str, ...]) -> re.Pattern[str]:
+    """Comparison-intent pattern for a specific tenant. `bank_aliases` should
+    be the names/short forms a customer would actually type (e.g. a bank's
+    slug and display name) — matched case-insensitively, literally (no
+    partial-word bleed, e.g. "cbe" won't match inside another word)."""
+    parts = [_COMPARISON_GENERIC]
+    for alias in bank_aliases:
+        escaped = re.escape(alias)
+        parts.append(
+            rf"\bis .*(better|worse) than {escaped}\b|"
+            rf"\bis {escaped} (better|worse) than\b|"
+            rf"\b{escaped} (vs\.?|versus) \w|"
+            rf"\bcompare {escaped} (to|with|and)\b|"
+            rf"\bwhy (choose|use|pick|should i (choose|use|pick)) {escaped}\b|"
+            rf"\bshould i (switch|move|change) (banks? )?to {escaped}\b"
+        )
+    return re.compile("|".join(parts), re.IGNORECASE)
+
+
+def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
     if _GREETING_RE.match(text):
         return GREETING
     if _COMPLAINT_RE.search(text):
@@ -107,10 +145,12 @@ def classify_intent(text: str) -> str:
         return ACCOUNT_SPECIFIC
     if _ADVICE_RE.search(text):
         return INVESTMENT_ADVICE
+    if _comparison_re(bank_aliases).search(text):
+        return COMPARISON
     return QUESTION
 
 
 # The auto-answer allowlist, same doctrine as Olink Dispatch: only intents
 # named here are answered autonomously; everything else routes to a human
 # path or a safety template.
-AUTO_ANSWER_INTENTS = frozenset({GREETING, QUESTION, INVESTMENT_ADVICE})
+AUTO_ANSWER_INTENTS = frozenset({GREETING, QUESTION, INVESTMENT_ADVICE, COMPARISON})

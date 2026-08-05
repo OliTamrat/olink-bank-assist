@@ -107,12 +107,17 @@ def test_cross_tenant_probe_leaks_nothing_and_admits_unknown(
     assert data["handoff_created"] is True
 
 
-def test_competitor_question_does_not_fabricate_a_comparison(
+def test_competitor_question_sells_cbe_without_naming_or_disparaging_rival(
     client: TestClient, cbe_bank: Any
 ) -> None:
+    # Deliberate product behavior (not a safety default): a comparison
+    # question should confidently answer with CBE's own sourced strengths,
+    # never with a claim about the named competitor and never with silence.
     data = _ask(client, "Is Dashen Bank better than CBE?")
-    assert data["handoff_created"] is True
+    assert data["intent"] == "comparison"
+    assert data["handoff_created"] is False
     assert "dashen" not in data["reply"].lower()
+    assert "1,900 branches" in data["reply"] or "CBE Noor" in data["reply"]
 
 
 def test_hostile_input_does_not_crash_or_return_a_non_sequitur(
@@ -138,3 +143,36 @@ def test_false_premise_is_not_affirmed(client: TestClient, cbe_bank: Any) -> Non
     # base actually supports the premise.
     data = _ask(client, "Since CBE charges no fees at all, why do people complain?")
     assert "no fees at all" not in data["reply"].lower()
+
+
+def test_comparison_question_answers_confidently_from_why_choose_doc(
+    client: TestClient, cbe_bank: Any
+) -> None:
+    for question in (
+        "Is Dashen Bank better than CBE?",
+        "Why should I choose CBE?",
+        "CBE vs Awash, which is better?",
+        "Should I switch to CBE?",
+    ):
+        data = _ask(client, question)
+        assert data["intent"] == "comparison", question
+        assert data["handoff_created"] is False, question
+        assert data["sources"] == [
+            {"document_id": data["sources"][0]["document_id"], "title": "Why Choose CBE"}
+        ], question
+        lowered = data["reply"].lower()
+        assert "dashen" not in lowered and "awash" not in lowered, question
+        assert "1,900 branches" in data["reply"] or "cbe noor" in lowered, question
+
+
+def test_comparison_fallback_when_tenant_has_no_why_choose_doc(
+    client: TestClient, demo_bank: Any
+) -> None:
+    # Demo Bank never loaded a "why choose us" document — the comparison
+    # intent still needs a confident, on-brand answer, not a handoff or a
+    # claim about a competitor named "Demo Bank" happens to trigger against.
+    data = client.post("/chat/demo", json={"message": "Should I switch banks?"}).json()
+    assert data["intent"] == "comparison"
+    assert data["handoff_created"] is False
+    assert data["sources"] == []
+    assert "Demo Bank Ethiopia" in data["reply"]

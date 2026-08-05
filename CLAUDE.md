@@ -112,7 +112,7 @@ right"):
 
 **CBE sales-demo tenant (2026-08-05, hardened same day).**
 `bankassist/seed_cbe.py` seeds a second tenant (`slug=cbe`) from Commercial
-Bank of Ethiopia's real public information — 18 documents (16 EN, 2 AM),
+Bank of Ethiopia's real public information — 19 documents (17 EN, 2 AM),
 CBE's maroon brand color, and a mandatory `Bank.disclaimer` banner
 ("Unofficial prototype... Not affiliated with, endorsed by, or an official
 channel of CBE") rendered in the widget so it can never be mistaken for
@@ -178,7 +178,7 @@ not cosmetic:**
    account`, `report a fraud`) rather than the bare word. This bug predates
    the CBE tenant and would have affected Demo Bank too.
 
-`tests/test_cbe_adversarial.py` (10 tests) and `tests/test_cbe_demo.py`
+`tests/test_cbe_adversarial.py` (12 tests) and `tests/test_cbe_demo.py`
 (6 tests) lock all of this in, alongside two retrieval-ranking regressions
 found earlier the same day: BM25 has no stemming, so a document's verbose
 *comparisons* to another topic can out-rank the document actually about the
@@ -194,6 +194,43 @@ none?") still misroutes to the complaint handoff via a third-person mention,
 not a personal complaint — low severity (safe fail-mode, doesn't hallucinate
 or leak) and not fixed, since a more precise regex risked new false
 negatives on real complaints. Documented rather than silently patched.
+
+**Competitor-comparison intent added (2026-08-05, founder feedback):**
+refusing to compare against a named competitor was correct caution, but
+going *silent* instead of confidently selling the bank's own real strengths
+was a genuine product gap, not a safety win — a bank chatbot that can't say
+anything when asked "is X better than you?" looks broken, not careful. New
+`COMPARISON` intent in `classifier.py`, detected via `_comparison_re()`,
+answered as a fixed, deterministic template — **never via the fuzzy BM25
+retriever**, and **never by naming or making a claim about the specific
+competitor**, only ever the bank's own sourced facts, positively framed.
+Two design points worth preserving if this is touched again:
+- **The classifier hardcodes no bank's name.** It's shared across every
+  tenant; `classify_intent(text, bank_aliases=...)` takes the calling
+  tenant's slug/name as call-time arguments (`agent.py`'s `_bank_aliases()`
+  builds them from the `Bank` row), so "is Dashen better than CBE" is
+  caught for the `cbe` tenant without the module knowing "CBE" exists.
+  Name-agnostic phrasings ("better than you", "which bank is better")
+  always work with zero aliases.
+- **Content lookup is a direct category query, not retrieval.** A document
+  tagged `agent.WHY_CHOOSE_CATEGORY` ("why-choose-us") is looked up by
+  `bank_id` + `category` directly — deliberately bypassing the BM25
+  informative-match gate entirely. A comparison question structurally
+  contains a competitor's name, which by design never appears in this
+  bank's own content, so the fuzzy scorer would have to be *reopened* to
+  ever match it — reintroducing exactly the false-positive risk the
+  adversarial hardening above just closed. A tenant with no such document
+  (e.g. Demo Bank) gets a generic, still-confident redirect template
+  (`comparison_fallback` in `i18n.py`) — never a handoff, never silence.
+
+CBE's `Why Choose CBE` document introduces no new facts — it reuses figures
+already in `SOURCES.md` (1942 founding, 1,900+ branches, CBE Noor's 8M+
+customers, CBE Connect, the SWIFT code), reframed positively. Any future
+bank tenant that wants this behavior needs its own document in this
+category; without one, the fallback template still applies.
+`tests/test_cbe_adversarial.py::test_comparison_question_answers_confidently_from_why_choose_doc`
+and `::test_comparison_fallback_when_tenant_has_no_why_choose_doc` cover
+both paths; `tests/test_classifier.py` covers the alias-scoping behavior.
 
 ## Roadmap over the horizon
 

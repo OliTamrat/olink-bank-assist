@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from bankassist.classifier import (
     ACCOUNT_SPECIFIC,
+    COMPARISON,
     COMPLAINT,
     GREETING,
     INVESTMENT_ADVICE,
@@ -86,3 +87,38 @@ def test_balance_requirement_questions_are_not_account_specific() -> None:
         == QUESTION
     )
     assert classify_intent("How much balance do I need to open a diaspora account?") == QUESTION
+
+
+def test_comparison_needs_a_bank_alias_to_match_a_named_query() -> None:
+    # The classifier is shared across every tenant and hardcodes no bank's
+    # name — without an alias, "than CBE" specifically doesn't match, only
+    # the name-agnostic phrasings do.
+    assert classify_intent("Is Dashen Bank better than CBE?") == QUESTION
+    assert classify_intent("Is Dashen Bank better than CBE?", bank_aliases=("cbe",)) == (
+        COMPARISON
+    )
+    assert (
+        classify_intent(
+            "Is Dashen Bank better than CBE?", bank_aliases=("dbe", "Different Bank")
+        )
+        == QUESTION
+    )
+
+
+def test_comparison_generic_phrasings_need_no_alias() -> None:
+    assert classify_intent("Why should I choose you over another bank?") == COMPARISON
+    assert classify_intent("Which bank is better?") == COMPARISON
+    assert classify_intent("Should I switch banks?") == COMPARISON
+    assert classify_intent("Is there a better bank out there?") == COMPARISON
+
+
+def test_comparison_aliased_phrasing_variants() -> None:
+    aliases = ("cbe", "Commercial Bank of Ethiopia")
+    for text in (
+        "Is CBE better than my current bank?",
+        "CBE vs Dashen, which is better?",
+        "Compare CBE to Awash Bank.",
+        "Why should I choose CBE?",
+        "Should I switch to CBE?",
+    ):
+        assert classify_intent(text, bank_aliases=aliases) == COMPARISON, text

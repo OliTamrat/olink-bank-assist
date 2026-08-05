@@ -17,18 +17,33 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import classifier
 from .i18n import t
 from .llm import LLMUnavailable, generate_answer
 from .logging_config import log_event
-from .models import AuditLog, Bank, Conversation, Handoff, Message
+from .models import AuditLog, Bank, Conversation, Document, Handoff, Message
 from .retrieval import RetrievedChunk, retrieve
 
 logger = logging.getLogger(__name__)
 
 MAX_FALLBACK_CHUNKS = 2
+
+# A document tagged with this category is this bank's confident, positive
+# answer to "why should I choose you over another bank?" — looked up
+# directly, not via the fuzzy BM25 scorer. A comparison question names a
+# competitor, which by design never appears in this bank's own content, so
+# ordinary retrieval on the user's raw text can't find it; the intent match
+# (classifier.COMPARISON) already tells us what's being asked. A tenant
+# without one of these documents gets the generic redirect template instead
+# of a handoff — never silence, and never a claim about the competitor.
+WHY_CHOOSE_CATEGORY = "why-choose-us"
+
+
+def _bank_aliases(bank: Bank) -> tuple[str, ...]:
+    return tuple({alias for alias in (bank.slug, bank.name) if alias})
 
 
 @dataclass
@@ -83,7 +98,7 @@ def handle_message(
     language = detected or conversation.language or bank.default_language
     conversation.language = language
 
-    intent = classifier.classify_intent(text)
+    intent = classifier.classify_intent(text, bank_aliases=_bank_aliases(bank))
     db.add(
         Message(
             conversation_id=conversation.id,
@@ -102,6 +117,19 @@ def handle_message(
     elif intent == classifier.COMPLAINT:
         _create_handoff(db, bank, conversation, "complaint", text[:2000])
         result = ChatResult(t(language, "complaint_ack"), intent, language, handoff_created=True)
+    elif intent == classifier.COMPARISON:
+        why_choose = db.execute(
+            select(Document).where(
+                Document.bank_id == bank.id, Document.category == WHY_CHOOSE_CATEGORY
+            )
+        ).scalars().first()
+        if why_choose is None:
+            reply = t(language, "comparison_fallback", bank=bank.name)
+            result = ChatResult(reply, intent, language)
+        else:
+            reply = f"{t(language, 'comparison_intro', bank=bank.name)}\n\n{why_choose.content}"
+            sources = [{"document_id": why_choose.id, "title": why_choose.title}]
+            result = ChatResult(reply, intent, language, sources=sources)
     else:
         chunks = retrieve(db, bank.id, text)
         if not chunks:

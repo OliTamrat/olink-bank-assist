@@ -46,6 +46,13 @@ then open `http://localhost:8100/widget?bank=cbe`.
    instead of a hallucinated answer. **This is the guardrail pitch — make it
    explicit**: "Every question it can't answer becomes a ticket your team
    sees. Nothing gets guessed."
+5b. **Ask a competitor question**: *"Is Dashen Bank better than CBE?"* → it
+   doesn't go silent and doesn't say anything about Dashen — it confidently
+   answers with CBE's own real strengths (1942 founding, 1,900+ branches,
+   CBE Noor's 8M+ customers, CBE Connect, the works). This is the pairing
+   that sells the architecture: caution where caution is right (guardrails,
+   step 5), confidence where confidence is right (selling CBE, step 5b) —
+   never confused about which situation it's in.
 6. If asked about integration: mobile banking activation, telebirr
    transfers, ATM cards, diaspora accounts, and loan eligibility are all in
    the knowledge base — invite them to ask their own question live.

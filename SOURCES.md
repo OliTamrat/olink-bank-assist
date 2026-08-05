@@ -42,6 +42,16 @@ sheet or branch visit.**
 | CBE Connect (diaspora remittance platform) | — | [birrmetrics.com](https://birrmetrics.com/cbe-connect-opens-the-floodgates-for-money-coming-home-outbound-flow-still-on-pause/) |
 | CBE Birr agent eligibility (nationality, 1yr business, TIN, trade license) | — | [mfw4a.org](https://www.mfw4a.org/news/ethiopia-commercial-bank-ready-launch-agent-banking) |
 | "Follow only official channels" fraud-safety guidance | — | [addisinsight.net](https://addisinsight.net/2025/02/28/commercial-bank-of-ethiopia-tightens-access-to-customer-accounts-amid-escalating-fraud-crisis/), corroborated by birrmetrics.com |
+| CBE founded in 1942 | — | title of CBE's own "CBE in Brief" PDF, surfaced via search snippet: [combanketh.et/cbeapi/uploads/CBE_Products_and_services_English...pdf](https://combanketh.et/cbeapi/uploads/CBE_Products_and_services_English_84e511c740.pdf) |
+
+**"Why Choose CBE" document (2026-08-05):** introduces no new facts — it
+reuses figures already sourced above (founding year, branch count, CBE Noor
+scale, diaspora/CBE Connect, SWIFT code, agent banking) reframed positively
+for comparison-intent questions ("is X better than CBE?"). It never names a
+specific competitor or makes a claim about one — see CLAUDE.md for why
+(comparative claims about a named real competitor carry their own
+substantiation/legal risk, separate from the accuracy-about-CBE-itself
+concern the rest of this file addresses).
 
 **Deliberately excluded:** CBE's fraud-loss figures and the 2024 ATM/system
 glitch incident are real, widely reported news but are not included in the

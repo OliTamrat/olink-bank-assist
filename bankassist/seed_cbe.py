@@ -19,6 +19,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from .agent import WHY_CHOOSE_CATEGORY
 from .db import get_engine, init_db
 from .models import Bank, Document
 from .retrieval import reindex_document
@@ -32,6 +33,40 @@ _DISCLAIMER = (
 )
 
 _DOCS: list[dict[str, str]] = [
+    {
+        # Looked up directly by category for COMPARISON-intent questions
+        # ("is X better than CBE?") — see agent.py's WHY_CHOOSE_CATEGORY.
+        # Never names or makes claims about a specific competitor; states
+        # only CBE's own sourced facts, positively.
+        "title": "Why Choose CBE",
+        "category": WHY_CHOOSE_CATEGORY,
+        "language": "en",
+        "content": (
+            "Commercial Bank of Ethiopia is Ethiopia's oldest and largest "
+            "bank, founded in 1942, with a nationwide network of over 1,900 "
+            "branches — the widest branch reach of any bank in the "
+            "country.\n\n"
+            "CBE offers one of the most complete digital banking ecosystems "
+            "in Ethiopia: CBE Mobile Banking, the CBE Birr mobile wallet, "
+            "and CBE Noor — CBE's interest-free banking service, the first "
+            "of its kind in Ethiopia, now serving over 8 million customers "
+            "with more than 266 billion birr in deposits, more than half "
+            "of the entire domestic interest-free banking market.\n\n"
+            "For customers abroad, CBE offers dedicated diaspora accounts "
+            "in USD, GBP, and EUR, plus CBE Connect, a digital platform "
+            "built specifically to make sending money home easier, and "
+            "international transfers through CBE's own SWIFT network "
+            "(SWIFT/BIC: CBETETAA).\n\n"
+            "CBE also extends its reach through CBE Birr agents — "
+            "authorized local businesses bringing basic banking services "
+            "to areas without a full branch — and supports businesses "
+            "directly, from ordinary current accounts to accounts linked "
+            "to the Ethiopian Commodity Exchange.\n\n"
+            "Whatever matters most — branch access, digital convenience, "
+            "interest-free banking, or reaching family abroad — CBE was "
+            "built to offer it at national scale."
+        ),
+    },
     {
         "title": "Ordinary Savings Account",
         "category": "products",
