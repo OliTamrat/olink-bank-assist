@@ -78,6 +78,15 @@ def _score_corpus(
         for term in set(tokens):
             df[term] += 1
     avg_len = sum(len(tokens) for _, tokens in corpus) / n
+    # A stopword, or a term sitting in at least half the corpus, carries no
+    # signal; it must not count toward "we actually found something". This
+    # is ceil(n/2) - 1, floored at 1: strictly *below* half (not "at most
+    # half" — a term in exactly half the corpus is exactly as generic as
+    # one in 60% of it, and "<=" let a bank's own name ("bank", present in
+    # precisely half of one bank's chunks) slip through as informative).
+    # The floor of 1 preserves retrievability for tiny corpora — for a
+    # single-chunk corpus this still allows df=1 to count.
+    informative_df_ceiling = max(1, (n + 1) // 2 - 1)
 
     results: list[tuple[str, float, int]] = []
     for chunk_id, tokens in corpus:
@@ -89,10 +98,7 @@ def _score_corpus(
             if freq == 0:
                 continue
             term_df = df[term]
-            # A stopword, or a term appearing in more than half the corpus,
-            # carries no signal; it must not count toward "we actually found
-            # something". max(1, …) keeps a single-chunk corpus retrievable.
-            if term not in _STOPWORDS and term_df <= max(1.0, n / 2):
+            if term not in _STOPWORDS and term_df <= informative_df_ceiling:
                 informative += 1
             idf = math.log((n - term_df + 0.5) / (term_df + 0.5) + 1)
             denom = freq + BM25_K1 * (1 - BM25_B + BM25_B * len(tokens) / avg_len)

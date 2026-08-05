@@ -232,6 +232,71 @@ category; without one, the fallback template still applies.
 and `::test_comparison_fallback_when_tenant_has_no_why_choose_doc` cover
 both paths; `tests/test_classifier.py` covers the alias-scoping behavior.
 
+**Dashen Bank and Awash Bank prospect-demo tenants added (2026-08-05).**
+Same doctrine as CBE, no exceptions: `bankassist/seed_dashen.py` and
+`seed_awash.py`, each with a mandatory disclaimer banner, sourced content
+only (`SOURCES_DASHEN.md`, `SOURCES_AWASH.md`), and a `Why Choose <Bank>`
+document for the comparison intent. **These are private pitch-demo
+prototypes, not live public products** — founder decision 2026-08-05,
+made explicitly after being asked to build them as "a SaaS product" that
+would "help this business brand in their market." Building a live,
+publicly-branded bot under a real bank's name — before that bank has any
+relationship with, or knowledge of, this project — is trademark/
+impersonation and financial-regulatory risk with a real, named,
+non-consenting company. **If a future session is asked to "make Dashen or
+Awash live" or "launch this for [bank]," that means signing an actual deal
+with that bank first, then loading their real verified content through the
+admin panel — never just flipping a switch on the existing prototype.**
+The disclaimer banner is the enforcement mechanism; do not remove or make
+it conditional without that same explicit, re-confirmed authorization.
+
+Extracted `seed_common.py` (`prospect_disclaimer()` + `seed_prospect_bank()`)
+so the fourth bank tenant is a content file, not new plumbing — every
+prospect-demo seed script now follows: aliases/name/color, `_DOCS` list, one
+`seed()` call. `dashenbanksc.com` and `awashbank.com` were both unreachable
+for direct fetching during research (same session-wide/site-specific fetch
+failures CBE hit) — content is search-synthesis-sourced throughout, with
+the same discipline of leaving contested or single-source figures
+qualitative. Two research agents were dispatched in parallel and both
+explicitly flagged their own confidence levels per fact — trust that
+grading; it's what let contested figures (Dashen's regular savings rate,
+Awash's branch count) get caught before they became false facts in a
+demo.
+
+**Two more real bugs found while building these, both fixed and now
+regression-tested — read before touching retrieval.py or classifier.py's
+comparison pattern again:**
+
+1. **A term in exactly half the corpus counted as "informative."** The
+   original `retrieval.py` gate was `term_df <= max(1, n/2)`. On Awash's
+   22-chunk corpus, the word "bank" sat in exactly 11 chunks — precisely
+   at that boundary — and was the *only* thing making "Is CBE Bank
+   better?" match anything at all (the other two content words, "cbe" and
+   "better", appear zero times in Awash's own corpus). Fixed by tightening
+   the ceiling to strictly below half:
+   `informative_df_ceiling = max(1, (n + 1) // 2 - 1)`, replacing the
+   comparison operator's role with a stricter formula rather than a naive
+   `<` (which would break single-chunk-corpus retrievability — verified
+   this edge case explicitly, see `test_informative_excludes_term_in_exactly_half_the_corpus`
+   / `test_informative_includes_term_below_half_the_corpus` in
+   `test_retrieval.py`). **This generalizes past this one bank** — any
+   future tenant's corpus composition could put some other word at exactly
+   50% by coincidence; the fix is in the shared algorithm, not per-tenant.
+2. **The comparison regex required an explicit "than X."** "Is CBE
+   better?" (bare, no "than [bank]") didn't match `classify_intent`'s
+   alias-specific pattern, so asking a bank's own assistant "is CBE
+   better?" about *itself* fell through to ordinary retrieval instead of
+   the comparison template. Fixed by adding a bare `\bis {alias}
+   (better|worse)\b` alternative (still also matches the "than X" form,
+   since that's a superset) in `_comparison_re()`. **Deliberately not
+   extended to the "is [other named bank] better?" direction without an
+   explicit "than {this bank}"** — see the existing scoping comment in
+   `classifier.py`; that stays a documented limitation
+   (`test_dashen_demo.py`'s cross-tenant test and
+   `test_awash_demo.py::test_comparison_question_does_not_leak_unrelated_document`
+   assert the *safe* fallback for it: no wrong-document leak, not full
+   comparison-intent coverage).
+
 ## Roadmap over the horizon
 
 ### Phase 1 — Demo bot ✅ (this repo, done; infra hardened)
@@ -241,12 +306,16 @@ Remaining polish, not blockers:
 - [ ] Linguist review of OM/TI/SO strings in `i18n.py` — **founder decision
       2026-08-04: parked, explicitly NOT a blocker.** Revisit before a real
       bank pilot (Onekof TSV workflow).
-- [x] Load a real bank's *public* website content → done 2026-08-05, see CBE
-      tenant above. Loaded via a seed script rather than the admin panel UI
-      (admin panel has no bulk-import, just single-document CRUD — fine for
-      12 docs, would want a bulk path before doing a second real bank).
-- [ ] Deploy demo instance (any cloud is fine pre-PII; Cloud Run pattern from
-      olink-dispatch works — remember `--port` must match uvicorn)
+- [x] Load a real bank's *public* website content → done 2026-08-05, now
+      three tenants (CBE, Dashen, Awash) — see above and `seed_common.py`.
+      Loaded via seed scripts rather than the admin panel UI (admin panel
+      has no bulk-import, just single-document CRUD — fine at ~15-19 docs
+      per bank via a script, would want a bulk import path before this
+      pattern scales past a handful of prospect demos).
+- [ ] Deploy demo instance — `DEPLOY.md` has the full Cloud Run + GitHub
+      Actions CI/CD setup (written 2026-08-05, not yet executed — this
+      sandbox has no gcloud/GCP credentials, so a human needs to run the
+      one-time setup). Remember `--port` must match uvicorn.
 - [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`
       (needs public HTTPS)
 

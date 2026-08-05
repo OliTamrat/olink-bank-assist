@@ -127,7 +127,11 @@ def _comparison_re(bank_aliases: tuple[str, ...]) -> re.Pattern[str]:
         escaped = re.escape(alias)
         parts.append(
             rf"\bis .*(better|worse) than {escaped}\b|"
-            rf"\bis {escaped} (better|worse) than\b|"
+            # Bare form deliberately does NOT require a trailing "than X" —
+            # "Is CBE better?" asked of the CBE assistant is unambiguous
+            # without one, and this still matches "is CBE better than
+            # Dashen" too since that's a superset of this same prefix.
+            rf"\bis {escaped} (better|worse)\b|"
             rf"\b{escaped} (vs\.?|versus) \w|"
             rf"\bcompare {escaped} (to|with|and)\b|"
             rf"\bwhy (choose|use|pick|should i (choose|use|pick)) {escaped}\b|"
