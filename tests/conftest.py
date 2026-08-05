@@ -56,6 +56,22 @@ def cbe_bank(client: TestClient, db_session: Session) -> object:
 
 
 @pytest.fixture()
+def dashen_bank(client: TestClient, db_session: Session) -> object:
+    from bankassist.seed_dashen import seed as seed_dashen
+
+    bank, _ = seed_dashen()
+    return bank
+
+
+@pytest.fixture()
+def awash_bank(client: TestClient, db_session: Session) -> object:
+    from bankassist.seed_awash import seed as seed_awash
+
+    bank, _ = seed_awash()
+    return bank
+
+
+@pytest.fixture()
 def second_bank(client: TestClient, db_session: Session) -> object:
     from bankassist.models import Bank, Document
     from bankassist.retrieval import reindex_document

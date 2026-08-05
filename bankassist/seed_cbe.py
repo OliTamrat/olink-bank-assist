@@ -16,21 +16,12 @@ Run:  python -m bankassist.seed_cbe
 
 from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
-
 from .agent import WHY_CHOOSE_CATEGORY
-from .db import get_engine, init_db
-from .models import Bank, Document
-from .retrieval import reindex_document
+from .models import Bank
+from .seed_common import prospect_disclaimer, seed_prospect_bank
 
 CBE_SLUG = "cbe"
-
-_DISCLAIMER = (
-    "Unofficial prototype built from CBE's public information for a product "
-    "demo. Not affiliated with, endorsed by, or an official channel of "
-    "Commercial Bank of Ethiopia."
-)
+CBE_NAME = "Commercial Bank of Ethiopia"
 
 _DOCS: list[dict[str, str]] = [
     {
@@ -417,27 +408,13 @@ _DOCS: list[dict[str, str]] = [
 
 def seed() -> tuple[Bank, bool]:
     """Create the CBE prospect-demo bank if missing. Returns (bank, created)."""
-    init_db()
-    factory = sessionmaker(bind=get_engine(), expire_on_commit=False)
-    with factory() as db:
-        existing = db.execute(select(Bank).where(Bank.slug == CBE_SLUG)).scalar_one_or_none()
-        if existing is not None:
-            return existing, False
-        bank = Bank(
-            slug=CBE_SLUG,
-            name="Commercial Bank of Ethiopia",
-            primary_color="#7a1f2b",
-            disclaimer=_DISCLAIMER,
-        )
-        db.add(bank)
-        db.flush()
-        for spec in _DOCS:
-            doc = Document(bank_id=bank.id, **spec)
-            db.add(doc)
-            db.flush()
-            reindex_document(db, doc)
-        db.commit()
-        return bank, True
+    return seed_prospect_bank(
+        slug=CBE_SLUG,
+        name=CBE_NAME,
+        primary_color="#7a1f2b",
+        disclaimer=prospect_disclaimer("CBE", CBE_NAME),
+        docs=_DOCS,
+    )
 
 
 if __name__ == "__main__":
