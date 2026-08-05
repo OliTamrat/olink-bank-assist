@@ -6,13 +6,14 @@ already have `gcloud` authenticated against your Olink projects). After
 that one-time setup, `.github/workflows/deploy.yml` auto-deploys on every
 push to `main` that passes CI — no manual steps after today.
 
-## Decisions needed before you start
+## Decisions
 
-1. **Which GCP project?** A new dedicated `bank-assist` project, or reuse
-   an existing Olink project (e.g. the one `olink-dispatch` runs in)? A
-   dedicated project is cleaner for billing/IAM isolation on a new product;
-   reusing one is faster. Either works — the commands below are the same,
-   just substitute `$PROJECT_ID`.
+1. **GCP project: decided.** A new, dedicated project — `olink-bank-assist`
+   below, but any available project ID works, just substitute `$PROJECT_ID`
+   in every command. Dedicated (not folded into the project `olink-dispatch`
+   runs in) for clean billing and IAM isolation on a new product from day
+   one — same reasoning as the separate Supabase project below, and the
+   separate GitHub repo this product already lives in.
 2. **Postgres: decided.** Use your existing Olink Supabase **organization**
    (same account, `olink-dispatch` already lives there) but create a **new,
    separate Supabase project** dedicated to bank-assist — never point at
@@ -45,12 +46,24 @@ push to `main` that passes CI — no manual steps after today.
       under one Olink organization, same as this is a separate GitHub repo
       under one Olink account.
 
+## Create the GCP project
+
+```bash
+export PROJECT_ID="olink-bank-assist"   # or your own choice — must be globally unique
+export REGION="us-east1"
+
+gcloud projects create "$PROJECT_ID" --name="Olink Bank Assist"
+
+# A brand-new project has no billing linked, and Cloud Run/Artifact
+# Registry/Secret Manager all refuse to enable without it. List your
+# existing billing accounts, then link the one you already use for Olink:
+gcloud billing accounts list
+gcloud billing projects link "$PROJECT_ID" --billing-account="YOUR_BILLING_ACCOUNT_ID"
+```
+
 ## One-time GCP setup
 
 ```bash
-export PROJECT_ID="your-project-id"
-export REGION="us-east1"
-
 gcloud config set project "$PROJECT_ID"
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
   secretmanager.googleapis.com
