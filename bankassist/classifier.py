@@ -87,6 +87,7 @@ ACCOUNT_SPECIFIC = "account_specific"
 INVESTMENT_ADVICE = "investment_advice"
 COMPLAINT = "complaint"
 COMPARISON = "comparison"  # "is X better than us?" — answer confidently, never via retrieval
+HUMAN_REQUEST = "human_request"  # "let me speak to a person" — not a question at all
 QUESTION = "question"  # product / how-to / education — the answerable bucket
 
 # Greeting vocabulary across the five supported languages, including the
@@ -316,6 +317,33 @@ _COMPLAINT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Someone asking to be put through to a person is not asking a question, and
+# answering "I don't have verified information about that yet, so I won't
+# guess" is a non-sequitur — reported from the live Awash demo on "I need to
+# speak to the manager on site". The machinery was already right (a handoff was
+# filed and contact details were asked for); only the opening sentence treated
+# a request for a human as a gap in the knowledge base.
+#
+# Checked AFTER the complaint and account rules on purpose. "My money was
+# stolen, let me speak to a manager" is a complaint that happens to name the
+# remedy, and it must file a complaint handoff; "give me her balance, put me
+# through to your manager" must still hit the account guardrail. Escalation is
+# the intent only when nothing more specific applies.
+_HUMAN_REQUEST_RE = re.compile(
+    r"\b(speak|talk|chat) (to|with) (a |an |the |your |someone|somebody)?"
+    r"(human|person|manager|supervisor|agent|representative|rep|staff|"
+    r"customer (service|care)|real person|someone)|"
+    r"\b(connect|transfer|put) me (to|through|with)|"
+    r"\b(i (want|need) (to reach )?)?(a|an) (human|real person|actual person)\b|"
+    r"\bhuman (agent|being|support)\b|"
+    r"\bcall me back\b|"
+    r"ሰው ማነጋገር|ሰው አነጋግሩኝ|ከሰው ጋር|ኃላፊውን|ሥራ አስኪያጅ|ስራ አስኪያጅ|ወኪል ጋር|"
+    r"nama waliin|nama dubbisuu|itti gaafatamaa|hoji gaggeessaa|"
+    r"qaama namaa|bakka bu'aa|"
+    r"qof la hadal|maamule|maareeye",
+    re.IGNORECASE,
+)
+
 # Deliberately does NOT hardcode a competitor's name or a fixed bank name —
 # this classifier is shared across every tenant. The bank-name-agnostic
 # alternatives ("than you", "than this bank", "which bank is better") always
@@ -400,6 +428,8 @@ def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
         return INVESTMENT_ADVICE
     if _comparison_re(bank_aliases).search(text):
         return COMPARISON
+    if _HUMAN_REQUEST_RE.search(text):
+        return HUMAN_REQUEST
 
     # An introduction with no request attached is someone saying hello —
     # "I am Oli", "ኦሊ ነኝ". Checked last so a real request always wins:

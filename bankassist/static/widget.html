@@ -555,7 +555,14 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     })
-      .then(function (r) { if (!r.ok) throw new Error("chat"); return r.json(); })
+      // Carry the status through. Throwing a bare Error made a rate limit, a
+      // server fault and a dropped connection produce one identical sentence,
+      // so a failure seen in the wild could not be told apart from any other —
+      // and the customer got no idea whether retrying was worth it.
+      .then(function (r) {
+        if (!r.ok) { var e = new Error("chat"); e.status = r.status; throw e; }
+        return r.json();
+      })
       .then(function (data) {
         conversationId = data.conversation_id;
         t.remove();
@@ -573,9 +580,23 @@
         // placeholder is what keeps the ask from being tapped straight past.
         input.placeholder = data.awaiting_contact ? CONTACT_PROMPT : DEFAULT_PROMPT;
       })
-      .catch(function () {
+      .catch(function (err) {
         t.remove();
-        addBot("Sorry — something went wrong reaching the assistant. Please try again.", false);
+        var status = err && err.status;
+        var msg;
+        if (status === 429) {
+          msg = "That was a lot of messages at once — please wait a moment and try again.";
+        } else if (status === 404) {
+          msg = "This assistant is not available. Please check the link you used.";
+        } else if (status) {
+          // The code is the only thing that tells a 500 from a 503 after the
+          // fact, and a screenshot is usually all the evidence there is.
+          msg = "Sorry — the assistant is temporarily unavailable (error " + status +
+                "). Please try again in a moment.";
+        } else {
+          msg = "Sorry — I couldn't reach the assistant. Please check your connection and try again.";
+        }
+        addBot(msg, false);
       })
       .finally(function () { send.disabled = false; input.focus(); });
   }
