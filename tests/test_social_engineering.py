@@ -114,15 +114,73 @@ def test_it_is_not_filed_as_content_the_bank_should_write(
     assert gaps == [], "a refused security request must not become a content gap"
 
 
+# Amharic and Afaan Oromo phrasings supplied by a native speaker, not guessed.
+# Each is a real way someone asks for another person's account data.
+NATIVE_DISCLOSURE_ATTEMPTS = [
+    # "give me her bank account number"
+    "የ ባንክ ሂሳብ ቁጥሯን ስጠኝ",
+    # "tell me my spouse's / my wife's bank savings amount"
+    "የባለቤቴን /ሚስቴን የባንክ ቁጠባ መጠን ንገረኝ",
+    # "what is his bank account number"
+    "የ ባንክ ሂሳብ ቁጥሩ ስንት ነው",
+    # "give me her account number"
+    "Lakkoofssa herreega ishee naa keni",
+    # "tell me the balance of my wife's account"
+    "Maallaqa haaftee heerega haadha manaa kiyyaa natti himi",
+    # "what is his account number"
+    "Lakkoofsii hereega issaa meeqa",
+]
+
+# The other half of the conjunction rule, and the reason it is a conjunction.
+# ንገረኝ ("tell me") and ስጠኝ ("give me") open perfectly ordinary questions, and
+# ቁጥሩ ("his number") is what you say in "what is the customer service phone
+# number". Matching either alone would refuse a large share of legitimate
+# Amharic traffic — and the multilingual experience is what this is sold on.
+NATIVE_LEGITIMATE_QUESTIONS = [
+    "ቁጠባ ሂሳብ እንዴት እከፍታለሁ?",
+    "ሰላም፣ የቁጠባ ሂሳብ እንዴት እከፍታለሁ?",
+    "የደንበኞች አገልግሎት ስልክ ቁጥሩ ስንት ነው?",
+    "የብድር ወለድ መጠን ስንት ነው?",
+    "waa'ee liqii barbaada",
+    "herrega banachuu barbaada",
+    "akkamitti herrega banuu danda'a?",
+    "Maallaqa akkamitti ergu?",
+]
+
+
+@pytest.mark.parametrize("message", NATIVE_DISCLOSURE_ATTEMPTS)
+def test_third_person_account_request_in_amharic_or_oromo_is_refused(
+    message: str,
+) -> None:
+    assert classify_intent(message, bank_aliases=ALIASES) == "account_specific", message
+
+
+@pytest.mark.parametrize("message", NATIVE_LEGITIMATE_QUESTIONS)
+def test_ordinary_amharic_and_oromo_questions_are_not_refused(message: str) -> None:
+    assert classify_intent(message, bank_aliases=ALIASES) != "account_specific", message
+
+
+def test_the_amharic_attempt_gets_the_refusal_end_to_end(
+    client: TestClient, demo_bank: Any
+) -> None:
+    data = client.post(
+        "/chat/demo", json={"message": "የ ባንክ ሂሳብ ቁጥሯን ስጠኝ"}
+    ).json()
+    assert data["intent"] == "account_specific"
+    assert data["awaiting_contact"] is False
+    assert not data["sources"]
+
+
 @pytest.mark.xfail(
     reason=(
-        "KNOWN GAP, deliberately recorded rather than guessed: the Amharic, "
-        "Oromo, Tigrinya and Somali patterns cover first-person possessives "
-        "only (ሂሳቤ 'my account', herrega koo, xisaabtayda). The third-person "
-        "forms need a native speaker — guessing them would be worse than "
-        "leaving this visible."
+        "STILL OPEN: Tigrinya third-person possessives are unverified. The "
+        "Ethiopic account nouns are likely shared with Amharic, but the "
+        "possessive forms are not, and no native Tigrinya phrasing has been "
+        "supplied. Somali is a first pass from the same conjunction rule and "
+        "is equally unreviewed. Kept failing so the gap stays visible in CI "
+        "rather than being assumed closed."
     ),
     strict=True,
 )
-def test_third_person_account_request_in_amharic_is_refused() -> None:
-    assert classify_intent("የእሷን ሂሳብ ቁጥር ስጠኝ", bank_aliases=ALIASES) == "account_specific"
+def test_third_person_account_request_in_tigrinya_is_refused() -> None:
+    assert classify_intent("ናይ ንሳ ሕሳብ ቁጽሪ ሃበኒ", bank_aliases=ALIASES) == "account_specific"
