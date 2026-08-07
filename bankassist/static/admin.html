@@ -269,7 +269,15 @@ function submitBulkImport() {
 function loadDocs() {
   api("/documents").then(function (docs) {
     setStatus(docs.length + " documents");
-    var html = bulkImportForm() + '<div class="card"><h3>Add document</h3>' + docForm(null) + "</div>";
+    var answering = state.answering;
+    var banner = answering
+      ? '<div class="card"><h3>Answering a content gap</h3>' +
+        '<div class="meta">' + answering.count + ' customer' + (answering.count === 1 ? "" : "s") +
+        ' asked this and nobody could answer. The callbacks are tracked separately in Handoffs.</div>' +
+        "<pre>" + answering.examples.map(esc).join("\n") + "</pre>" +
+        '<div class="row"><button class="btn secondary" onclick="state.answering=null;loadDocs()">Dismiss</button></div></div>'
+      : "";
+    var html = banner + bulkImportForm() + '<div class="card"><h3>Add document</h3>' + docForm(null) + "</div>";
     html += docs.map(function (d) {
       return '<div class="card"><h3>' + esc(d.title) + "</h3>" +
         '<div class="meta"><span class="pill">' + esc(d.category) + '</span><span class="pill">' + esc(d.language) + "</span> updated " + d.updated_at.slice(0, 16).replace("T", " ") + "</div>" +
@@ -315,6 +323,18 @@ function loadMsgs(id) {
 // ------------------------------------------------ handoffs
 function setHandoffStatus(v) { state.hstatus = v; loadHandoffs(); }
 
+// Contact details are included here on purpose — this is the sheet an
+// operator works from, and a callback list without numbers is useless. That
+// is the opposite of the aggregate reports, which scrub them.
+function exportHandoffs() {
+  downloadCsv("handoffs-" + (state.hstatus || "open"),
+    ["Status", "Reason", "Question", "Name", "Contact", "Raised", "Resolution", "Closed"],
+    (state.handoffRows || []).map(function (h) {
+      return [h.status, h.reason, h.detail, h.contact_name, h.contact_phone,
+              h.created_at, h.resolution, h.resolved_at];
+    }));
+}
+
 // How long someone has been waiting. The number that decides what to work on
 // next, and it was nowhere on the row before.
 function waited(iso) {
@@ -330,10 +350,12 @@ function loadHandoffs() {
   api("/handoffs?status=" + st).then(function (rows) {
     setStatus(rows.length + " " + st + " handoff" + (rows.length === 1 ? "" : "s"));
 
+    state.handoffRows = rows;
     var filters = '<div class="hstate">Showing:' +
       [["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(function (o) {
         return '<button class="' + (st === o[0] ? "on" : "") + '" onclick="setHandoffStatus(\'' + o[0] + '\')">' + o[1] + "</button>";
-      }).join("") + "</div>";
+      }).join("") +
+      (rows.length ? ' <button onclick="exportHandoffs()">Export CSV</button>' : "") + "</div>";
 
     var body = rows.length ? rows.map(function (h) {
       var w = h.status === "open" ? waited(h.created_at) : null;
@@ -384,14 +406,74 @@ function reopenHandoff(id) {
   api("/handoffs/" + id + "/reopen", { method: "POST" }).then(loadHandoffs)
     .catch(function (e) { setStatus(e.message); });
 }
+// ------------------------------------------------ export
+// A cell beginning = + - or @ is executed as a formula by Excel and Sheets.
+// Every string here is customer-authored, so this is untrusted input on its
+// way into a spreadsheet someone at a bank will open. Prefix with an
+// apostrophe, which Excel strips on display and never evaluates.
+function csvCell(value) {
+  var text = value == null ? "" : String(value);
+  if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+
+function downloadCsv(filename, header, rows) {
+  var body = [header.map(csvCell).join(",")]
+    .concat(rows.map(function (r) { return r.map(csvCell).join(","); }))
+    .join("\r\n");
+  // BOM so Excel reads the Amharic, Oromo and Tigrinya columns as UTF-8
+  // rather than mojibake — without it the whole point of the language mix
+  // is lost the moment it leaves the browser.
+  var blob = new Blob(["\ufeff" + body], { type: "text/csv;charset=utf-8;" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = state.slug + "-" + filename + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
 // ------------------------------------------------ content gaps
 // The handoff list is a pile; this is the work queue. Ranked by how many
 // customers asked, so the bank writes the most-wanted content first.
+function exportGaps() {
+  downloadCsv("content-gaps",
+    ["Question", "Times asked", "Unanswered", "Answered generically", "Last asked", "Also asked as"],
+    (state.gaps || []).map(function (g) {
+      return [
+        g.examples[0] || g.signature,
+        g.count,
+        g.reasons["unanswered_question"] || 0,
+        g.reasons["answered_from_general_knowledge"] || 0,
+        g.last_asked,
+        g.examples.slice(1).join(" | ")
+      ];
+    }));
+}
+
+// Seeing the gap and writing the answer were in different tabs with nothing
+// connecting them. This carries the customer's actual wording across, because
+// the phrasing is the useful part — the bank knows its own products, but not
+// which words customers reach for.
+//
+// It deliberately does NOT close the related handoffs. Writing the content and
+// calling back the people who asked are different obligations, and collapsing
+// them would quietly drop the callbacks.
+function writeAnswerFor(index) {
+  state.answering = (state.gaps || [])[index] || null;
+  showTab("docs");
+}
+
 function loadGaps() {
   api("/content-gaps").then(function (rows) {
+    state.gaps = rows;
     var asked = rows.reduce(function (n, g) { return n + g.count; }, 0);
     setStatus(rows.length + " distinct gaps across " + asked + " questions");
-    document.getElementById("main").innerHTML = rows.length ? rows.map(function (g) {
+    var head = rows.length
+      ? '<div class="hstate"><button onclick="exportGaps()">Export CSV</button></div>'
+      : "";
+    document.getElementById("main").innerHTML = head + (rows.length ? rows.map(function (g, i) {
       var generic = g.reasons["answered_from_general_knowledge"] || 0;
       var none = g.reasons["unanswered_question"] || 0;
       return '<div class="card">' +
@@ -405,8 +487,9 @@ function loadGaps() {
         (g.examples.length > 1
           ? '<pre>also asked as: ' + g.examples.slice(1).map(esc).join(" | ") + "</pre>"
           : "") +
+        '<div class="row"><button class="btn" onclick="writeAnswerFor(' + i + ')">Write an answer</button></div>' +
         "</div>";
-    }).join("") : '<div class="empty">No content gaps yet. When customers ask something this bank has no content for, it is grouped and ranked here — the shortest path to knowing what to write next.</div>';
+    }).join("") : '<div class="empty">No content gaps yet. When customers ask something this bank has no content for, it is grouped and ranked here — the shortest path to knowing what to write next.</div>');
   }).catch(function (e) { setStatus(e.message); });
 }
 
@@ -419,7 +502,9 @@ function closeHandoff(id) {
   }).then(loadHandoffs).catch(function (e) { setStatus(e.message); });
 }
 
-if (state.slug && state.token) showTab("docs");
+// Overview, matching the nav's default active tab — this said "docs",
+// so a reload landed on the knowledge base with Overview highlighted.
+if (state.slug && state.token) showTab("overview");
 </script>
 </body>
 </html>
