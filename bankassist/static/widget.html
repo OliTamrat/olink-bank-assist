@@ -524,6 +524,11 @@
 
   // ------------------------------------------------------------ ask
   function ask(text) {
+    // Chips are an affordance for the current moment, not conversation
+    // history — a stale set left pinned above the thread reads as clutter
+    // and invites taps that no longer relate to what's on screen.
+    Array.prototype.forEach.call(
+      chat.querySelectorAll(".suggest"), function (n) { n.remove(); });
     addUser(text);
     input.value = "";
     send.disabled = true;
@@ -543,6 +548,12 @@
         t.remove();
         var turn = addBot(data.reply, true);
         addMeta(turn, data);
+        // Offered when retrieval found nothing confident. Tapping one asks
+        // about that topic, so a customer whose phrasing missed the
+        // knowledge base gets a way forward instead of a dead end.
+        if (data.suggestions && data.suggestions.length) {
+          addSuggestions(data.suggestions.map(function (sg) { return sg.title; }));
+        }
       })
       .catch(function () {
         t.remove();

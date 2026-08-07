@@ -118,6 +118,7 @@ class ChatResponse(BaseModel):
     language: str
     handoff_created: bool
     sources: list[dict[str, Any]]
+    suggestions: list[dict[str, Any]] = []
 
 
 class DocumentIn(BaseModel):
@@ -196,6 +197,7 @@ def chat(
         language=result.language,
         handoff_created=result.handoff_created,
         sources=result.sources,
+        suggestions=result.suggestions,
     )
 
 

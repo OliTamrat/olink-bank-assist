@@ -25,7 +25,7 @@ from .i18n import t
 from .llm import LLMUnavailable, generate_answer
 from .logging_config import log_event
 from .models import AuditLog, Bank, Conversation, Document, Handoff, Message
-from .retrieval import RetrievedChunk, retrieve
+from .retrieval import RetrievedChunk, retrieve, suggest_topics
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,9 @@ class ChatResult:
     language: str
     handoff_created: bool = False
     sources: list[dict[str, Any]] = field(default_factory=list)
+    # Topics offered when nothing confident was found. Real document titles
+    # from this bank only — see retrieval.suggest_topics.
+    suggestions: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _extractive_answer(bank: Bank, chunks: list[RetrievedChunk], language: str) -> str:
@@ -135,13 +138,29 @@ def handle_message(
         if not chunks:
             _create_handoff(db, bank, conversation, "unanswered_question", text[:2000])
             reply = t(language, "unknown")
+            # Retrieval is lexical, so a customer who phrases a question
+            # differently from the knowledge base gets nothing — and most
+            # people will not rephrase to match a corpus they can't see.
+            # Rather than loosening the informativeness gate (which is what
+            # stops confidently-wrong answers), offer the near misses as
+            # topics. These are real document titles, so this can't invent
+            # a product or figure; the handoff is still filed either way,
+            # so a genuine knowledge gap stays visible to the bank.
+            suggestions = [
+                {"document_id": s.document_id, "title": s.title}
+                for s in suggest_topics(db, bank.id, text)
+            ]
+            if suggestions:
+                reply = f"{reply}\n\n{t(language, 'did_you_mean')}"
             # The disclaimer is triggered by intent (a regex match, decided
             # before retrieval ever runs), not by whether specific content
             # was found — it must never be skippable just because a pressure
             # or padded phrasing dodged the knowledge base too.
             if intent == classifier.INVESTMENT_ADVICE:
                 reply = f"{reply}\n\n{t(language, 'advice_disclaimer')}"
-            result = ChatResult(reply, intent, language, handoff_created=True)
+            result = ChatResult(
+                reply, intent, language, handoff_created=True, suggestions=suggestions
+            )
         else:
             reply = _answer_from_knowledge(bank, text, chunks, language)
             if intent == classifier.INVESTMENT_ADVICE:
