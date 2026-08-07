@@ -16,19 +16,38 @@ _ETHIOPIC = re.compile(r"[ሀ-፿]")
 # between Amharic and Tigrinya in short chat messages.
 _TIGRINYA_TELL = re.compile(r"[ኣ]|እየ|ኢኹም|ዲኹም|እዩ\b")
 
+# Deliberately excludes ultra-short tokens (fi, nu, ee, ku, la) — they
+# collide across languages and with English, and a wrong positive here now
+# costs more than a miss, because unmarked Latin text falls through to
+# English by elimination below.
 _OROMO_WORDS = {
     "akkam", "maaloo", "baankii", "herrega", "herreega", "maallaqa", "liqii",
     "kaffaltii", "tajaajila", "waan", "akkamitti", "danda", "qaba", "kootii",
     "koo", "banuu", "guyyaa", "hangam",
+    "waa'ee", "waee", "beekuu", "barbaada", "barbaade", "barbaadha",
+    "maqaan", "maqaa", "eenyu", "maaliif", "eessa", "yoom", "keessan",
+    "keessa", "irratti", "irraa", "waliin", "jedhama", "jirta", "jirtu",
+    "jirtan", "galatoomi", "nagaa", "argachuu", "fayyadamuu", "banachuu",
+    "kaffaluu", "yookaan", "immoo", "garuu", "dhiyeessuu", "hojjechuu",
 }
 _SOMALI_WORDS = {
     "waan", "waxaan", "lacag", "lacagta", "bangiga", "bangi", "xisaab",
     "xisaabta", "sidee", "fadlan", "furaa", "furo", "maxay", "immisa",
     "adeegga", "kaarka",
+    "waxa", "saabsan", "goorma", "xagee", "doonayaa", "rabaa", "ogaan",
+    "mahadsanid", "magacaygu", "aniga", "adiga", "annaga", "iyaga",
+    "maxaa", "deynta", "amaahda", "macmiilka", "warqad",
 }
+# How many unmarked Latin words before a message counts as English prose.
+_LATIN_PROSE_WORDS = 3
+
 _ENGLISH_WORDS = {
     "the", "how", "what", "is", "my", "account", "open", "can", "i", "to",
-    "loan", "deposit", "rate", "card", "bank", "money",
+    "loan", "deposit", "rate", "card", "bank", "money", "tell", "me", "more",
+    "about", "your", "you", "do", "does", "are", "where", "when", "why",
+    "which", "for", "with", "and", "need", "want", "have", "get", "send",
+    "transfer", "branch", "fee", "fees", "savings", "interest", "there",
+    "this", "that", "would", "should", "could", "please", "of", "in", "on",
 }
 
 
@@ -44,7 +63,17 @@ def detect_language(text: str) -> str | None:
     en = len(words & _ENGLISH_WORDS)
     best = max(om, so, en)
     if best == 0:
-        return None
+        # No positive marker at all. Among the five supported languages only
+        # English, Afaan Oromo and Somali use Latin script, so unmarked Latin
+        # prose is English by elimination. Without this, an English question
+        # containing none of the listed words returned None, the sticky
+        # conversation language won, and someone who had greeted in Amharic
+        # got Amharic scaffolding wrapped around an English answer.
+        #
+        # The word-count floor keeps that from overcorrecting: a bare "ATM"
+        # or "OK" mid-Amharic-conversation carries no real signal and must
+        # not flip the language.
+        return "en" if len(words) >= _LATIN_PROSE_WORDS else None
     if best == en:
         return "en"
     # "waan" is in both lists; prefer the language with more distinct hits.
