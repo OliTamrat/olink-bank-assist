@@ -115,8 +115,9 @@ a message takes, not about the branch's own logic.
    `LLMDeclined`.
 8. **General knowledge**, if the answer is still missing and the tenant has
    `allow_general_knowledge` (default true). See the boundary below.
-9. **Miss** → `Handoff` row + `unknown` template + **suggested topics**
-   (`retrieval.suggest_topics`, real document titles only, never invented).
+9. **Miss** → `Handoff` row + `unknown` template + **the contact request**
+   + **suggested topics** (`retrieval.suggest_topics`, real document titles
+   only, never invented). That order is deliberate — see below.
 
 ### `LLMUnavailable` vs `LLMDeclined` — keep these distinct
 
@@ -131,6 +132,45 @@ Shipping a decline as an answer is a bug this repo has already had: it
 attached a source chip to a non-answer, offered the customer nothing further,
 and filed no handoff, so the bank never learned its content was missing.
 `tests/test_model_decline.py` locks it in.
+
+### Contact capture — a handoff has to be reachable
+
+Every handoff reply promised customer service would follow up while the
+product held no name, number or email to follow up on. On the web widget
+there is no identity at all, so it was a promise nobody could keep.
+
+`_request_contact` / `_capture_contact` in `agent.py`. The rules that make it
+a conversation rather than a form:
+
+- **Only after a promise of a callback** — an unanswered question or a
+  complaint. Never after an answered question: collecting personal data for
+  nothing is not free.
+- **Concern first, alternatives second.** Suggestions used to land straight
+  after the unfulfillable promise, which a customer reported as the assistant
+  changing the subject.
+- **A reply that isn't contact details ends the request**, and the new message
+  gets answered. The form is the thing that insists.
+- **Two asks maximum per conversation** (`MAX_CONTACT_ASKS`), counted from the
+  handoffs themselves so it cannot drift. Each handoff is its own promise, so
+  a second miss earns a second ask; a third is pestering.
+- **Contact lives on the `Conversation`** so a later handoff inherits it, and
+  is **snapshotted onto the `Handoff`** so an operator sees who to call on the
+  row.
+
+Two false positives are expensive and both are closed by
+`classifier.extract_contact`:
+
+- **An account number must never be stored as a phone number.** Digit runs are
+  found and then *validated* — Ethiopian mobiles are 09/07 plus eight digits
+  or +251 with the same, and anything else needs an explicit country code. A
+  thirteen-digit CBE account number matches none of them.
+- **A filler word must never become a name.** The bare-name rule only applies
+  when contact details appear in the same message, and `_plausible_name`
+  rejects **per word, not per phrase** — otherwise "call me on 0911234567"
+  yields a customer named "call me on".
+
+The number is personal data, exactly like the chat text: the audit log records
+that contact was captured and how many handoffs it unblocked, never the value.
 
 ### The general-knowledge boundary (bounded exception to tool-output-is-truth)
 
@@ -302,6 +342,27 @@ break was invisible until production. It took three attempts to fix.
 
 **Do not accept or request a service-account key file for production.** The
 metadata path has no key material at all; adding one would be a regression.
+
+### Token budgets — every call must state its thinking budget
+
+On Gemini 2.5 models `maxOutputTokens` caps **thinking and answer together**,
+and thinking is on unless the request says otherwise. `translate_for_search`
+asked for 64 tokens; the budget went entirely to thinking, the response came
+back with a candidate carrying no `parts`, and `agent.py` swallowed the
+resulting `LLMUnavailable` into `english = ""` — so **cross-language retrieval
+never ran in production at all**, while every test passed, because every test
+mocked `translate_for_search` itself.
+
+`thinking_budget` is a **required keyword** on `_call_model` for that reason: a
+default would make the next mis-sized call an accident. Translation runs with
+thinking off (it is a mechanical transformation, on the slowest path); both
+judgement calls keep thinking and budget for it *on top of* the answer, because
+each has to decide whether to decline before writing anything.
+
+`_extract_text` names the `finishReason` when a candidate has no usable text.
+The old code logged `LLM call failed: 'parts'`, which names nothing. It also
+filters thought parts — showing a model's reasoning to a bank customer is
+worse than showing nothing.
 
 ## Hard-won findings — read before touching retrieval or the classifier
 
@@ -479,11 +540,18 @@ lender (smaller, faster procurement, hungrier).
    code they were anchored to.
 8. **Commit or stash before any `git checkout -- .`.** That command has
    destroyed uncommitted work in this repo.
+9. **One concern per branch.** Two unrelated changes were committed onto one
+   branch here and had to be split back out before review; check
+   `git branch --show-current` before committing, not after.
 
 ## Gotchas
 
 - **Extractive mode is a feature, not a bug** — the assistant must stay fully
   demoable with no LLM backend; never make the model a hard dependency.
+- **Never mock the thing you are trying to verify.** Vertex shipped inert and
+  cross-language retrieval shipped dead for the same reason: the mock stood
+  exactly where the bug was. A feature that calls the model needs at least one
+  test driving the real request path.
 - **Schema changes need an Alembic migration** (never edit a committed one).
   Migrations live in `migrations/versions/` (`0001`–`0005`);
   `init_db()`/create_all is for tests and throwaway dev DBs only. CI asserts
