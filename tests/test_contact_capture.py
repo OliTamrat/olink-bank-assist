@@ -279,3 +279,85 @@ def test_the_admin_handoff_queue_shows_who_to_call(
     assert rows
     assert rows[0]["contact_phone"] == "0911234567"
     assert rows[0]["contact_name"] == "Oli"
+
+
+# ------------------------------------- a guardrail is never swallowed
+#
+# The regression this closes: contact capture ran before the intent switch and
+# returned a whole reply, so a message carrying both a phone number and
+# something that had to be handled got "thanks, we will call you" and nothing
+# else. A theft report filed no handoff. The account-data refusal and the
+# education-not-advice disclaimer were skippable the same way — which is
+# exactly what the allowlist exists to prevent.
+
+
+def _awaiting(client: TestClient) -> str:
+    first = _ask(client, "demo", UNANSWERABLE)
+    assert first["awaiting_contact"] is True
+    convo: str = first["conversation_id"]
+    return convo
+
+
+def test_a_complaint_alongside_a_number_is_still_routed_to_a_person(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The worst case: a theft report answered with "thanks, we'll call you"
+    and never handed to anyone."""
+    convo = _awaiting(client)
+    data = _ask(client, "demo", "my money was stolen, call me on 0911234567", convo)
+
+    assert data["intent"] == "complaint"
+    assert data["handoff_created"] is True
+    assert "0911234567" in data["reply"]
+
+
+def test_an_account_request_alongside_a_number_still_gets_the_refusal(
+    client: TestClient, demo_bank: Any
+) -> None:
+    convo = _awaiting(client)
+    data = _ask(client, "demo", "call me on 0911234567 about my account balance", convo)
+
+    assert data["intent"] == "account_specific"
+    assert "can't access individual account details" in data["reply"]
+
+
+def test_an_advice_question_alongside_a_number_still_carries_the_disclaimer(
+    client: TestClient, demo_bank: Any
+) -> None:
+    convo = _awaiting(client)
+    data = _ask(
+        client, "demo", "should I invest in ESX shares? call me on 0911234567", convo
+    )
+
+    assert data["intent"] == "investment_advice"
+    assert "not personal investment advice" in data["reply"]
+
+
+def test_a_real_question_alongside_a_number_is_answered(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """Not a safety property, but the same bug: the question was thrown away."""
+    convo = _awaiting(client)
+    data = _ask(
+        client, "demo", "call me on 0911234567. What are your transfer fees?", convo
+    )
+
+    assert data["sources"], "the question should have been answered from content"
+    assert "0911234567" in data["reply"]
+
+    stored = db_session.execute(
+        select(Conversation).where(Conversation.id == convo)
+    ).scalars().one()
+    assert stored.contact_phone == "0911234567"
+
+
+def test_a_plain_contact_reply_stays_a_plain_contact_reply(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The fix must not make every contact reply run through retrieval —
+    "my name is Oli, call me on 0911 234 567" is not a question about names."""
+    for message in ("Oli 0911234567", "my name is Oli, call me on 0911 234 567"):
+        convo = _awaiting(client)
+        data = _ask(client, "demo", message, convo)
+        assert data["handoff_created"] is False, message
+        assert "I don't have verified information" not in data["reply"], message

@@ -490,3 +490,18 @@ def redact_contact(text: str) -> str:
         if _valid_phone(match.group(0)):
             out = out.replace(match.group(0), _REDACTED)
     return out
+
+
+def remainder_after_contact(text: str) -> str:
+    """The message with any phone number or email address removed.
+
+    Used to decide whether a reply to the contact request also asked
+    something. Trailing punctuation survives, because a question mark is the
+    signal — a word count misreads "my name is Oli, call me on 0911 234 567"
+    as a question about names and calling.
+    """
+    out = _EMAIL_RE.sub(" ", text)
+    for match in list(_PHONE_CANDIDATE.finditer(out)):
+        if _valid_phone(match.group(0)):
+            out = out.replace(match.group(0), " ")
+    return out.strip()
