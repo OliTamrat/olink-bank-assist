@@ -164,7 +164,7 @@ _ACCOUNT_RE = re.compile(
     rf"(the |her |his |their |my )?{_ACCOUNT_NOUN}\b|"
     r"\bbalance (for|of|on) account\b|"
     r"\boverride (the )?security\b|"
-    r"\bባላንስ|ቀሪ ሂሳቤ|ሂሳቤ|ካርዴ|"
+    r"\bባላንስ|ቀሪ ሂሳቤ|ሂሳቤ|ካርዴ|ፒኔ|ሚስጥር ቁጥሬ|"
     r"herrega koo|kaardii koo|xisaabtayda|kaarkayga",
     re.IGNORECASE,
 )
@@ -191,7 +191,12 @@ _OTHERS_ACCOUNT_NOUN = re.compile(
     # conjunction below. "ቀሪ ገንዘቧን ላክልኝ" (send me her remaining money) needs
     # it, because that phrasing names no account at all.
     r"ሂሳብ|ሒሳብ|ቁጠባ|ካርድ|ፒን|ሚስጥር ቁጥር|ቀሪ|"
-    r"h[ea]+rr?[ea]+ga|kaardii|lakkoofsa herr?[ea]*ga|maallaqa|"
+    r"h[ea]+rr?[ea]+ga|kaardii|lakkoofsa herr?[ea]*ga|"
+    # "maallaqa hafte" is the Oromo for remaining balance. Matched on its own
+    # because the phrasing drops both maallaqa and herrega often enough —
+    # "hafte ishee naaf himi" names no account word otherwise. Spelling
+    # alternates the same way herrega does: hafte, haftee, haafte, haaftee.
+    r"haa?ftee?|"
     r"xisaab|akoonto|lambarka akoonka",
     re.IGNORECASE,
 )
@@ -204,6 +209,20 @@ _OTHERS_POSSESSIVE = re.compile(
     # conjunction is what makes including it safe: "ገንዘቡን እንዴት እልካለሁ"
     # (how do I send the money) names no account word and stays answerable.
     r"ገንዘቧ|ገንዘቡ|"
+    # ቁጥፘ is a keyboard variant of ቁጥሯ ("her number") seen in real input.
+    r"ቁጥፘ|"
+    # "…forgot it". Not a possessive at all — the third-party signal in
+    # "ሚስጥር ቁጥሩን ረሳችው" (she forgot her PIN) is the VERB, and a rule that only
+    # looked for possessives missed five of six phrasings of this request.
+    #
+    # The first-person forms belong here too: "I forgot my PIN" is just as
+    # account-specific as "she forgot hers", and both should get the security
+    # template rather than an attempt at an answer.
+    #
+    # Completed past forms only, never the bare stem ረሳ — that would also
+    # match the conditional ብረሳ in "what should I do if I forget my PIN",
+    # which is a general how-to the bank should answer.
+    r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|ረስታለች|ረስተዋል|"
     # Afaan Oromo: her, his, my wife, my husband.
     r"ishee|is?saa|haadha manaa|abbaa manaa|"
     # Somali: her/his, my wife — first pass, still needs a native reviewer.
@@ -212,13 +231,44 @@ _OTHERS_POSSESSIVE = re.compile(
 )
 
 
+# The third thing the rule needs: the speaker asking to BE TOLD, GIVEN or SENT
+# something. Without it, a disclosure request and an ordinary transfer look
+# identical — both name an account and another person. "ወደ ባለቤቴ ሂሳብ ገንዘብ
+# ማስተላለፍ እፈልጋለሁ" (I want to transfer money to my spouse's account) and
+# "Maallaqa gara herrega isaa ergu nan danda'aa?" (can I send money to his
+# account?) were both refused as security violations.
+#
+# What separates them is direction: who ends up holding what. Amharic marks it
+# with the -ኝ / -ልኝ object suffix on the imperative, Oromo with naa / naaf /
+# natti ("to me"), and both with a bare "how much is it".
+_DISCLOSURE_INTENT = re.compile(
+    r"ስጠኝ|ስጪኝ|ስጡኝ|ንገረኝ|ንገሪኝ|ንገሩኝ|ላክልኝ|ላኪልኝ|ላኩልኝ|አሳየኝ|ስንት ነው|ስንት ናቸው|"
+    r"\bnaaf\b|\bnatti\b|\bnaa\b|\bmeeqa\b|\bhimi\b|\bkenni?\b|\bagarsiisi\b",
+    re.IGNORECASE,
+)
+
+# "…forgot it" is its own complete request — "she forgot her PIN" is asking to
+# be told what it is, without ever using a give-me verb. So these satisfy both
+# the third-party and the disclosure halves on their own.
+_FORGOT = re.compile(r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|ረስታለች|ረስተዋል|\bir?raanfat")
+
+
 def asks_for_someone_elses_account(text: str) -> bool:
-    """True when a message pairs an account word with a third-party possessive.
+    """True when a message asks to be told someone's account data.
+
+    Three things have to line up: an account word, a third-party or ownership
+    marker, and the speaker asking to receive something. Two of the three is
+    not enough — an ordinary transfer to a relative's account has the first
+    two and is a perfectly good question.
 
     English is handled by _ACCOUNT_RE; this covers the languages where a
     single-token rule would be either useless or far too broad.
     """
-    return bool(_OTHERS_ACCOUNT_NOUN.search(text) and _OTHERS_POSSESSIVE.search(text))
+    if not _OTHERS_ACCOUNT_NOUN.search(text):
+        return False
+    if _FORGOT.search(text):
+        return True
+    return bool(_OTHERS_POSSESSIVE.search(text) and _DISCLOSURE_INTENT.search(text))
 
 
 _ADVICE_RE = re.compile(
