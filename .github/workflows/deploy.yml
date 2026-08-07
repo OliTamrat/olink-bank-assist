@@ -9,6 +9,20 @@ on:
     types: [completed]
   workflow_dispatch: {} # manual "Run workflow" button for a one-off redeploy
 
+# Cloud Run uses optimistic concurrency on the service resource, so two
+# deploys in flight at once make the loser abort with
+# "Conflict for resource 'bankassist': version X was specified but current
+# version is Y". Merging two PRs seconds apart did exactly that: both fired a
+# deploy of the same commit, the first won, the second failed — a red X on a
+# deployment that had actually succeeded.
+#
+# Queue instead of cancelling. A deploy is mid-flight against a live service
+# and a database; interrupting one is worse than waiting for it. The newest
+# queued run still wins, so the final state is always the latest commit.
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
 env:
   REGION: us-east1
   SERVICE: bankassist
