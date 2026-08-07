@@ -150,6 +150,12 @@ class HealthOut(BaseModel):
     # fallback shipped once — so this makes it checkable from outside without
     # reading Cloud Run logs. A boolean only: no error text in a public route.
     llm_ready: bool = False
+    # Short sha of the commit this instance is running. Empty when unset (local
+    # dev, or a deploy that didn't pass it). Exists because a merged commit can
+    # silently fail to deploy — the workflow_run trigger did not fire once —
+    # and without this, answering "is main actually live?" meant reading
+    # GitHub Actions history instead of making one request.
+    revision: str = ""
 
 
 # ---------------------------------------------------------------- public
@@ -162,7 +168,12 @@ class HealthOut(BaseModel):
 @app.get("/health", response_model=HealthOut)
 def health(response: Response) -> HealthOut:
     response.headers["Cache-Control"] = "no-store, must-revalidate"
-    return HealthOut(status="ok", llm=active_backend(), llm_ready=credentials_ready())
+    return HealthOut(
+        status="ok",
+        llm=active_backend(),
+        llm_ready=credentials_ready(),
+        revision=get_settings().git_sha[:7],
+    )
 
 
 @app.get("/banks/{slug}/public")

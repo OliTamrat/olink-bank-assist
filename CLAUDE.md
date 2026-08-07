@@ -67,8 +67,12 @@ other repo.
 - **Admin:** single-page panel (`static/admin.html`) — KB CRUD + bulk import,
   transcripts, handoff queue, **Content Gaps**, **Overview** (the landing tab)
 
-`GET /health` → `{"status", "llm", "llm_ready"}`. `llm` is which backend is
-*configured*; `llm_ready` is whether credentials actually resolve. Those are
+`GET /health` → `{"status", "llm", "llm_ready", "revision"}`. `llm` is which
+backend is *configured*; `llm_ready` is whether credentials actually resolve.
+`revision` is the short sha the running instance was built from, so
+**"is `main` actually live?" is one request** compared against
+`git rev-parse origin/main` — rather than an archaeology exercise in Actions
+history, which is what it was the first time a deploy's status was in doubt. Those are
 different failures and were confused once already — a backend can read
 `vertex` while every call silently falls back to extractive. The route sets
 `Cache-Control: no-store`; a cached diagnostic is worse than none.

@@ -17,6 +17,9 @@ class Settings:
     vertex_project: str | None
     vertex_location: str
     app_base_url: str
+    # The git commit this revision was built from, set by the deploy workflow.
+    # Empty locally, which is honest: a dev server is not "a deployed commit".
+    git_sha: str
     request_timeout: float
     log_level: str
     chat_rate_per_ip: int  # messages/minute per client IP; <=0 disables
@@ -38,6 +41,7 @@ def get_settings() -> Settings:
         # still accepted if set explicitly.
         vertex_location=os.environ.get("VERTEX_LOCATION", "us-central1"),
         app_base_url=os.environ.get("APP_BASE_URL", "http://localhost:8100"),
+        git_sha=os.environ.get("BANKASSIST_GIT_SHA", ""),
         request_timeout=float(os.environ.get("BANKASSIST_REQUEST_TIMEOUT", "20")),
         log_level=os.environ.get("BANKASSIST_LOG_LEVEL", "INFO"),
         chat_rate_per_ip=int(os.environ.get("BANKASSIST_CHAT_RATE_PER_IP", "60")),
