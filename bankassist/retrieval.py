@@ -66,6 +66,16 @@ class RetrievedChunk:
     score: float
 
 
+@dataclass(frozen=True)
+class Suggestion:
+    """A topic the customer may have meant. Always a real document title from
+    this bank's own knowledge base — never generated text, so offering one
+    can't invent a product or a figure that doesn't exist."""
+
+    document_id: str
+    title: str
+
+
 def _score_corpus(
     corpus: list[tuple[str, list[str]]], query_tokens: list[str]
 ) -> list[tuple[str, float, int]]:
@@ -186,3 +196,64 @@ def reindex_document(db: Session, document: Document) -> int:
             Chunk(bank_id=document.bank_id, document_id=document.id, seq=seq, text=text)
         )
     return len(pieces)
+
+
+def suggest_topics(
+    db: Session, bank_id: str, query: str, limit: int = 3
+) -> list[Suggestion]:
+    """Topics to offer when `retrieve()` found nothing confident enough.
+
+    The informativeness gate in `retrieve()` is what stops the assistant
+    answering confidently from a weak, incidental match — it must not be
+    loosened, because a plausible-looking wrong answer costs a bank deal.
+    But failing that gate should not be *fatal*: the chunks that scored
+    above zero and merely failed the gate are precisely the near misses a
+    person would recognise as "yes, that one".
+
+    So this returns the near misses' **document titles** rather than their
+    text. Offering a real title is navigation, not guessing — it can never
+    fabricate a product, rate or requirement, so the safety doctrine holds
+    while a rephrase stops being a dead end.
+
+    When nothing scores at all (gibberish, or a topic genuinely absent),
+    falls back to the bank's broadest documents so the customer still gets
+    a way forward instead of a closed door.
+
+    Deliberately re-scores rather than sharing state with `retrieve()`:
+    this only runs on the miss path, and keeping `retrieve()`'s signature
+    untouched is worth more than saving a pass over an MVP-sized corpus.
+    """
+    rows = db.execute(
+        select(Chunk, Document.title)
+        .join(Document, Chunk.document_id == Document.id)
+        .where(Chunk.bank_id == bank_id)
+    ).all()
+    if not rows:
+        return []
+
+    doc_of = {chunk.id: (chunk.document_id, title) for chunk, title in rows}
+    corpus = [(chunk.id, tokenize(chunk.text)) for chunk, _ in rows]
+    scored = _score_corpus(corpus, tokenize(query))
+
+    # Best score per document, so one long document can't fill every slot.
+    best: dict[str, tuple[float, str]] = {}
+    for chunk_id, score, _informative in scored:
+        if score <= 0:
+            continue
+        document_id, title = doc_of[chunk_id]
+        if score > best.get(document_id, (0.0, ""))[0]:
+            best[document_id] = (score, title)
+
+    if best:
+        ranked = sorted(best.items(), key=lambda kv: kv[1][0], reverse=True)
+        return [Suggestion(doc_id, title) for doc_id, (_s, title) in ranked[:limit]]
+
+    # Nothing matched at all. Offer the documents with the most chunks — the
+    # broadest topics this bank actually covers — as a stable starting point.
+    breadth: Counter[str] = Counter()
+    titles: dict[str, str] = {}
+    for chunk, title in rows:
+        breadth[chunk.document_id] += 1
+        titles[chunk.document_id] = title
+    widest = sorted(breadth.items(), key=lambda kv: (-kv[1], titles[kv[0]]))
+    return [Suggestion(doc_id, titles[doc_id]) for doc_id, _n in widest[:limit]]

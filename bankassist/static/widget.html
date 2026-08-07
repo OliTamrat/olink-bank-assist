@@ -40,7 +40,7 @@
   }
 
   * { box-sizing: border-box; margin: 0; }
-  html, body { height: 100%; }
+  html, body { height: 100%; max-width: 100%; overflow-x: hidden; }
   body {
     font-family: "Noto Sans Ethiopic", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     background: var(--bg); color: var(--text);
@@ -128,7 +128,7 @@
   .turn.user { align-items: flex-end; }
 
   .bubble {
-    max-width: 88%; padding: 11px 15px;
+    max-width: 88%; min-width: 0; overflow-wrap: anywhere; padding: 11px 15px;
     font-size: 14.5px; line-height: 1.55;
     white-space: pre-wrap; word-break: break-word;
     animation: rise .28s cubic-bezier(.2,.7,.3,1) both;
@@ -147,7 +147,7 @@
 
   /* Assistant row: small spark mark beside the reply so the AI turn reads
      as a distinct actor rather than just "the other bubble color". */
-  .botrow { display: flex; gap: 9px; align-items: flex-start; max-width: 100%; }
+  .botrow { display: flex; gap: 9px; align-items: flex-start; max-width: 100%; min-width: 0; }
   .spark {
     width: 26px; height: 26px; border-radius: 8px; flex: none; margin-top: 2px;
     background: color-mix(in srgb, var(--accent) 13%, var(--surface));
@@ -183,7 +183,7 @@
   .chip.src:hover { border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); color: var(--text); }
 
   /* ------------------------------------------------- source cards */
-  .cites { margin: 8px 0 0 35px; display: none; flex-direction: column; gap: 6px; }
+  .cites { margin: 8px 0 0 35px; display: none; flex-direction: column; gap: 6px; min-width: 0; }
   .cites.open { display: flex; }
   .cite {
     display: flex; gap: 9px; align-items: flex-start;
@@ -199,6 +199,7 @@
     display: grid; place-items: center; margin-top: 1px;
   }
   .cite .t { color: var(--text); font-weight: 550; }
+  .cite span { min-width: 0; overflow-wrap: anywhere; }
 
   /* ------------------------------------------------- suggestions */
   .suggest {
@@ -208,6 +209,7 @@
   }
   .sg {
     font-family: inherit; font-size: 12.5px; font-weight: 500;
+    max-width: 100%; text-align: left; overflow-wrap: anywhere;
     padding: 8px 13px; border-radius: 999px; cursor: pointer;
     background: var(--surface); color: var(--text);
     border: 1px solid var(--line);
@@ -249,8 +251,12 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent);
   }
   input[type=text] {
-    flex: 1; border: 0; background: none; outline: none;
-    padding: 11px 0; font-size: 14.5px; font-family: inherit; color: var(--text);
+    flex: 1; min-width: 0; border: 0; background: none; outline: none;
+    padding: 11px 0; font-family: inherit; color: var(--text);
+    /* Must stay >= 16px. iOS Safari auto-zooms a focused input below that,
+       and the zoom widens the layout viewport — which is what made the
+       whole chat pan side to side once the keyboard opened. */
+    font-size: 16px;
   }
   input[type=text]::placeholder { color: var(--text-3); }
   button#send {
@@ -524,6 +530,11 @@
 
   // ------------------------------------------------------------ ask
   function ask(text) {
+    // Chips are an affordance for the current moment, not conversation
+    // history — a stale set left pinned above the thread reads as clutter
+    // and invites taps that no longer relate to what's on screen.
+    Array.prototype.forEach.call(
+      chat.querySelectorAll(".suggest"), function (n) { n.remove(); });
     addUser(text);
     input.value = "";
     send.disabled = true;
@@ -543,6 +554,12 @@
         t.remove();
         var turn = addBot(data.reply, true);
         addMeta(turn, data);
+        // Offered when retrieval found nothing confident. Tapping one asks
+        // about that topic, so a customer whose phrasing missed the
+        // knowledge base gets a way forward instead of a dead end.
+        if (data.suggestions && data.suggestions.length) {
+          addSuggestions(data.suggestions.map(function (sg) { return sg.title; }));
+        }
       })
       .catch(function () {
         t.remove();

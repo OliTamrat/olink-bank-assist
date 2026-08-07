@@ -27,6 +27,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "I don't have verified information about that yet, so I won't guess. "
             "I've noted your question for our customer service team — they can follow up with you."
         ),
+        "did_you_mean": (
+            "I want to be sure I understood you correctly. "
+            "Were you asking about one of these?"
+        ),
         "account_help": (
             "For your security, I can't access individual account details in this chat. "
             "Please use the mobile banking app, visit a branch, or contact customer care. "
@@ -60,6 +64,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "unknown": (
             "ስለዚህ ጉዳይ የተረጋገጠ መረጃ ስለሌለኝ መገመት አልፈልግም። "
             "ጥያቄዎን ለደንበኞች አገልግሎት ቡድናችን አስተላልፌዋለሁ — በቅርቡ ያገኙዎታል።"
+        ),
+        "did_you_mean": (
+            "በትክክል መረዳቴን ማረጋገጥ እፈልጋለሁ። "
+            "ከእነዚህ ውስጥ ስለ አንዱ እየጠየቁ ነበር?"
         ),
         "account_help": (
             "ለደህንነትዎ ሲባል በዚህ ውይይት ውስጥ የግል ሂሳብ መረጃ ማየት አልችልም። "
@@ -95,6 +103,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Gaaffii keessan garee tajaajila maamiltootaa keenyaaf dabarseera — "
             "dhiyootti isin qunnamu."
         ),
+        "did_you_mean": (
+            "Sirriitti isin hubadhuu mirkaneeffachuun barbaada. "
+            "Kanneen keessaa isa tokko gaafachaa turtanii?"
+        ),
         "account_help": (
             "Nageenya keessaniif, marii kana keessatti odeeffannoo herrega dhuunfaa arguu "
             "hin danda'u. Maaloo appii baankii mobaayilaa fayyadamaa, damee daawwadhaa "
@@ -129,6 +141,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ብዛዕባ እዚ ዝተረጋገጸ ሓበሬታ ስለ ዘይብለይ ክግምት ኣይደልን። "
             "ሕቶኹም ናብ ጉጅለ ኣገልግሎት ዓማዊልና ኣመሓላሊፈዮ ኣለኹ — ኣብ ቀረባ ግዜ ክረኽቡኹም እዮም።"
         ),
+        "did_you_mean": (
+            "ብልክዕ ከም ዝተረዳእኩኹም ከረጋግጽ እደሊ። "
+            "ካብዞም ሓደ ትሓቱ ነይርኩም?"
+        ),
         "account_help": (
             "ንድሕነትኩም፣ ኣብዚ ዝርርብ ናይ ውልቂ ሕሳብ ሓበሬታ ክርኢ ኣይክእልን። "
             "በጃኹም ናይ ሞባይል ባንኪ መተግበሪ ተጠቐሙ፣ ጨንፈር ብጽሑ ወይ ንኣገልግሎት ዓማዊል ርኸቡ።"
@@ -161,6 +177,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Arrintan macluumaad la xaqiijiyey kama hayo, mana doonayo inaan qiyaaso. "
             "Su'aashaada waxaan u gudbiyey kooxda adeegga macaamiisha — "
             "dhawaan way kula soo xiriiri doonaan."
+        ),
+        "did_you_mean": (
+            "Waxaan doonayaa inaan hubiyo inaan si sax ah u fahmay. "
+            "Ma waxaad wax ka weydiinaysay mid ka mid ah kuwan?"
         ),
         "account_help": (
             "Amnigaaga awgiis, wadahadalkan kuma eegi karo macluumaadka xisaabta gaarka ah. "
