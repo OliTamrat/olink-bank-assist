@@ -188,13 +188,39 @@ asymmetry is deliberate, not an inconsistency to tidy up.
   cannot be covered by one phrasing and missed by another. That is exactly how
   "can you give me her account number" slipped past a rule whose own comment
   said it caught social engineering: it matched `balance` and nothing else.
-- `asks_for_someone_elses_account()` requires **an account word AND a
-  third-party possessive in the same message** for Amharic, Oromo, Somali and
-  Tigrinya. Single tokens cannot work there: ንገረኝ ("tell me") and ስጠኝ ("give
-  me") open perfectly ordinary questions, and ቁጥሩ ("his number") is what you
-  say in "what is the customer service phone number". Matching any of those
-  alone would refuse a large share of legitimate Amharic traffic — damaging
-  the multilingual differentiator in the act of protecting it.
+- `asks_for_someone_elses_account()` requires **three** things together for
+  Amharic, Oromo, Somali and Tigrinya: an account word, a third-party or
+  ownership marker, **and the speaker asking to receive something**. Single
+  tokens cannot work there — ንገረኝ ("tell me") and ስጠኝ ("give me") open
+  perfectly ordinary questions, and ቁጥሩ ("his number") is what you say in
+  "what is the customer service phone number".
+
+  **Two of the three is not enough, and that is the part that bites.** A
+  disclosure request and an ordinary transfer share both of the first two:
+  each names an account and another person. "Maallaqa gara herrega isaa ergu
+  nan danda'aa?" (can I send money to his account?) and "ወደ ባለቤቴ ሂሳብ ገንዘብ
+  ማስተላለፍ እፈልጋለሁ" (I want to transfer money to my spouse's account) were both
+  refused as social engineering — the most ordinary request a bank gets,
+  treated as an attack. What separates them is **direction: who ends up
+  holding what**, marked by the Amharic -ኝ / -ልኝ object suffix, the Oromo
+  naa / naaf / natti, and a bare "how much is it".
+
+  The forgot-forms (ረሳችው) are a complete request on their own: "she forgot
+  her PIN" asks to be told what it is without ever using a give-me verb. The
+  third-party signal there is a **verb, not a possessive** — a rule built
+  only from possessives missed five of six phrasings of it.
+
+- **`maallaqa` is money, not account.** `herrega` is account. Recorded because
+  the mistake was not cosmetic: with `maallaqa` in the account-word list,
+  every money question that mentioned another person matched.
+
+**Over-refusal is the failure mode you cannot see from inside.** Five rounds
+of native phrasings found four holes and one *inverse* bug — a rule that
+blocked legitimate transfers. Every test written here asks "does the attack
+get through?"; none of them could ask "is a customer being wrongly refused?",
+because that needs someone who knows what an ordinary request sounds like.
+**Every change to this rule must be checked in both directions**, and the
+negative cases in `tests/test_social_engineering.py` exist for exactly that.
 
 **Non-English security patterns come from a native speaker, never a guess.**
 The Oromo spellings are the proof: `herrega`, `herreega`, `heerega` and
