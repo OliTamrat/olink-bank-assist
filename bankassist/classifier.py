@@ -169,6 +169,50 @@ _ACCOUNT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Asking for SOMEONE ELSE's account data in Amharic or Afaan Oromo.
+#
+# Deliberately a conjunction — an account word AND a third-party marker in the
+# same message — rather than the single tokens used for the English rule.
+# Native-speaker phrasings make the reason obvious: ንገረኝ ("tell me") and ስጠኝ
+# ("give me") open perfectly ordinary questions, and ቁጥሩ ("his number") is
+# what you say in "what is the customer service phone number". Matching either
+# alone would refuse a large share of legitimate Amharic traffic, and the
+# multilingual experience is the thing this product is sold on.
+#
+# Requiring both keeps "ቁጠባ ሂሳብ እንዴት እከፍታለሁ" (how do I open a savings
+# account) answerable while refusing "የ ባንክ ሂሳብ ቁጥሯን ስጠኝ" (give me her bank
+# account number).
+#
+# Phrasings supplied by a native Amharic and Afaan Oromo speaker rather than
+# guessed. The Oromo spelling alternation is real: herrega, herreega, heerega
+# and hereega all appear.
+_OTHERS_ACCOUNT_NOUN = re.compile(
+    r"ሂሳብ|ሒሳብ|ቁጠባ|ካርድ|ፒን|ሚስጥር ቁጥር|"
+    r"h[ea]+rr?[ea]+ga|kaardii|lakkoofsa herr?[ea]*ga|maallaqa|"
+    r"xisaab|akoonto|lambarka akoonka",
+    re.IGNORECASE,
+)
+_OTHERS_POSSESSIVE = re.compile(
+    # Amharic: her/his number, her/his account, my wife/spouse (accusative
+    # forms are matched by the stem, so ባለቤቴን contains ባለቤቴ).
+    r"ቁጥሯ|ቁጥሩ|ሂሳቧ|ሂሳቡ|ባለቤቴ|ሚስቴ|ባለቤቷ|ባለቤቱ|የእሷ|የእሱ|ሚስቱ|ባሏ|"
+    # Afaan Oromo: her, his, my wife, my husband.
+    r"ishee|is?saa|haadha manaa|abbaa manaa|"
+    # Somali: her/his, my wife — first pass, still needs a native reviewer.
+    r"\bkeeda\b|\bkiisa\b|xaaskayga",
+    re.IGNORECASE,
+)
+
+
+def asks_for_someone_elses_account(text: str) -> bool:
+    """True when a message pairs an account word with a third-party possessive.
+
+    English is handled by _ACCOUNT_RE; this covers the languages where a
+    single-token rule would be either useless or far too broad.
+    """
+    return bool(_OTHERS_ACCOUNT_NOUN.search(text) and _OTHERS_POSSESSIVE.search(text))
+
+
 _ADVICE_RE = re.compile(
     r"\bshould i (invest|buy|sell|put)|\bis it (a good|worth)|"
     r"\bwhich (stock|share|investment|bond)|\bwhat should i (invest|buy)|"
@@ -264,7 +308,7 @@ def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
 
     if _COMPLAINT_RE.search(text):
         return COMPLAINT
-    if _ACCOUNT_RE.search(text):
+    if _ACCOUNT_RE.search(text) or asks_for_someone_elses_account(text):
         return ACCOUNT_SPECIFIC
     if _ADVICE_RE.search(text):
         return INVESTMENT_ADVICE
