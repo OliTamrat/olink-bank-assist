@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import classifier
@@ -36,6 +36,12 @@ from .retrieval import RetrievedChunk, retrieve, suggest_topics
 logger = logging.getLogger(__name__)
 
 MAX_FALLBACK_CHUNKS = 2
+
+# How many times one conversation may be asked for contact details before we
+# take the silence as an answer. Each handoff is its own promise of a
+# callback, so a second unanswered question earns a second ask — a third is
+# pestering someone who has already declined twice.
+MAX_CONTACT_ASKS = 2
 
 # A document tagged with this category is this bank's confident, positive
 # answer to "why should I choose you over another bank?" — looked up
@@ -66,6 +72,10 @@ class ChatResult:
     # this bank's own published content. Surfaced so it is never mistaken for
     # the bank speaking.
     general_knowledge: bool = False
+    # True when the reply just asked how to reach this customer. Lets a channel
+    # prompt for it — the widget swaps the input placeholder — instead of
+    # leaving the ask to be read past.
+    awaiting_contact: bool = False
 
 
 def _extractive_answer(bank: Bank, chunks: list[RetrievedChunk], language: str) -> str:
@@ -87,7 +97,16 @@ def _create_handoff(
     db: Session, bank: Bank, conversation: Conversation, reason: str, detail: str
 ) -> None:
     handoff = Handoff(
-        bank_id=bank.id, conversation_id=conversation.id, reason=reason, detail=detail
+        bank_id=bank.id,
+        conversation_id=conversation.id,
+        reason=reason,
+        detail=detail,
+        # Snapshot whatever we already know, so an operator working the queue
+        # sees who to call without joining back to the conversation. Usually
+        # null at this point — we only ask for contact details once a handoff
+        # exists — and _capture_contact backfills the open rows afterwards.
+        contact_name=conversation.customer_name,
+        contact_phone=conversation.contact_phone,
     )
     db.add(handoff)
     db.flush()
@@ -101,6 +120,95 @@ def _create_handoff(
             log_metadata={"reason": reason, "conversation_id": str(conversation.id)},
         )
     )
+
+
+def _request_contact(
+    db: Session, bank: Bank, conversation: Conversation, language: str, reply: str
+) -> str:
+    """Append the contact request, unless asking again would be nagging.
+
+    Skipped once we can already reach them — being asked for your number twice
+    reads as nobody being on the other end, which is the opposite of the
+    reassurance a handoff is meant to give.
+
+    Also capped. Each handoff is a separate promise of a callback, so a second
+    unanswered question does earn a second ask; a customer who has ignored two
+    of them has answered, and a third is pestering. The count comes from the
+    handoffs themselves rather than a column, so it cannot drift out of step
+    with them.
+    """
+    if conversation.contact_phone:
+        return reply
+    asks = db.execute(
+        select(func.count())
+        .select_from(Handoff)
+        .where(
+            Handoff.bank_id == bank.id,
+            Handoff.conversation_id == conversation.id,
+            Handoff.contact_phone.is_(None),
+        )
+    ).scalar_one()
+    if asks > MAX_CONTACT_ASKS:
+        conversation.awaiting_contact = False
+        return reply
+    conversation.awaiting_contact = True
+    return f"{reply}\n\n{t(language, 'ask_contact')}"
+
+
+def _capture_contact(
+    db: Session, bank: Bank, conversation: Conversation, text: str, language: str
+) -> ChatResult | None:
+    """Store contact details offered in reply to the request, or give up on them.
+
+    Returns None when the message was not contact details at all. That is a
+    normal outcome: the customer changed the subject, and the caller answers
+    the new message rather than asking again.
+    """
+    conversation.awaiting_contact = False
+    name, contact = classifier.extract_contact(text)
+    if name and not conversation.customer_name:
+        conversation.customer_name = name[:80]
+    if not contact:
+        return None
+
+    conversation.contact_phone = contact[:40]
+    # Backfill the handoffs this customer is actually waiting on. Closed ones
+    # are left alone: an operator has already dealt with them, and rewriting a
+    # resolved record to add a number nobody used only muddies the audit trail.
+    open_handoffs = db.execute(
+        select(Handoff).where(
+            Handoff.bank_id == bank.id,
+            Handoff.conversation_id == conversation.id,
+            Handoff.status == "open",
+        )
+    ).scalars().all()
+    for handoff in open_handoffs:
+        handoff.contact_phone = conversation.contact_phone
+        handoff.contact_name = conversation.customer_name
+    db.add(
+        AuditLog(
+            bank_id=bank.id,
+            actor="agent",
+            action="contact_captured",
+            entity_type="conversation",
+            entity_id=str(conversation.id),
+            # The number itself is personal data and stays out of the audit
+            # trail; that it was captured, and onto how many open handoffs, is
+            # what an auditor needs.
+            log_metadata={"handoffs_updated": len(open_handoffs)},
+        )
+    )
+
+    key = "contact_saved_named" if conversation.customer_name else "contact_saved"
+    reply = t(
+        language,
+        key,
+        contact=conversation.contact_phone,
+        # contact_saved has no {name} placeholder, so the empty string is only
+        # ever formatted into a template that ignores it.
+        name=conversation.customer_name or "",
+    )
+    return ChatResult(reply, classifier.QUESTION, language)
 
 
 def handle_message(
@@ -131,7 +239,17 @@ def handle_message(
     )
 
     result: ChatResult
-    if intent == classifier.GREETING:
+    # The customer was just asked how to reach them. Try to read this message
+    # as the answer before anything else — a phone number classifies as
+    # nothing useful, and running it through retrieval would produce an
+    # "I don't have information about that" reply to details we asked for.
+    captured = None
+    if conversation.awaiting_contact:
+        captured = _capture_contact(db, bank, conversation, text, language)
+        name = conversation.customer_name
+    if captured is not None:
+        result = captured
+    elif intent == classifier.GREETING:
         greeting = (
             t(language, "greeting_named", bank=bank.name, name=name)
             if name
@@ -145,7 +263,14 @@ def handle_message(
         ack = t(language, "complaint_ack")
         if name:
             ack = f"{t(language, 'ack_named', name=name)} {ack}"
-        result = ChatResult(ack, intent, language, handoff_created=True)
+        ack = _request_contact(db, bank, conversation, language, ack)
+        result = ChatResult(
+            ack,
+            intent,
+            language,
+            handoff_created=True,
+            awaiting_contact=conversation.awaiting_contact,
+        )
     elif intent == classifier.COMPARISON:
         why_choose = db.execute(
             select(Document).where(
@@ -247,6 +372,12 @@ def handle_message(
                 {"document_id": s.document_id, "title": s.title}
                 for s in suggest_topics(db, bank.id, query)
             ]
+            # Contact first, alternatives second. The other order is what a
+            # customer reported as the assistant changing the subject: it
+            # promised a person would follow up, then immediately offered
+            # unrelated topics, and never collected any way to follow up on.
+            # Handle the concern, then offer alternatives.
+            reply = _request_contact(db, bank, conversation, language, reply)
             if suggestions:
                 reply = f"{reply}\n\n{t(language, 'did_you_mean')}"
             # The disclaimer is triggered by intent (a regex match, decided
@@ -256,7 +387,12 @@ def handle_message(
             if intent == classifier.INVESTMENT_ADVICE:
                 reply = f"{reply}\n\n{t(language, 'advice_disclaimer')}"
             result = ChatResult(
-                reply, intent, language, handoff_created=True, suggestions=suggestions
+                reply,
+                intent,
+                language,
+                handoff_created=True,
+                suggestions=suggestions,
+                awaiting_contact=conversation.awaiting_contact,
             )
         else:
             reply = answer
@@ -289,6 +425,9 @@ def handle_message(
         language=result.language,
         handoff=result.handoff_created,
         sources=len(result.sources),
+        # Whether we now have a way to reach this customer — never the number
+        # itself, which is personal data exactly like the chat text.
+        reachable=bool(conversation.contact_phone),
         duration_ms=round((time.perf_counter() - started) * 1000, 1),
     )
     return result

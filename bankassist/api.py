@@ -123,6 +123,9 @@ class ChatResponse(BaseModel):
     # True when the reply is universally-standard banking guidance rather than
     # this bank's own published content.
     general_knowledge: bool = False
+    # The reply asked how to reach this customer; the next message is expected
+    # to be their name and number. Channels use it to prompt for exactly that.
+    awaiting_contact: bool = False
 
 
 class DocumentIn(BaseModel):
@@ -211,6 +214,7 @@ def chat(
         sources=result.sources,
         suggestions=result.suggestions,
         general_knowledge=result.general_knowledge,
+        awaiting_contact=result.awaiting_contact,
     )
 
 
@@ -449,6 +453,10 @@ def list_handoffs(
         {
             "id": h.id, "reason": h.reason, "detail": h.detail, "status": h.status,
             "conversation_id": h.conversation_id, "created_at": h.created_at.isoformat(),
+            # Who to call. The whole point of a handoff queue is that someone
+            # works it, and until now a row said a customer wanted a callback
+            # without saying where to.
+            "contact_name": h.contact_name, "contact_phone": h.contact_phone,
         }
         for h in rows
     ]
