@@ -192,6 +192,11 @@ _OTHERS_ACCOUNT_NOUN = re.compile(
     # it, because that phrasing names no account at all.
     r"ሂሳብ|ሒሳብ|ቁጠባ|ካርድ|ፒን|ሚስጥር ቁጥር|ቀሪ|"
     r"h[ea]+rr?[ea]+ga|kaardii|lakkoofsa herr?[ea]*ga|maallaqa|"
+    # "maallaqa hafte" is the Oromo for remaining balance. Matched on its own
+    # because the phrasing drops both maallaqa and herrega often enough —
+    # "hafte ishee naaf himi" names no account word otherwise. Spelling
+    # alternates the same way herrega does: hafte, haftee, haafte, haaftee.
+    r"haa?ftee?|"
     r"xisaab|akoonto|lambarka akoonka",
     re.IGNORECASE,
 )
