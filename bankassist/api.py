@@ -146,8 +146,13 @@ class HealthOut(BaseModel):
 # ---------------------------------------------------------------- public
 
 
+# A cached diagnostic is worse than none: /health exists to answer "what is
+# running right now", and a stale copy answers it wrong with full confidence.
+# Hit once during a deploy, a cached response keeps reporting the old build's
+# fields long after the new revision is serving.
 @app.get("/health", response_model=HealthOut)
-def health() -> HealthOut:
+def health(response: Response) -> HealthOut:
+    response.headers["Cache-Control"] = "no-store, must-revalidate"
     return HealthOut(status="ok", llm=active_backend(), llm_ready=credentials_ready())
 
 

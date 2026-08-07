@@ -262,3 +262,17 @@ def test_health_exposes_readiness(monkeypatch: pytest.MonkeyPatch) -> None:
         body = client.get("/health").json()
     assert body["llm"] == "vertex"
     assert body["llm_ready"] is True
+
+
+def test_health_is_never_cached(monkeypatch: pytest.MonkeyPatch) -> None:
+    # /health answers "what is running right now". A cached copy answers it
+    # wrong with full confidence — hit once mid-deploy it keeps reporting the
+    # previous build's fields, which is exactly how a successful deploy got
+    # mistaken for a failed one.
+    from fastapi.testclient import TestClient
+
+    from bankassist.api import app
+
+    with TestClient(app) as client:
+        resp = client.get("/health")
+    assert "no-store" in resp.headers.get("cache-control", "")
