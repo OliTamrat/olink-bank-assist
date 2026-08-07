@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from . import classifier
 from .i18n import t
-from .llm import LLMDeclined, LLMUnavailable, generate_answer
+from .llm import LLMDeclined, LLMUnavailable, generate_answer, translate_for_search
 from .logging_config import log_event
 from .models import AuditLog, Bank, Conversation, Document, Handoff, Message
 from .retrieval import RetrievedChunk, retrieve, suggest_topics
@@ -158,6 +158,29 @@ def handle_message(
         query, _greeted = classifier.strip_greeting(text)
         query = query or text
         chunks = retrieve(db, bank.id, query)
+
+        # Lexical retrieval cannot match across languages — "liqii" and
+        # "loan" share no characters — so an Afaan Oromo, Somali or Tigrinya
+        # question found nothing at all in a mostly-English knowledge base,
+        # no matter how well the bank had written it. Retry once with the
+        # question rendered as an English search query.
+        #
+        # Only the search text is translated: the answer is still generated
+        # from the retrieved documents in the customer's own language, and
+        # the informativeness gate still decides whether anything was really
+        # found. A bad translation therefore costs a miss, never a wrong
+        # answer. Runs only on the miss path, so the common case pays
+        # nothing for it.
+        if not chunks and language != "en":
+            try:
+                english = translate_for_search(query)
+            except LLMUnavailable:
+                english = ""
+            if english and english.lower() != query.lower():
+                translated_hits = retrieve(db, bank.id, english)
+                if translated_hits:
+                    chunks = translated_hits
+                    query = english
 
         # Retrieval finding something is not the same as that something
         # answering the question. The model reads the retrieved text and can

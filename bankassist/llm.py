@@ -245,36 +245,15 @@ def _endpoint_and_headers() -> tuple[str, dict[str, str], dict[str, str]]:
     raise LLMUnavailable("no LLM backend configured")
 
 
-def _request_body(
-    question: str, chunks: list[RetrievedChunk], language: str, bank_name: str
-) -> dict[str, Any]:
-    context = "\n\n---\n\n".join(f"[{c.title}]\n{c.text}" for c in chunks)
-    system = _SYSTEM_PROMPT.format(
-        bank_name=bank_name,
-        language_name=LANGUAGE_NAMES.get(language, "English"),
-    )
-    return {
-        "systemInstruction": {"parts": [{"text": system}]},
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": f"CONTEXT:\n{context}\n\nCUSTOMER QUESTION:\n{question}"}],
-            }
-        ],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 512},
-    }
-
-
-def generate_answer(
-    question: str,
-    chunks: list[RetrievedChunk],
-    language: str,
-    bank_name: str,
-) -> str:
+def _call_model(system: str, user: str, max_output_tokens: int) -> str:
+    """One generateContent round-trip. Raises LLMUnavailable on any failure."""
     settings = get_settings()
     url, headers, params = _endpoint_and_headers()
-    body = _request_body(question, chunks, language, bank_name)
-
+    body = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens},
+    }
     try:
         resp = httpx.post(
             url,
@@ -287,13 +266,55 @@ def generate_answer(
         data = resp.json()
         text: str = data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as exc:  # noqa: BLE001 — any failure means: use the fallback
-        logger.warning(
-            "LLM call failed, falling back to extractive answer: %s", exc
-        )
+        logger.warning("LLM call failed: %s", exc)
         raise LLMUnavailable(str(exc)) from exc
     cleaned = text.strip()
     if not cleaned:
         raise LLMUnavailable("empty completion")
+    return cleaned
+
+
+_SEARCH_TRANSLATE_PROMPT = """You turn a bank customer's question into an English \
+search query for a keyword index.
+
+Reply with ONLY the English query — no quotes, no explanation, no preamble.
+Keep product names, bank names, numbers and acronyms exactly as written.
+If the question is already English, reply with it unchanged."""
+
+
+def translate_for_search(question: str) -> str:
+    """Render a question as an English search query.
+
+    Retrieval is lexical, so a question in Afaan Oromo cannot match an
+    English knowledge base at all — "liqii" and "loan" share no characters.
+    Translating the *query* (never the answer, never the sourced content)
+    lets the existing index serve every language without re-indexing
+    anything.
+
+    Only the search text is translated. The answer is still generated from
+    the retrieved documents in the customer's own language, and the
+    informativeness gate still decides whether anything was really found —
+    so a bad translation costs a miss, never a wrong answer.
+    """
+    return _call_model(_SEARCH_TRANSLATE_PROMPT, question, max_output_tokens=64)
+
+
+def generate_answer(
+    question: str,
+    chunks: list[RetrievedChunk],
+    language: str,
+    bank_name: str,
+) -> str:
+    context = "\n\n---\n\n".join(f"[{c.title}]\n{c.text}" for c in chunks)
+    system = _SYSTEM_PROMPT.format(
+        bank_name=bank_name,
+        language_name=LANGUAGE_NAMES.get(language, "English"),
+    )
+    cleaned = _call_model(
+        system,
+        f"CONTEXT:\n{context}\n\nCUSTOMER QUESTION:\n{question}",
+        max_output_tokens=512,
+    )
     if INSUFFICIENT_CONTEXT in cleaned:
         raise LLMDeclined(cleaned)
     return cleaned
