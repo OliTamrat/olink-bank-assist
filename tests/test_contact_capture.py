@@ -16,11 +16,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from bankassist.classifier import extract_contact
+from bankassist.i18n import t
 from bankassist.models import Conversation, Handoff
 
 UNANSWERABLE = "What is your policy on interplanetary wire transfers to Mars?"
@@ -361,3 +363,59 @@ def test_a_plain_contact_reply_stays_a_plain_contact_reply(
         data = _ask(client, "demo", message, convo)
         assert data["handoff_created"] is False, message
         assert "I don't have verified information" not in data["reply"], message
+
+
+# ------------------------------------------------- the ask has to be the ask
+
+
+def test_the_contact_request_is_the_last_thing_said(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """One question per turn, and it is this one.
+
+    Reported from the live Awash demo: the assistant asked for a name and
+    number, then closed the same message with "Were you asking about one of
+    these?" over a row of tappable topic chips. People answer the last
+    question they were asked, so the ask collected nothing — and from the
+    outside it looked exactly like the ask had never happened at all.
+
+    Asserting on the tail of the reply rather than on mere presence is the
+    whole point: the previous version *contained* the ask and still failed.
+    """
+    data = _ask(client, "demo", UNANSWERABLE)
+    assert data["awaiting_contact"] is True
+    assert data["suggestions"], "setup: this miss should also offer topics"
+    assert data["reply"].rstrip().endswith(t(data["language"], "ask_contact"))
+
+
+def test_related_topics_do_not_ask_a_competing_question(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The topic offer is a statement. A second question mark in the turn is
+    how the ask got buried in the first place.
+
+    The endswith assertion has to come first. Slicing the ask off the tail is
+    only meaningful once the ask *is* the tail — without it this passes on the
+    very ordering it exists to reject, which is how it was first written.
+    """
+    data = _ask(client, "demo", UNANSWERABLE)
+    body = data["reply"].rstrip()
+    ask = t(data["language"], "ask_contact")
+    assert body.endswith(ask)
+    assert "?" not in body[: -len(ask)], "only the contact request may ask anything"
+
+
+@pytest.mark.parametrize("language,message", [
+    ("am", "ወደ ማርስ ስለሚደረግ የገንዘብ ዝውውር ፖሊሲዎ ምንድን ነው?"),
+    ("om", "Imaammanni keessan waa'ee maallaqa gara Maarsitti ergamuu maali?"),
+])
+def test_the_ask_closes_the_turn_in_every_language(
+    client: TestClient, demo_bank: Any, language: str, message: str
+) -> None:
+    """Ordering is composed in agent.py, not in the templates — but a
+    language whose reply is assembled differently would break the promise
+    silently, and only for the customers least able to report it."""
+    data = _ask(client, "demo", message)
+    if not data["awaiting_contact"]:
+        pytest.skip("this phrasing found an answer; ordering is untested here")
+    assert data["reply"].rstrip().endswith(t(data["language"], "ask_contact"))

@@ -32,6 +32,15 @@ _STOPWORDS_EN = [
     "what", "when", "where", "which", "who", "why", "will", "with", "you",
     "your", "yes", "no", "not", "want", "wanted", "know", "need", "would",
     "could", "should", "there", "have", "has", "was", "were", "am",
+    # "How much …" is the commonest way anyone asks about a price, and every
+    # word of it was counting against the query. The min-informative bar
+    # scales with content-word count, so untagged filler makes a question
+    # *harder* to answer the more politely it is phrased: "How much is the
+    # transfer fee to another bank?" needed 3 informative matches out of the
+    # 2 real words it contains, and was refused. These carry no domain signal
+    # in any of the five languages' worth of banking questions seen so far.
+    "much", "many", "another", "get", "gets", "getting", "got", "if",
+    "any", "just", "also", "than", "then", "so", "still", "even", "some",
 ]
 
 # These lists exist because the stopword set was English-only, and that made
@@ -137,12 +146,78 @@ class Suggestion:
     title: str
 
 
+# Query-side vocabulary bridges.
+#
+# Customers ask in everyday words; the knowledge base is written in the bank's
+# own. Someone asks what they are "charged" and the document says "fees"; they
+# ask about "sending" money and it says "transfer". BM25 matches exact tokens,
+# so those are misses — and the miss is silent in the worst way: suggest_topics
+# still ranks the right document first and offers it as a chip, so the system
+# demonstrably knew which document answered the question and declined to read
+# it. "How much do I get charged if I sent from other banks" was reported from
+# the live Awash demo; the answer was sitting in "Transfers to Other Banks and
+# Wallets" the whole time.
+#
+# Applied to the QUERY ONLY, never to the corpus. A document has to keep saying
+# exactly what the bank wrote — widening what a question may match cannot
+# change what an answer says.
+#
+# Each group counts as ONE term for the informativeness gate (see
+# _score_corpus). That is the property that makes this safe rather than a
+# loosening: expansion helps a question find the right document, it does not
+# lower the bar for deciding something was found. Handing a query more words
+# can never, by itself, promote a weak match past the gate.
+#
+# Curated rather than stemmed. A stemmer would have to be right in five
+# languages including two Ge'ez-script ones; a short list of banking words is
+# auditable, and it cannot mangle a script it was never written for. Groups
+# carry their own plurals and inflections for the same reason.
+_SYNONYM_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({
+        "fee", "fees", "charge", "charges", "charged", "charging",
+        "cost", "costs", "tariff", "tariffs", "commission", "commissions",
+    }),
+    frozenset({
+        "transfer", "transfers", "transferred", "transferring",
+        "send", "sending", "sent", "remit", "remittance", "remittances",
+    }),
+    frozenset({"withdraw", "withdraws", "withdrawal", "withdrawals"}),
+    frozenset({"deposit", "deposits", "depositing", "deposited"}),
+    frozenset({"loan", "loans", "borrow", "borrowing", "credit"}),
+    frozenset({"interest", "rate", "rates"}),
+    frozenset({"requirement", "requirements", "require", "requires", "required"}),
+    frozenset({"document", "documents", "documentation", "paperwork"}),
+    frozenset({"open", "opens", "opening", "apply", "applying", "application"}),
+    frozenset({"branch", "branches", "office", "offices"}),
+)
+
+_FORM_TO_GROUP: dict[str, tuple[str, ...]] = {
+    form: tuple(sorted(group)) for group in _SYNONYM_GROUPS for form in group
+}
+
+
+def expand_query(tokens: list[str]) -> list[tuple[str, ...]]:
+    """One group per query token, in order.
+
+    Emitting exactly one group per token — never more — is what keeps the
+    informativeness gate's arithmetic identical to the unexpanded version.
+    A token with no group becomes a group of one, so a corpus and a query
+    that share no listed vocabulary behave exactly as they did before.
+    """
+    return [_FORM_TO_GROUP.get(tok, (tok,)) for tok in tokens]
+
+
 def _score_corpus(
-    corpus: list[tuple[str, list[str]]], query_tokens: list[str]
+    corpus: list[tuple[str, list[str]]], query_groups: list[tuple[str, ...]]
 ) -> list[tuple[str, float, int]]:
-    """Return (chunk_id, bm25_score, informative_matches) for every chunk."""
+    """Return (chunk_id, bm25_score, informative_matches) for every chunk.
+
+    A group scores through its single best-matching member rather than the sum
+    of them, so a chunk saying both "fee" and "charge" does not out-rank one
+    saying "fee" twice on the strength of the synonym list.
+    """
     n = len(corpus)
-    if n == 0 or not query_tokens:
+    if n == 0 or not query_groups:
         return []
     df: Counter[str] = Counter()
     for _, tokens in corpus:
@@ -164,16 +239,25 @@ def _score_corpus(
         tf = Counter(tokens)
         score = 0.0
         informative = 0
-        for term in query_tokens:
-            freq = tf.get(term, 0)
-            if freq == 0:
-                continue
-            term_df = df[term]
-            if term not in _STOPWORDS and term_df <= informative_df_ceiling:
+        for group in query_groups:
+            best_score = 0.0
+            best_informative = False
+            for term in group:
+                freq = tf.get(term, 0)
+                if freq == 0:
+                    continue
+                term_df = df[term]
+                idf = math.log((n - term_df + 0.5) / (term_df + 0.5) + 1)
+                denom = freq + BM25_K1 * (1 - BM25_B + BM25_B * len(tokens) / avg_len)
+                term_score = idf * freq * (BM25_K1 + 1) / denom
+                if term_score > best_score:
+                    best_score = term_score
+                    best_informative = (
+                        term not in _STOPWORDS and term_df <= informative_df_ceiling
+                    )
+            score += best_score
+            if best_informative:
                 informative += 1
-            idf = math.log((n - term_df + 0.5) / (term_df + 0.5) + 1)
-            denom = freq + BM25_K1 * (1 - BM25_B + BM25_B * len(tokens) / avg_len)
-            score += idf * freq * (BM25_K1 + 1) / denom
         results.append((chunk_id, score, informative))
     return results
 
@@ -223,7 +307,10 @@ def retrieve(db: Session, bank_id: str, query: str, top_k: int = 4) -> list[Retr
         min_informative = 1
     else:
         min_informative = math.ceil(len(content_tokens) * MIN_INFORMATIVE_RATIO)
-    scored = _score_corpus(corpus, query_tokens)
+    # min_informative is counted from the customer's own words, before
+    # expansion — synonyms widen what each word may match, they never change
+    # how many matches are required.
+    scored = _score_corpus(corpus, expand_query(query_tokens))
 
     hits = sorted(
         (item for item in scored if item[1] > 0 and item[2] >= max(1, min_informative)),
@@ -294,7 +381,7 @@ def suggest_topics(
 
     doc_of = {chunk.id: (chunk.document_id, title) for chunk, title in rows}
     corpus = [(chunk.id, tokenize(chunk.text)) for chunk, _ in rows]
-    scored = _score_corpus(corpus, tokenize(query))
+    scored = _score_corpus(corpus, expand_query(tokenize(query)))
 
     # Best score per document, so one long document can't fill every slot.
     best: dict[str, tuple[float, str]] = {}

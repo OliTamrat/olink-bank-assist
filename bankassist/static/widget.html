@@ -568,8 +568,9 @@
           addSuggestions(data.suggestions.map(function (sg) { return sg.title; }));
         }
         // The reply just asked how to reach this customer. Say so in the box
-        // they are about to type into: the ask is the last thing before a
-        // list of suggested topics, and it is easy to read straight past.
+        // they are about to type into. The ask now closes the message text,
+        // but these chips are still the loudest thing on screen, so the
+        // placeholder is what keeps the ask from being tapped straight past.
         input.placeholder = data.awaiting_contact ? CONTACT_PROMPT : DEFAULT_PROMPT;
       })
       .catch(function () {

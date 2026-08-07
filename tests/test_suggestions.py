@@ -105,3 +105,20 @@ def test_empty_corpus_offers_nothing_rather_than_erroring(
     db_session: Session, cbe_bank: Any
 ) -> None:
     assert suggest_topics(db_session, "no-such-bank-id", "anything") == []
+
+
+def test_topic_titles_are_in_the_reply_text_not_only_the_field(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Telegram sends result.reply and renders no chips.
+
+    A title that lives only in the suggestions field is invisible on that
+    channel, which would leave the intro line announcing a list that never
+    arrives — the web widget looking right is exactly what would hide it.
+    """
+    data = client.post(
+        "/chat/demo", json={"message": "Do you sponsor competitive cheese rolling?"}
+    ).json()
+    assert data["suggestions"], "setup: this miss should offer topics"
+    for suggestion in data["suggestions"]:
+        assert suggestion["title"] in data["reply"], suggestion["title"]
