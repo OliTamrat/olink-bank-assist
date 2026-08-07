@@ -323,28 +323,51 @@ Remaining polish, not blockers:
       a bank/MFI's content team exports or is handed a JSON list, not a
       one-off Python seed script written per-tenant the way CBE/Dashen/Awash
       were.
-- [ ] Deploy demo instance — `DEPLOY.md` has the full Cloud Run + GitHub
-      Actions CI/CD setup (written 2026-08-05, not yet executed — this
-      sandbox has no gcloud/GCP credentials, so a human needs to run the
-      one-time setup). Remember `--port` must match uvicorn.
-      **Postgres decided (2026-08-05): a new, separate Supabase project**
-      inside the existing Olink Supabase organization — never
-      `olink-dispatch`'s project, never shared/linked. `DEPLOY.md` has the
-      project-creation steps and connection-string format.
-      **Found while wiring this up: `pyproject.toml` had no Postgres
-      driver at all** — `sqlalchemy` alone doesn't ship one, so setting
-      `BANKASSIST_DATABASE_URL` to any `postgresql://` URL would have
-      failed immediately with `ModuleNotFoundError` at `create_engine()`
-      time. Added `psycopg2-binary` (verified: `create_engine()` now
-      resolves the `psycopg2` driver for the plain `postgresql://` scheme,
-      no URL changes needed anywhere). Also: this app is **sync SQLAlchemy
-      with psycopg2**, not asyncpg — do not import the asyncpg-specific
-      `statement_cache_size=0` / pgBouncer-prepared-statement fix from
-      olink-dispatch's CLAUDE.md into this repo; it's for a different
-      driver with a different (protocol-level) prepared-statement caching
-      behavior that psycopg2 doesn't have. If pooling issues ever do show
-      up in production logs, the standard fallback is the direct
-      (port 5432, non-pooled) connection string, not that fix.
+- [x] Deploy demo instance → GCP + Supabase one-time setup done 2026-08-06/07
+      (founder-executed, per `DEPLOY.md`): dedicated project
+      `olink-bank-assist`, billing linked, APIs enabled, Artifact Registry
+      repo, `bankassist-deployer` service account with its four scoped
+      roles, `bankassist-database-url` secret pointed at a new, separate
+      Supabase project (never `olink-dispatch`'s project, never
+      shared/linked) using the pooled connection string (port 6543,
+      "Transaction" mode).
+      **`deploy.yml` hardened 2026-08-07 to close two real automation
+      gaps found while wiring this up, not just documentation:** (1) it
+      referenced a `bankassist-gemini-api-key` secret that was never
+      created (Gemini is optional — extractive mode needs no key) — the
+      deploy would have failed outright on `--set-secrets` referencing a
+      nonexistent secret; removed. (2) **nothing anywhere ran Alembic
+      migrations or the tenant seed scripts against the live database** —
+      the Dockerfile's `CMD` only launches uvicorn, and `DEPLOY.md` had
+      left both as manual local steps. Folded into `deploy.yml` itself: a
+      step pulls `BANKASSIST_DATABASE_URL` from Secret Manager (via the
+      deployer SA's existing `secretmanager.secretAccessor` role) and runs
+      `alembic upgrade head` + all four `seed*.py` scripts before every
+      deploy — safe to run unconditionally since Alembic no-ops on an
+      up-to-date schema and every seed script skips banks that already
+      exist. Also dropped the `CLOUD_RUN_HOSTNAME` GitHub secret
+      requirement entirely — a step now self-discovers the live Cloud Run
+      URL via `gcloud run services describe` right after deploy and sets
+      `APP_BASE_URL` itself, so it stays correct even if the service is
+      ever recreated. **Remaining required GitHub Actions secrets: just
+      `GCP_SA_KEY` and `GCP_PROJECT_ID`** — everything else in the deploy
+      path is now fully automated end to end on every push to `main` that
+      passes CI.
+      **Found earlier while wiring this up: `pyproject.toml` had no
+      Postgres driver at all** — `sqlalchemy` alone doesn't ship one, so
+      setting `BANKASSIST_DATABASE_URL` to any `postgresql://` URL would
+      have failed immediately with `ModuleNotFoundError` at
+      `create_engine()` time. Added `psycopg2-binary` (verified:
+      `create_engine()` now resolves the `psycopg2` driver for the plain
+      `postgresql://` scheme, no URL changes needed anywhere). Also: this
+      app is **sync SQLAlchemy with psycopg2**, not asyncpg — do not
+      import the asyncpg-specific `statement_cache_size=0` /
+      pgBouncer-prepared-statement fix from olink-dispatch's CLAUDE.md
+      into this repo; it's for a different driver with a different
+      (protocol-level) prepared-statement caching behavior that psycopg2
+      doesn't have. If pooling issues ever do show up in production logs,
+      the standard fallback is the direct (port 5432, non-pooled)
+      connection string, not that fix.
 - [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`
       (needs public HTTPS)
 

@@ -41,6 +41,26 @@ jobs:
           docker push "$IMAGE:${{ github.sha }}"
           docker push "$IMAGE:latest"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Deployed environments always migrate (CLAUDE.md doctrine) — this is
+      # the actual migration trigger; the container itself only runs
+      # uvicorn. Idempotent: alembic no-ops on an up-to-date schema, and
+      # every seed_*.py skips banks that already exist, so this is safe to
+      # run on every single deploy, including ones that touch no schema or
+      # content at all.
+      - name: Run database migrations and seed tenants
+        run: |
+          pip install .
+          export BANKASSIST_DATABASE_URL="$(gcloud secrets versions access latest --secret=bankassist-database-url --project=${{ secrets.GCP_PROJECT_ID }})"
+          python -m alembic upgrade head
+          python -m bankassist.seed
+          python -m bankassist.seed_cbe
+          python -m bankassist.seed_dashen
+          python -m bankassist.seed_awash
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy ${{ env.SERVICE }} \
@@ -52,6 +72,20 @@ jobs:
             --min-instances 0 \
             --max-instances 3 \
             --memory 512Mi \
-            --set-env-vars "APP_BASE_URL=https://${{ secrets.CLOUD_RUN_HOSTNAME }}" \
-            --set-secrets "BANKASSIST_DATABASE_URL=bankassist-database-url:latest,GEMINI_API_KEY=bankassist-gemini-api-key:latest" \
+            --set-secrets "BANKASSIST_DATABASE_URL=bankassist-database-url:latest" \
             --quiet
+
+      # Cloud Run's URL isn't known until after the service exists, so this
+      # self-discovers it instead of requiring a CLOUD_RUN_HOSTNAME secret
+      # to be set up front — one less manual bootstrapping step, and it
+      # stays correct even if the service is ever recreated under the
+      # same name.
+      - name: Point APP_BASE_URL at the live Cloud Run URL
+        run: |
+          URL="$(gcloud run services describe ${{ env.SERVICE }} --project ${{ secrets.GCP_PROJECT_ID }} --region ${{ env.REGION }} --format='value(status.url)')"
+          gcloud run services update ${{ env.SERVICE }} \
+            --project "${{ secrets.GCP_PROJECT_ID }}" \
+            --region "${{ env.REGION }}" \
+            --set-env-vars "APP_BASE_URL=${URL}" \
+            --quiet
+          echo "Deployed: $URL"
