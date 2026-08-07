@@ -23,6 +23,7 @@
        (CBE's maroon), which disappears against the dark shell — so dark mode
        lifts it toward white rather than using --brand raw. */
     --accent: var(--brand);
+    --on-brand: #ffffff;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -48,21 +49,29 @@
   }
 
   /* ---------------------------------------------------------- header */
+  /* The header is the tenant's brand real-estate. An earlier pass made the
+     whole shell neutral with the brand reduced to small accents, and three
+     tenants became near-indistinguishable — the opposite of what a
+     white-label product is sold on. --on-brand is computed from the brand's
+     luminance in JS so a light brand colour gets dark text instead of
+     unreadable white. */
   header {
     display: flex; align-items: center; gap: 12px;
     padding: 14px 18px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--line);
+    background: var(--brand);
+    color: var(--on-brand);
     position: relative; z-index: 2;
   }
   .mark {
-    width: 38px; height: 38px; border-radius: 11px; flex: none;
-    background: var(--brand);
-    display: grid; place-items: center;
-    color: #fff; font-weight: 700; font-size: 15px;
+    width: 40px; height: 40px; border-radius: 12px; flex: none;
+    background: color-mix(in srgb, var(--on-brand) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--on-brand) 26%, transparent);
+    display: grid; place-items: center; overflow: hidden;
+    color: var(--on-brand); font-weight: 700; font-size: 15px;
     letter-spacing: -.02em;
-    box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--brand) 55%, transparent);
   }
+  /* A tenant-supplied logo replaces the initials when one is configured. */
+  .mark img { width: 100%; height: 100%; object-fit: contain; }
   .who { min-width: 0; flex: 1; }
   /* Wrap to two lines rather than truncate — on a prospect demo the bank's
      own name is the one string that must never read "Commercial Bank of…". */
@@ -72,25 +81,29 @@
     overflow: hidden;
   }
   .who .sub {
-    font-size: 11.5px; color: var(--text-2);
-    display: flex; align-items: center; gap: 5px; margin-top: 1px;
+    font-size: 11.5px; color: color-mix(in srgb, var(--on-brand) 78%, transparent);
+    display: flex; align-items: center; gap: 5px; margin-top: 2px;
   }
   .live {
-    width: 6px; height: 6px; border-radius: 50%; background: #16a34a; flex: none;
-    box-shadow: 0 0 0 0 rgba(22,163,74,.5);
+    width: 6px; height: 6px; border-radius: 50%; flex: none;
+    background: #4ade80;
     animation: pulse 2.4s ease-out infinite;
   }
   @keyframes pulse {
-    0%   { box-shadow: 0 0 0 0 rgba(22,163,74,.45); }
-    70%  { box-shadow: 0 0 0 6px rgba(22,163,74,0); }
-    100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+    0%   { box-shadow: 0 0 0 0 rgba(74,222,128,.5); }
+    70%  { box-shadow: 0 0 0 6px rgba(74,222,128,0); }
+    100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
   }
   select#lang {
-    border: 1px solid var(--line); border-radius: 9px; flex: none;
+    border: 1px solid color-mix(in srgb, var(--on-brand) 30%, transparent);
+    border-radius: 9px; flex: none;
     max-width: 118px; padding: 7px 8px; font-size: 12px; font-family: inherit;
-    background: var(--surface-2); color: var(--text);
-    cursor: pointer; outline-color: var(--brand);
+    background: color-mix(in srgb, var(--on-brand) 14%, transparent);
+    color: var(--on-brand);
+    cursor: pointer; outline-color: var(--on-brand);
   }
+  /* Native dropdown lists render on the OS surface, not the brand field. */
+  select#lang option { background: var(--surface); color: var(--text); }
 
   .disclaimer {
     font-size: 11.5px; line-height: 1.45; font-weight: 550;
@@ -104,6 +117,8 @@
 
   /* ---------------------------------------------------------- chat */
   #chat {
+    background:
+      linear-gradient(color-mix(in srgb, var(--brand) 7%, transparent), transparent 220px);
     flex: 1; overflow-y: auto; padding: 22px 18px 8px;
     display: flex; flex-direction: column; gap: 4px;
     scroll-behavior: smooth;
@@ -328,6 +343,24 @@
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
            'stroke-linecap="round" stroke-linejoin="round"' + (extra || "") + '>' + ICONS[name] + '</svg>';
   }
+  // Pick readable header text for an arbitrary tenant brand colour. Uses
+  // WCAG relative luminance rather than a naive average, so mid-tone brands
+  // land on the right side. A tenant is free to set a pale primary_color;
+  // the header must stay legible without anyone hand-tuning it.
+  function onBrand(hex) {
+    var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || "").trim());
+    if (!m) return "#ffffff";
+    var h = m[1];
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var c = [0,2,4].map(function (i) {
+      var v = parseInt(h.substr(i,2),16) / 255;
+      return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+    });
+    var L = 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2];
+    // Contrast vs white is (1.05)/(L+0.05); vs black it's (L+0.05)/0.05.
+    return (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.05) ? "#ffffff" : "#101114";
+  }
+
   function el(tag, cls, html) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -335,6 +368,12 @@
     return e;
   }
   function scroll() { chat.scrollTop = chat.scrollHeight; }
+
+  function initials(name) {
+    return String(name).replace(/[^A-Za-zሀ-፿ ]/g, "").split(/\s+/)
+      .filter(Boolean).slice(0, 2)
+      .map(function (w) { return w[0]; }).join("").toUpperCase() || "AI";
+  }
 
   function addUser(text) {
     var turn = el("div", "turn user");
@@ -441,9 +480,21 @@
       if (cfg.primary_color) {
         document.documentElement.style.setProperty("--brand", cfg.primary_color);
       }
-      document.getElementById("mark").textContent =
-        cfg.name.replace(/[^A-Za-zሀ-፿ ]/g, "").split(/\s+/)
-          .filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase() || "AI";
+      document.documentElement.style.setProperty("--on-brand", onBrand(cfg.primary_color));
+
+      var mark = document.getElementById("mark");
+      if (cfg.logo_url) {
+        // Optional per-tenant logo. Falls back to initials if it fails to
+        // load, so a broken URL never leaves an empty tile in the header.
+        var img = document.createElement("img");
+        img.alt = cfg.name;
+        img.onerror = function () { mark.textContent = initials(cfg.name); };
+        img.src = cfg.logo_url;
+        mark.textContent = "";
+        mark.appendChild(img);
+      } else {
+        mark.textContent = initials(cfg.name);
+      }
 
       if (cfg.disclaimer) {
         var d = document.getElementById("disclaimer");

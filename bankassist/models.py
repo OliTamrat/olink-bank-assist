@@ -32,6 +32,11 @@ class Bank(Base):
     slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     primary_color: Mapped[str] = mapped_column(String(16), default="#0f766e")
+    # Optional tenant logo, rendered in the widget header in place of the
+    # name's initials. A brand colour alone leaves tenants looking like the
+    # same product with a different tint — the logo is what makes a bank
+    # recognise a demo as theirs. Nullable; initials stay the fallback.
+    logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     default_language: Mapped[str] = mapped_column(String(8), default="en")
     admin_token: Mapped[str] = mapped_column(String(64), default=new_token)
     # Shown as a banner in the widget. Used for pre-contract sales demos built
