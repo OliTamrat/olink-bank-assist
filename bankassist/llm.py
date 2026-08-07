@@ -18,7 +18,9 @@ to extractive answers. The assistant never depends on the model being up.
 from __future__ import annotations
 
 import logging
+import os
 import threading
+import time
 from typing import Any
 
 import httpx
@@ -31,11 +33,7 @@ logger = logging.getLogger(__name__)
 
 _VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
-# google-auth caches and refreshes the token itself, but the credentials
-# object is not documented as thread-safe to refresh concurrently, and the
-# API serves requests from a threadpool.
-_credentials_lock = threading.Lock()
-_credentials: Any = None
+
 
 
 class LLMUnavailable(Exception):
@@ -67,6 +65,59 @@ def active_backend() -> str:
     return "extractive-fallback"
 
 
+# Cloud Run (and any GCE-family runtime) exposes an unauthenticated,
+# plain-HTTP metadata server that mints a token for the attached service
+# account. That is one request with httpx — no ADC discovery, no google-auth,
+# no `requests` extra. Going through google.auth.default() instead added a
+# discovery step that could fail (and did, with llm_ready false in
+# production) in the one environment that needs no discovery at all, and
+# collapsed every distinct cause into the same opaque "credentials were not
+# found".
+_METADATA_HOST = os.environ.get("GCE_METADATA_HOST", "metadata.google.internal")
+_METADATA_TOKEN_URL = (
+    f"http://{_METADATA_HOST}/computeMetadata/v1/instance/service-accounts/default/token"
+)
+
+# Tokens last an hour; refresh early so a request never races expiry.
+_TOKEN_TTL_MARGIN = 300.0
+
+_token_lock = threading.Lock()
+_token: str | None = None
+_token_expires_at = 0.0
+
+
+def _token_from_metadata() -> tuple[str, float]:
+    resp = httpx.get(
+        _METADATA_TOKEN_URL,
+        headers={"Metadata-Flavor": "Google"},
+        timeout=5.0,
+        # The metadata server is link-local; a proxy must never intercept it.
+        trust_env=False,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    token = payload.get("access_token")
+    if not token:
+        raise LLMUnavailable("metadata server returned no access_token")
+    return str(token), float(payload.get("expires_in", 3600))
+
+
+def _token_from_key_file() -> tuple[str, float]:
+    """Local-development path: GOOGLE_APPLICATION_CREDENTIALS or gcloud creds.
+
+    Only reached when the metadata server is absent, so it never runs on
+    Cloud Run. google-auth stays an optional convenience here rather than a
+    hard requirement of the deployed path.
+    """
+    import google.auth
+
+    creds, _project = google.auth.default(scopes=[_VERTEX_SCOPE])
+    creds.refresh(_HttpxAuthRequest())  # type: ignore[no-untyped-call]
+    if not creds.token:
+        raise LLMUnavailable("credentials produced no token")
+    return str(creds.token), 3600.0
+
+
 class _HttpxAuthResponse:
     """The three attributes google-auth reads off a transport response."""
 
@@ -77,15 +128,12 @@ class _HttpxAuthResponse:
 
 
 class _HttpxAuthRequest:
-    """google-auth transport backed by httpx.
+    """google-auth transport backed by httpx, for the key-file path only.
 
-    google.auth.transport.requests needs the `requests` package, which is an
-    optional extra of google-auth (google-auth[requests]) and is not
-    otherwise used here — so importing it raised ImportError in the built
-    image, the caller fell back, and Vertex silently never ran despite being
-    configured correctly. Rather than add a second HTTP library to the image
-    for one token refresh, this adapts httpx to the small transport
-    interface google-auth expects.
+    google.auth.transport.requests needs the `requests` package — an optional
+    extra of google-auth that is not installed here because this app uses
+    httpx. Importing it raised ImportError and silently disabled Vertex once
+    already.
     """
 
     def __call__(
@@ -104,32 +152,30 @@ class _HttpxAuthRequest:
 
 
 def _vertex_token() -> str:
-    """A bearer token for Vertex from Application Default Credentials.
+    """A bearer token for Vertex, cached until shortly before it expires.
 
-    On Cloud Run this resolves to the revision's service account through the
-    metadata server — no key material anywhere. Locally it resolves
-    GOOGLE_APPLICATION_CREDENTIALS or gcloud user credentials. Any failure
-    is an LLMUnavailable so the caller falls back rather than 500s.
+    Metadata server first (Cloud Run, no key material anywhere), key file
+    second (local development). Any failure is an LLMUnavailable so the
+    caller degrades to an extractive answer rather than erroring.
     """
-    global _credentials
-    try:
-        import google.auth
-    except ImportError as exc:  # pragma: no cover - dependency is declared
-        raise LLMUnavailable("google-auth is not installed") from exc
+    global _token, _token_expires_at
 
-    try:
-        with _credentials_lock:
-            if _credentials is None:
-                creds, _project = google.auth.default(scopes=[_VERTEX_SCOPE])
-                _credentials = creds
-            if not _credentials.valid:
-                _credentials.refresh(_HttpxAuthRequest())
-            token: str = _credentials.token
-    except Exception as exc:  # noqa: BLE001 — any auth failure means: fall back
-        raise LLMUnavailable(f"Vertex credentials unavailable: {exc}") from exc
-    if not token:
-        raise LLMUnavailable("Vertex credentials produced no token")
-    return token
+    with _token_lock:
+        if _token and time.monotonic() < _token_expires_at:
+            return _token
+
+        errors: list[str] = []
+        for source in (_token_from_metadata, _token_from_key_file):
+            try:
+                token, ttl = source()
+            except Exception as exc:  # noqa: BLE001 — try the next source
+                errors.append(f"{source.__name__}: {exc}")
+                continue
+            _token = token
+            _token_expires_at = time.monotonic() + max(ttl - _TOKEN_TTL_MARGIN, 60.0)
+            return token
+
+    raise LLMUnavailable("; ".join(errors) or "no credential source available")
 
 
 def credentials_ready() -> bool:
@@ -235,7 +281,8 @@ def generate_answer(
 
 
 def reset_credentials() -> None:
-    """Test hook: drop the cached ADC credentials."""
-    global _credentials
-    with _credentials_lock:
-        _credentials = None
+    """Test hook: drop the cached access token."""
+    global _token, _token_expires_at
+    with _token_lock:
+        _token = None
+        _token_expires_at = 0.0

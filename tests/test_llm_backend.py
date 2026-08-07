@@ -276,3 +276,85 @@ def test_health_is_never_cached(monkeypatch: pytest.MonkeyPatch) -> None:
     with TestClient(app) as client:
         resp = client.get("/health")
     assert "no-store" in resp.headers.get("cache-control", "")
+
+def test_token_comes_from_the_metadata_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cloud Run's own path: one plain HTTP call, no ADC discovery.
+
+    Going through google.auth.default() instead added a discovery step that
+    failed in the one environment needing no discovery, and reported every
+    distinct cause as the same opaque "credentials were not found".
+    """
+    _use_vertex_env(monkeypatch)
+    llm.reset_credentials()
+    seen: dict[str, Any] = {}
+
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        seen["url"] = url
+        seen["headers"] = kwargs.get("headers")
+        seen["trust_env"] = kwargs.get("trust_env")
+        return httpx.Response(
+            200,
+            json={"access_token": "metadata-token", "expires_in": 3599},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert llm._vertex_token() == "metadata-token"
+    assert seen["url"].endswith("/instance/service-accounts/default/token")
+    assert seen["headers"]["Metadata-Flavor"] == "Google"
+    # The metadata server is link-local — a proxy must never intercept it.
+    assert seen["trust_env"] is False
+
+
+def test_the_token_is_cached_between_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_vertex_env(monkeypatch)
+    llm.reset_credentials()
+    calls = {"n": 0}
+
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(
+            200,
+            json={"access_token": "tok", "expires_in": 3599},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert llm._vertex_token() == "tok"
+    assert llm._vertex_token() == "tok"
+    assert calls["n"] == 1, "a cached token must not be re-minted every request"
+
+
+def test_a_dead_metadata_server_does_not_wedge_the_assistant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_vertex_env(monkeypatch)
+    llm.reset_credentials()
+
+    def dead_get(url: str, **kwargs: Any) -> httpx.Response:
+        raise httpx.ConnectError("no metadata server here")
+
+    def dead_key_file() -> tuple[str, float]:
+        raise RuntimeError("no ADC either")
+
+    monkeypatch.setattr(httpx, "get", dead_get)
+    monkeypatch.setattr(llm, "_token_from_key_file", dead_key_file)
+
+    with pytest.raises(llm.LLMUnavailable):
+        llm._vertex_token()
+    assert llm.credentials_ready() is False
+
+
+def test_key_file_is_the_fallback_when_metadata_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Local development has no metadata server; it must still work.
+    _use_vertex_env(monkeypatch)
+    llm.reset_credentials()
+
+    def dead_get(url: str, **kwargs: Any) -> httpx.Response:
+        raise httpx.ConnectError("not on GCE")
+
+    monkeypatch.setattr(httpx, "get", dead_get)
+    monkeypatch.setattr(llm, "_token_from_key_file", lambda: ("key-file-token", 3600.0))
+    assert llm._vertex_token() == "key-file-token"
