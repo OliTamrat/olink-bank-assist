@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -43,6 +43,14 @@ class Bank(Base):
     # from a prospect's public info, so the prototype is never mistaken for
     # that institution's own official channel. Null for a bank's live tenant.
     disclaimer: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Whether the assistant may answer universally-standard banking questions
+    # (how to use an ATM, what a PIN is) from general knowledge when the bank's
+    # own knowledge base has nothing. Bounded exception to tool-output-is-truth:
+    # the model is forbidden from stating any figure, fee, limit, requirement or
+    # anything specific to this bank, and the reply is labelled as general
+    # guidance rather than the bank's official information. Per-tenant because a
+    # compliance-conservative bank will want it off.
+    allow_general_knowledge: Mapped[bool] = mapped_column(Boolean, default=True)
     telegram_bot_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     telegram_webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

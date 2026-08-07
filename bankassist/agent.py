@@ -22,7 +22,13 @@ from sqlalchemy.orm import Session
 
 from . import classifier
 from .i18n import t
-from .llm import LLMDeclined, LLMUnavailable, generate_answer, translate_for_search
+from .llm import (
+    LLMDeclined,
+    LLMUnavailable,
+    answer_from_general_knowledge,
+    generate_answer,
+    translate_for_search,
+)
 from .logging_config import log_event
 from .models import AuditLog, Bank, Conversation, Document, Handoff, Message
 from .retrieval import RetrievedChunk, retrieve, suggest_topics
@@ -56,6 +62,10 @@ class ChatResult:
     # Topics offered when nothing confident was found. Real document titles
     # from this bank only — see retrieval.suggest_topics.
     suggestions: list[dict[str, Any]] = field(default_factory=list)
+    # True when the reply is universally-standard banking guidance rather than
+    # this bank's own published content. Surfaced so it is never mistaken for
+    # the bank speaking.
+    general_knowledge: bool = False
 
 
 def _extractive_answer(bank: Bank, chunks: list[RetrievedChunk], language: str) -> str:
@@ -196,7 +206,33 @@ def handle_message(
             except LLMDeclined:
                 answer = None
 
-        if answer is None:
+        # Nothing in this bank's content answers the question. Some questions
+        # do not need bank content at all: ATM mechanics are identical on every
+        # machine on earth, and an assistant that cannot explain what a PIN is
+        # looks broken on exactly the questions a first-time customer asks. The
+        # model may answer those from general knowledge, and must decline the
+        # moment an answer would need a figure, a limit, a requirement or
+        # anything specific to this bank — see llm.answer_from_general_knowledge.
+        general: str | None = None
+        if answer is None and bank.allow_general_knowledge:
+            try:
+                general = answer_from_general_knowledge(query, language, bank.name)
+            except (LLMDeclined, LLMUnavailable):
+                general = None
+
+        if general is not None:
+            # Labelled, and carrying no sources, because it genuinely came from
+            # none. Still filed as a handoff: the bank should see that customers
+            # ask this and that it has no content of its own, which is exactly
+            # the prompt to write some.
+            _create_handoff(
+                db, bank, conversation, "answered_from_general_knowledge", text[:2000]
+            )
+            reply = f"{general}\n\n{t(language, 'general_guidance', bank=bank.name)}"
+            result = ChatResult(
+                reply, intent, language, handoff_created=True, general_knowledge=True
+            )
+        elif answer is None:
             _create_handoff(db, bank, conversation, "unanswered_question", text[:2000])
             reply = t(language, "unknown")
             # Retrieval is lexical, so a customer who phrases a question

@@ -427,6 +427,9 @@
     if (it) {
       chips.push('<span class="chip ' + (it.cls || "") + '">' + svg(it.icon) + it.label + '</span>');
     }
+    if (data.general_knowledge) {
+      chips.push('<span class="chip guard">' + svg("book") + 'General guidance</span>');
+    }
     if (data.handoff_created) {
       chips.push('<span class="chip human">' + svg("user") + 'Routed to a person</span>');
     }

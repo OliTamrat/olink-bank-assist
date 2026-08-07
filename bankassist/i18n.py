@@ -32,6 +32,11 @@ _STRINGS: dict[str, dict[str, str]] = {
             "I don't have verified information about that yet, so I won't guess. "
             "I've noted your question for our customer service team — they can follow up with you."
         ),
+        "general_guidance": (
+            "General guidance — this is standard banking practice, not {bank}'s own "
+            "published information. Please check with {bank} for anything specific "
+            "to your account."
+        ),
         "did_you_mean": (
             "I want to be sure I understood you correctly. "
             "Were you asking about one of these?"
@@ -74,6 +79,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "unknown": (
             "ስለዚህ ጉዳይ የተረጋገጠ መረጃ ስለሌለኝ መገመት አልፈልግም። "
             "ጥያቄዎን ለደንበኞች አገልግሎት ቡድናችን አስተላልፌዋለሁ — በቅርቡ ያገኙዎታል።"
+        ),
+        "general_guidance": (
+            "አጠቃላይ መመሪያ — ይህ የተለመደ የባንክ አሠራር እንጂ የ{bank} ይፋዊ መረጃ አይደለም። "
+            "ከሂሳብዎ ጋር ለተያያዘ ማንኛውም ጉዳይ {bank}ን ያማክሩ።"
         ),
         "did_you_mean": (
             "በትክክል መረዳቴን ማረጋገጥ እፈልጋለሁ። "
@@ -118,6 +127,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Gaaffii keessan garee tajaajila maamiltootaa keenyaaf dabarseera — "
             "dhiyootti isin qunnamu."
         ),
+        "general_guidance": (
+            "Qajeelfama waliigalaa — kun hojimaata baankii idilee malee odeeffannoo "
+            "ifaa {bank} miti. Waan herrega keessan ilaallatu kamiyyuu {bank} gaafadhaa."
+        ),
         "did_you_mean": (
             "Sirriitti isin hubadhuu mirkaneeffachuun barbaada. "
             "Kanneen keessaa isa tokko gaafachaa turtanii?"
@@ -161,6 +174,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ብዛዕባ እዚ ዝተረጋገጸ ሓበሬታ ስለ ዘይብለይ ክግምት ኣይደልን። "
             "ሕቶኹም ናብ ጉጅለ ኣገልግሎት ዓማዊልና ኣመሓላሊፈዮ ኣለኹ — ኣብ ቀረባ ግዜ ክረኽቡኹም እዮም።"
         ),
+        "general_guidance": (
+            "ሓፈሻዊ መምርሒ — እዚ ልሙድ ናይ ባንክ ኣሰራርሓ እምበር ወግዓዊ ሓበሬታ {bank} ኣይኮነን። "
+            "ምስ ሕሳብኩም ዝተኣሳሰር ዝኾነ ነገር {bank} ሕተቱ።"
+        ),
         "did_you_mean": (
             "ብልክዕ ከም ዝተረዳእኩኹም ከረጋግጽ እደሊ። "
             "ካብዞም ሓደ ትሓቱ ነይርኩም?"
@@ -202,6 +219,11 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Arrintan macluumaad la xaqiijiyey kama hayo, mana doonayo inaan qiyaaso. "
             "Su'aashaada waxaan u gudbiyey kooxda adeegga macaamiisha — "
             "dhawaan way kula soo xiriiri doonaan."
+        ),
+        "general_guidance": (
+            "Hagaajin guud — kani waa hab-dhaqanka caadiga ah ee bangiyada, ma aha "
+            "macluumaadka rasmiga ah ee {bank}. Wax kasta oo la xiriira xisaabtaada "
+            "la xaqiiji {bank}."
         ),
         "did_you_mean": (
             "Waxaan doonayaa inaan hubiyo inaan si sax ah u fahmay. "
