@@ -120,6 +120,9 @@ class ChatResponse(BaseModel):
     handoff_created: bool
     sources: list[dict[str, Any]]
     suggestions: list[dict[str, Any]] = []
+    # True when the reply is universally-standard banking guidance rather than
+    # this bank's own published content.
+    general_knowledge: bool = False
 
 
 class DocumentIn(BaseModel):
@@ -207,6 +210,7 @@ def chat(
         handoff_created=result.handoff_created,
         sources=result.sources,
         suggestions=result.suggestions,
+        general_knowledge=result.general_knowledge,
     )
 
 

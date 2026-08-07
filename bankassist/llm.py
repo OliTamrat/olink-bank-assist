@@ -282,6 +282,57 @@ Keep product names, bank names, numbers and acronyms exactly as written.
 If the question is already English, reply with it unchanged."""
 
 
+_GENERAL_PROMPT = """You are the customer assistant of {bank_name}, an Ethiopian \
+bank. {bank_name}'s own knowledge base has NOTHING covering this question.
+
+You may answer ONLY if the question is about universally-standard banking
+procedure or general financial education — the kind of thing that is identical
+at every bank and every ATM in the world. Examples of what you MAY explain: how
+to physically use an ATM, what a PIN is and why to keep it secret, what a
+savings account is, how interest compounds, general online-banking safety.
+
+Reply with exactly INSUFFICIENT_CONTEXT and nothing else if answering would
+require ANY of the following, because these vary by bank and country and you do
+NOT know {bank_name}'s:
+- any fee, charge, commission, exchange rate or interest rate
+- any limit (daily withdrawal, transfer ceiling, minimum balance)
+- eligibility, required documents, or how to apply for anything
+- product names, branch locations, phone numbers, opening hours
+- which card networks, partners or channels are supported
+- anything at all specific to {bank_name}
+
+Never state or imply a number. Never say what {bank_name} offers, allows,
+charges or requires — you do not know. If the customer needs any of that, say
+they should check with {bank_name} directly.
+
+Respond in {language_name}. Be brief and practical."""
+
+
+def answer_from_general_knowledge(question: str, language: str, bank_name: str) -> str:
+    """Answer a universally-standard banking question with no bank content.
+
+    A deliberate, bounded exception to tool-output-is-truth. ATM mechanics are
+    the same on every NCR and Diebold machine on earth, and an assistant that
+    cannot explain what a PIN is looks broken on exactly the questions a
+    first-time customer asks.
+
+    The boundary is the whole design. The failure mode is not "explains how to
+    use an ATM" — it is helpfully appending "you can usually withdraw up to
+    5,000 birr a day", inventing a policy for a bank it knows nothing about.
+    So the model may explain procedure and concepts, and must decline the
+    moment an answer would need a figure, a limit, a requirement, or anything
+    specific to this bank. Raises LLMDeclined when it refuses.
+    """
+    system = _GENERAL_PROMPT.format(
+        bank_name=bank_name,
+        language_name=LANGUAGE_NAMES.get(language, "English"),
+    )
+    cleaned = _call_model(system, question, max_output_tokens=400)
+    if INSUFFICIENT_CONTEXT in cleaned:
+        raise LLMDeclined(cleaned)
+    return cleaned
+
+
 def translate_for_search(question: str) -> str:
     """Render a question as an English search query.
 
