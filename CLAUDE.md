@@ -65,7 +65,7 @@ other repo.
 - **Retrieval:** dependency-free BM25, five-language stopwords, per-tenant
 - **Channels:** embeddable widget (`static/widget.html`), Telegram webhook
 - **Admin:** single-page panel (`static/admin.html`) — KB CRUD + bulk import,
-  transcripts, handoff queue, **Content Gaps**
+  transcripts, handoff queue, **Content Gaps**, **Overview** (the landing tab)
 
 `GET /health` → `{"status", "llm", "llm_ready"}`. `llm` is which backend is
 *configured*; `llm_ready` is whether credentials actually resolve. Those are
@@ -447,6 +447,55 @@ These are the durable ones. Each has a regression test.
   ours** — Amharic and Afaan Oromo reviewed natively, Somali and Tigrinya
   outsourced. Do not rewrite those strings speculatively.
 
+## The two reports — and why they are two
+
+A bank asks two different questions and they need separate answers. Showing
+only one of them misleads either way.
+
+**Overview** (`GET /admin/api/{slug}/analytics?days=30`, the admin landing tab)
+answers *is this working*. **Content Gaps** answers *what should we write
+next*. A bank shown only its gaps concludes the product is failing; a bank
+shown only its deflection rate never writes the content that would raise it.
+
+### The assistant records what it did
+
+`Message.outcome` (migration 0007), written to **both** rows of a turn from the
+vocabulary at the top of `agent.py`: `answered`, `general_guidance`,
+`unanswered`, `complaint`, `account_blocked`, `comparison`, `greeting`,
+`contact_captured`. `SUBSTANTIVE` is which of those count as a customer asking
+something; `RESOLVED` is which needed no person.
+
+Nearly all of this was derivable from what was already stored — but not quite.
+Handoffs link to a *conversation*, not a *message*, so attributing one to the
+turn that caused it meant matching on timestamps: fragile, and it would
+re-encode `handle_message()`'s branch logic in SQL where it drifts the first
+time a branch changes.
+
+**`ChatResult.outcome` is required and keyword-only.** A default would let a
+new branch ship unclassified and quietly skew every metric built on it, which
+is the failure analytics can least afford. Adding a branch means naming its
+outcome — that is the point.
+
+### Rules these reports must keep
+
+- **A rate with no denominator is `null`, never `0`.** "0% deflection" on a
+  fresh tenant is a lie told by a division, and it is the first thing a
+  prospect would see.
+- **Greetings and the contact exchange are not questions.** They stay out of
+  the denominator and are charted separately. Deflection is the easiest number
+  in this product to flatter by accident.
+- **Turns predating migration 0007 are reported as unclassified**, not assigned
+  a guess. Guesses do not belong in numbers a bank is asked to trust.
+- **No personal data in either report.** Ranking topics by the customer's
+  *intent* put a name and phone number straight into Overview — a reply of
+  "Oli 0911234567" to the contact request classifies as an ordinary question.
+  Topics filter on the recorded outcome, and **both** aggregate reports run
+  `classifier.redact_contact()` before a signature or example is built, because
+  a customer can also volunteer a number unprompted ("call me on 0911234567
+  about a loan") and that is a genuine question that lands there on merit. The
+  individual handoff row still carries the exact words and the contact fields —
+  an operator returning the call needs both.
+
 ## Content Gaps — the thing banks cannot get anywhere else
 
 `GET /admin/api/{slug}/content-gaps` groups every miss by
@@ -481,8 +530,10 @@ lender (smaller, faster procurement, hungrier).
   matching paste-or-pick-a-`.json` card). This is the real onboarding path,
   not a per-tenant Python seed script the way CBE/Dashen/Awash were built.
 - Their brand colour and logo on the widget.
-- **Analytics dashboard**: deflection rate, top questions, language mix.
-  Content Gaps is the first piece of this and already ships.
+- ~~**Analytics dashboard**: deflection rate, top questions, language mix.~~
+  **Shipped** — see "The two reports" below. What is left is export (CSV /
+  print) for a bank that wants the numbers in a board pack, and a handoff
+  console so an operator can work the queue rather than just close rows.
 - Embedding retrieval behind the same `retrieve()` interface (BM25 stays as
   fallback); LLM intent refinement **above** the rules floor, never replacing
   it.
@@ -552,8 +603,15 @@ lender (smaller, faster procurement, hungrier).
   cross-language retrieval shipped dead for the same reason: the mock stood
   exactly where the bug was. A feature that calls the model needs at least one
   test driving the real request path.
+- **Render the page before believing the UI.** The analytics tab passed every
+  test while drawing every bar empty (the fills were `<span>`s, so `width` and
+  `height` were ignored) and rendering its labels unreadable (light cards built
+  against this admin's dark `#0b1220` theme). Neither is visible from an API
+  test. Playwright plus the preinstalled Chromium at
+  `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` drives the real page in
+  the sandbox — `playwright install` is not needed and will fail.
 - **Schema changes need an Alembic migration** (never edit a committed one).
-  Migrations live in `migrations/versions/` (`0001`–`0005`);
+  Migrations live in `migrations/versions/` (`0001`–`0007`);
   `init_db()`/create_all is for tests and throwaway dev DBs only. CI asserts
   `upgrade head → downgrade base → upgrade head` works, so every new migration
   needs a real `downgrade()`.
