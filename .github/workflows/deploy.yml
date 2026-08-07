@@ -83,7 +83,13 @@ jobs:
           # with a generic "Could not parse SQLAlchemy URL from given URL
           # string" that doesn't hint at the real cause.
           export BANKASSIST_DATABASE_URL="$(printf '%s' "$DB_URL" | sed '1s/^\xef\xbb\xbf//' | tr -d '[:space:]')"
+          # Bracket the upgrade with the revision it is at. `upgrade head` is
+          # a no-op on an up-to-date schema and says so identically either
+          # way, so without these two lines the deploy log cannot tell you
+          # whether production's schema actually changed on this push.
+          echo "Schema before: $(python -m alembic current 2>&1 | tail -1)"
           python -m alembic upgrade head
+          echo "Schema after:  $(python -m alembic current 2>&1 | tail -1)"
           python -m bankassist.seed
           python -m bankassist.seed_cbe
           python -m bankassist.seed_dashen

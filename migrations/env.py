@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from logging.config import fileConfig
+
 from alembic import context
 from sqlalchemy import create_engine, pool
 
@@ -8,6 +10,17 @@ from bankassist.config import get_settings
 from bankassist.db import Base
 
 target_metadata = Base.metadata
+
+# Apply the [loggers] config from alembic.ini. Without this call the whole
+# section is dead configuration, alembic's INFO records fall to a root logger
+# defaulting to WARNING, and `alembic upgrade head` runs completely silently —
+# applying six migrations from an empty database prints nothing at all.
+#
+# That matters here because the deploy pipeline migrates the production
+# database on every push. A schema change that leaves no trace in the deploy
+# log is one you cannot confirm afterwards without opening a psql session.
+if context.config.config_file_name is not None:
+    fileConfig(context.config.config_file_name, disable_existing_loggers=False)
 
 
 def _database_url() -> str:
