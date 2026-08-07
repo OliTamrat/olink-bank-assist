@@ -67,6 +67,42 @@ def active_backend() -> str:
     return "extractive-fallback"
 
 
+class _HttpxAuthResponse:
+    """The three attributes google-auth reads off a transport response."""
+
+    def __init__(self, resp: httpx.Response) -> None:
+        self.status = resp.status_code
+        self.headers = resp.headers
+        self.data = resp.content
+
+
+class _HttpxAuthRequest:
+    """google-auth transport backed by httpx.
+
+    google.auth.transport.requests needs the `requests` package, which is an
+    optional extra of google-auth (google-auth[requests]) and is not
+    otherwise used here — so importing it raised ImportError in the built
+    image, the caller fell back, and Vertex silently never ran despite being
+    configured correctly. Rather than add a second HTTP library to the image
+    for one token refresh, this adapts httpx to the small transport
+    interface google-auth expects.
+    """
+
+    def __call__(
+        self,
+        url: str,
+        method: str = "GET",
+        body: Any = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+        **kwargs: Any,
+    ) -> _HttpxAuthResponse:
+        resp = httpx.request(
+            method, url, content=body, headers=headers, timeout=timeout or 10.0
+        )
+        return _HttpxAuthResponse(resp)
+
+
 def _vertex_token() -> str:
     """A bearer token for Vertex from Application Default Credentials.
 
@@ -78,7 +114,6 @@ def _vertex_token() -> str:
     global _credentials
     try:
         import google.auth
-        import google.auth.transport.requests
     except ImportError as exc:  # pragma: no cover - dependency is declared
         raise LLMUnavailable("google-auth is not installed") from exc
 
@@ -88,13 +123,32 @@ def _vertex_token() -> str:
                 creds, _project = google.auth.default(scopes=[_VERTEX_SCOPE])
                 _credentials = creds
             if not _credentials.valid:
-                _credentials.refresh(google.auth.transport.requests.Request())
+                _credentials.refresh(_HttpxAuthRequest())
             token: str = _credentials.token
     except Exception as exc:  # noqa: BLE001 — any auth failure means: fall back
         raise LLMUnavailable(f"Vertex credentials unavailable: {exc}") from exc
     if not token:
         raise LLMUnavailable("Vertex credentials produced no token")
     return token
+
+
+def credentials_ready() -> bool:
+    """Whether the configured backend can actually authenticate right now.
+
+    Exposed on /health as a boolean — no error text — so a silent fallback
+    like the one above is visible from outside without reading Cloud Run
+    logs or leaking internals publicly.
+    """
+    backend = active_backend()
+    if backend == "gemini":
+        return True
+    if backend != "vertex":
+        return False
+    try:
+        _vertex_token()
+    except LLMUnavailable:
+        return False
+    return True
 
 
 def _endpoint_and_headers() -> tuple[str, dict[str, str], dict[str, str]]:
