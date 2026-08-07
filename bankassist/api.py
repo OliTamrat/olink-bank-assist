@@ -24,7 +24,7 @@ from .llm import active_backend, credentials_ready
 from .logging_config import configure_logging, log_event
 from .models import AuditLog, Bank, Conversation, Document, Handoff, Message, new_token
 from .ratelimit import SlidingWindowLimiter
-from .retrieval import reindex_document
+from .retrieval import content_signature, reindex_document
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +452,60 @@ def list_handoffs(
         }
         for h in rows
     ]
+
+
+@app.get("/admin/api/{slug}/content-gaps")
+def content_gaps(
+    bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """What customers ask that this bank has no content for, ranked.
+
+    Every gap already files a handoff carrying the customer's own words, but
+    as individual rows that is a pile, not a work queue. Grouped and ranked by
+    frequency it becomes the one artifact a bank cannot get anywhere else: a
+    list of what its customers actually ask and nobody can answer.
+
+    Two reasons are distinguished because they need different work:
+    unanswered_question means nothing was found at all, while
+    answered_from_general_knowledge means the assistant fell back to
+    universal banking guidance — the bank may want to own that answer in its
+    own words, with its own limits and fees.
+    """
+    rows = db.execute(
+        select(Handoff)
+        .where(Handoff.bank_id == bank.id)
+        .where(Handoff.reason.in_(["unanswered_question", "answered_from_general_knowledge"]))
+        .order_by(Handoff.created_at.desc())
+        .limit(1000)
+    ).scalars().all()
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for h in rows:
+        question = (h.detail or "").strip()
+        if not question:
+            continue
+        key = content_signature(question) or question.lower()
+        gap = grouped.setdefault(
+            key,
+            {
+                "signature": key,
+                "count": 0,
+                "open_count": 0,
+                "reasons": {},
+                "examples": [],
+                "last_asked": h.created_at.isoformat(),
+            },
+        )
+        gap["count"] += 1
+        if h.status == "open":
+            gap["open_count"] += 1
+        gap["reasons"][h.reason] = gap["reasons"].get(h.reason, 0) + 1
+        # Rows arrive newest-first, so the first example is the latest wording.
+        if question not in gap["examples"] and len(gap["examples"]) < 3:
+            gap["examples"].append(question)
+
+    ranked = sorted(grouped.values(), key=lambda g: (-g["count"], g["signature"]))
+    return ranked[:50]
 
 
 @app.post("/admin/api/{slug}/handoffs/{handoff_id}/close")

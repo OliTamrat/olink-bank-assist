@@ -86,6 +86,21 @@ def tokenize(text: str) -> list[str]:
     return [tok.lower() for tok in _TOKEN.findall(text)]
 
 
+def content_signature(text: str, max_words: int = 8) -> str:
+    """A grouping key built from a message's informative words.
+
+    Used to collapse the same question asked in different words — "How do I
+    use an ATM?", "how to use ATM", "ATM how to use" all reduce to "atm use".
+    Reuses the retrieval stopword list rather than a second one, so a word
+    that carries no signal for search carries none for grouping either.
+
+    Deliberately word-order-independent and capped: a long rambling message
+    should still group with the short version of the same question.
+    """
+    words = sorted({tok for tok in tokenize(text) if tok not in _STOPWORDS})
+    return " ".join(words[:max_words])
+
+
 def chunk_text(content: str, max_chars: int = 700) -> list[str]:
     """Split a document into retrieval chunks on paragraph boundaries."""
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", content) if p.strip()]
