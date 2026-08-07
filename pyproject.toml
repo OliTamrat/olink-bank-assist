@@ -16,6 +16,13 @@ dependencies = [
     # defaults to psycopg2 specifically — this is that driver, binary wheel so
     # no build toolchain/libpq-dev needed in the Docker image.
     "psycopg2-binary>=2.9",
+    # Vertex AI is called over plain REST, but its auth is not: Application
+    # Default Credentials resolves the Cloud Run runtime service account via
+    # the metadata server (and a key file or gcloud creds locally), which
+    # means no API key to store or rotate. Hand-rolling that would need RSA
+    # JWT signing and a crypto dependency anyway — this is the smaller,
+    # standard primitive, not a vendor SDK.
+    "google-auth>=2.30",
 ]
 
 [project.optional-dependencies]

@@ -20,6 +20,7 @@ from .agent import handle_message
 from .config import get_settings
 from .db import get_db, init_db
 from .i18n import LANGUAGE_NAMES, SUPPORTED_LANGUAGES
+from .llm import active_backend
 from .logging_config import configure_logging, log_event
 from .models import AuditLog, Bank, Conversation, Document, Handoff, Message, new_token
 from .ratelimit import SlidingWindowLimiter
@@ -142,9 +143,7 @@ class HealthOut(BaseModel):
 
 @app.get("/health", response_model=HealthOut)
 def health() -> HealthOut:
-    settings = get_settings()
-    mode = "gemini" if settings.gemini_api_key else "extractive-fallback"
-    return HealthOut(status="ok", llm=mode)
+    return HealthOut(status="ok", llm=active_backend())
 
 
 @app.get("/banks/{slug}/public")
