@@ -184,12 +184,17 @@ def _request_contact(
 
 def _capture_contact(
     db: Session, bank: Bank, conversation: Conversation, text: str, language: str
-) -> ChatResult | None:
-    """Store contact details offered in reply to the request, or give up on them.
+) -> str | None:
+    """Store contact details offered in reply to the request.
 
-    Returns None when the message was not contact details at all. That is a
-    normal outcome: the customer changed the subject, and the caller answers
-    the new message rather than asking again.
+    Returns the acknowledgement to show, or None when the message was not
+    contact details at all — a normal outcome, meaning the customer changed
+    the subject and the caller answers the new message instead.
+
+    Returning text rather than a whole reply is the point: capturing a number
+    is a side effect of a turn, not the turn itself. Treating it as the whole
+    reply let a message carrying both a number and a complaint be answered
+    with "thanks, we will call you" while the complaint was dropped.
     """
     conversation.awaiting_contact = False
     name, contact = classifier.extract_contact(text)
@@ -227,7 +232,7 @@ def _capture_contact(
     )
 
     key = "contact_saved_named" if conversation.customer_name else "contact_saved"
-    reply = t(
+    return t(
         language,
         key,
         contact=conversation.contact_phone,
@@ -235,7 +240,6 @@ def _capture_contact(
         # ever formatted into a template that ignores it.
         name=conversation.customer_name or "",
     )
-    return ChatResult(reply, classifier.QUESTION, language, outcome=CONTACT_CAPTURED)
 
 
 def handle_message(
@@ -271,16 +275,39 @@ def handle_message(
     db.add(user_message)
 
     result: ChatResult
-    # The customer was just asked how to reach them. Try to read this message
-    # as the answer before anything else — a phone number classifies as
-    # nothing useful, and running it through retrieval would produce an
-    # "I don't have information about that" reply to details we asked for.
-    captured = None
+    # The customer was just asked how to reach them, so read this message as
+    # the answer — a bare phone number classifies as nothing useful, and
+    # running it through retrieval would answer details we asked for with
+    # "I don't have information about that".
+    contact_ack: str | None = None
     if conversation.awaiting_contact:
-        captured = _capture_contact(db, bank, conversation, text, language)
+        contact_ack = _capture_contact(db, bank, conversation, text, language)
         name = conversation.customer_name
-    if captured is not None:
-        result = captured
+
+    # ...but capturing a number must never be all that happens. A message can
+    # carry a number AND something that has to be handled, and answering
+    # "thanks, we will call you" to "my money was stolen, call me on 09..."
+    # dropped a theft report on the floor: no handoff, nobody routed to it.
+    # The account-data refusal and the education-not-advice disclaimer were
+    # skippable the same way — which is precisely what the allowlist exists to
+    # prevent. A guarded intent always wins, and the acknowledgement rides in
+    # front of the real answer.
+    guarded = intent in (
+        classifier.ACCOUNT_SPECIFIC,
+        classifier.COMPLAINT,
+        classifier.INVESTMENT_ADVICE,
+        classifier.COMPARISON,
+    )
+    # An explicit question asked alongside the number deserves an answer too.
+    # Deliberately narrow: "my name is Oli, call me on 0911 234 567" must stay
+    # a plain contact reply, so a question mark is the signal rather than a
+    # word count that would misread ordinary phrasing.
+    asks_something = classifier.remainder_after_contact(text).endswith("?")
+
+    if contact_ack is not None and not guarded and not asks_something:
+        result = ChatResult(
+            contact_ack, classifier.QUESTION, language, outcome=CONTACT_CAPTURED
+        )
     elif intent == classifier.GREETING:
         greeting = (
             t(language, "greeting_named", bank=bank.name, name=name)
@@ -442,6 +469,11 @@ def handle_message(
             ]
             deduped = list({s["document_id"]: s for s in sources}.values())
             result = ChatResult(reply, intent, language, sources=deduped, outcome=ANSWERED)
+
+    # The number was taken, but the reply belongs to whatever the message
+    # actually was. Say both, in that order.
+    if contact_ack is not None and result.outcome != CONTACT_CAPTURED:
+        result.reply = f"{contact_ack}\n\n{result.reply}"
 
     user_message.outcome = result.outcome
     db.add(
