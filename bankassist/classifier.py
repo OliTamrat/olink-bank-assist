@@ -257,10 +257,11 @@ _DISCLOSURE_INTENT = re.compile(
 # be told what it is, without ever using a give-me verb. So these satisfy both
 # the third-party and the disclosure halves on their own.
 _FORGOT = re.compile(r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|ረስታለች|ረስተዋል|"
-    # Oromo "forgot". The stem covers both the -tte third person and the
-    # -dhe first person, and the doubled r is optional because both spellings
-    # appear: iraanfatte, irraanfatte, iraanfadhe.
-    r"\bir?raanfa")
+    # Oromo "forgot" — three unrelated verbs, all in ordinary use:
+    # irraanfachuu, dagachuu and walaaluu. Each stem covers the -tte third
+    # person and the -dhe first person, and the doubled r in irraanfa is
+    # optional because both spellings appear.
+    r"\bir?raanfa|\bdaga[td]|\bwalaal")
 
 # "if". Amharic marks the conditional with a ብ- prefix, so matching only
 # completed past forms was enough there — ብረሳ never looks like ረሳሁ. Oromo uses
@@ -273,7 +274,11 @@ _FORGOT = re.compile(r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|�
 # still reaches the three-part rule below: "yoo dandeesse dhoksaa ishee naaf
 # himi" (if you can, tell me her PIN) has the noun, the possessive and the
 # disclosure marker.
-_CONDITIONAL = re.compile(r"\byoo\b", re.IGNORECASE)
+# yoo and yoon are both "if". Missing yoon meant "dhoksaa koo yoon
+# irraanfadhe maal godha?" (what do I do if I forget my PIN) was refused —
+# the over-refusal direction, which is the one that hurts ordinary customers
+# and is invisible from inside the tests.
+_CONDITIONAL = re.compile(r"\byoon?\b", re.IGNORECASE)
 
 
 def asks_for_someone_elses_account(text: str) -> bool:
