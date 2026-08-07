@@ -23,6 +23,11 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Hello! I am {bank}'s virtual assistant. Ask me anything about our "
             "accounts, services, fees, or how to bank with us."
         ),
+        "greeting_named": (
+            "Hello {name}! I am {bank}'s virtual assistant. Ask me anything about "
+            "our accounts, services, fees, or how to bank with us."
+        ),
+        "ack_named": "Thanks {name} —",
         "unknown": (
             "I don't have verified information about that yet, so I won't guess. "
             "I've noted your question for our customer service team — they can follow up with you."
@@ -61,6 +66,11 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ሰላም! እኔ የ{bank} ዲጂታል ረዳት ነኝ። ስለ ሂሳቦቻችን፣ አገልግሎቶቻችን፣ "
             "ክፍያዎች ወይም አጠቃቀም ማንኛውንም ጥያቄ ይጠይቁኝ።"
         ),
+        "greeting_named": (
+            "ሰላም {name}! እኔ የ{bank} ዲጂታል ረዳት ነኝ። ስለ ሂሳቦቻችን፣ አገልግሎቶቻችን፣ "
+            "ክፍያዎች ወይም አጠቃቀም ማንኛውንም ጥያቄ ይጠይቁኝ።"
+        ),
+        "ack_named": "አመሰግናለሁ {name} —",
         "unknown": (
             "ስለዚህ ጉዳይ የተረጋገጠ መረጃ ስለሌለኝ መገመት አልፈልግም። "
             "ጥያቄዎን ለደንበኞች አገልግሎት ቡድናችን አስተላልፌዋለሁ — በቅርቡ ያገኙዎታል።"
@@ -98,6 +108,11 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Akkam! Ani gargaaraa dijitaalaa {bank} ti. Waa'ee herregaa, tajaajilaa, "
             "kaffaltii fi fayyadama keenyaa gaaffii kamiyyuu na gaafadhaa."
         ),
+        "greeting_named": (
+            "Akkam {name}! Ani gargaaraa dijitaalaa {bank} dha. Waa'ee herregaa, "
+            "tajaajilaa, kaffaltii yookaan itti fayyadama gaafadhaa."
+        ),
+        "ack_named": "Galatoomi {name} —",
         "unknown": (
             "Waa'ee kanaa odeeffannoo mirkanaa'e waan hin qabneef tilmaamuu hin barbaadu. "
             "Gaaffii keessan garee tajaajila maamiltootaa keenyaaf dabarseera — "
@@ -137,6 +152,11 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ሰላም! ኣነ ናይ {bank} ዲጂታላዊ ሓጋዚ እየ። ብዛዕባ ሕሳባትና፣ ኣገልግሎታትና፣ "
             "ክፍሊታት ወይ ኣጠቓቕማ ዝኾነ ሕቶ ሕተቱኒ።"
         ),
+        "greeting_named": (
+            "ሰላም {name}! ኣነ ናይ {bank} ዲጂታላዊ ሓጋዚ እየ። ብዛዕባ ሕሳባትና፣ ኣገልግሎትና፣ "
+            "ክፍሊት ወይ ኣጠቓቕማ ዝኾነ ሕቶ ሕተቱኒ።"
+        ),
+        "ack_named": "የቐንየለይ {name} —",
         "unknown": (
             "ብዛዕባ እዚ ዝተረጋገጸ ሓበሬታ ስለ ዘይብለይ ክግምት ኣይደልን። "
             "ሕቶኹም ናብ ጉጅለ ኣገልግሎት ዓማዊልና ኣመሓላሊፈዮ ኣለኹ — ኣብ ቀረባ ግዜ ክረኽቡኹም እዮም።"
@@ -173,6 +193,11 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Salaan! Waxaan ahay kaaliyaha dijitaalka ah ee {bank}. Wax kasta oo ku "
             "saabsan xisaabaadka, adeegyada, khidmadaha iyo isticmaalka i weydii."
         ),
+        "greeting_named": (
+            "Salaan {name}! Waxaan ahay kaaliyaha dijitaalka ah ee {bank}. Wax walba "
+            "oo ku saabsan xisaabaha, adeegyada, khidmadaha ama isticmaalka i weydii."
+        ),
+        "ack_named": "Mahadsanid {name} —",
         "unknown": (
             "Arrintan macluumaad la xaqiijiyey kama hayo, mana doonayo inaan qiyaaso. "
             "Su'aashaada waxaan u gudbiyey kooxda adeegga macaamiisha — "

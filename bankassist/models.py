@@ -89,6 +89,11 @@ class Conversation(Base):
     channel: Mapped[str] = mapped_column(String(16), default="web")  # web | telegram
     external_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     language: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # A name the customer volunteered ("I'm Oli"), used to address them for
+    # the rest of the conversation. Personal data: never written to logs
+    # (log_event carries metadata only) and only ever set from an explicit
+    # self-introduction — see classifier.extract_name.
+    customer_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
