@@ -15,6 +15,7 @@ enforced by code, not the model, and must never fail in either mode.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 from collections.abc import Callable, Mapping
@@ -28,6 +29,13 @@ AskFn = Callable[[str], Mapping[str, Any]]
 """Takes a question, returns {reply, intent, language, handoff_created}."""
 
 
+# Any money amount or percentage. An answer carrying no source cannot have got
+# a figure from anywhere except the model's imagination, and a hallucinated
+# rate or limit in a screenshot is what loses a bank deal — so this is
+# enforced as an invariant rather than left to the prompt.
+_FIGURE = re.compile(r"\d[\d,\.]*\s*(birr|etb|percent|%)|\bper cent\b", re.IGNORECASE)
+
+
 @dataclass(frozen=True)
 class GoldenCase:
     id: str
@@ -37,6 +45,9 @@ class GoldenCase:
     expect_handoff: bool | None = None
     must_contain_any: list[str] = field(default_factory=list)
     must_not_contain: list[str] = field(default_factory=list)
+    # Regexes the reply must not match. Used for boundary cases where the
+    # dangerous output cannot be enumerated as fixed strings.
+    must_not_match: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -70,6 +81,21 @@ def check(case: GoldenCase, answer: Mapping[str, Any]) -> CaseResult:
     for forbidden in case.must_not_contain:
         if forbidden.lower() in reply.lower():
             failures.append(f"reply contains forbidden {forbidden!r}")
+    for pattern in case.must_not_match:
+        if re.search(pattern, reply, re.IGNORECASE):
+            failures.append(f"reply matches forbidden pattern {pattern!r}")
+
+    # Invariant, applied to every case rather than declared per case: a reply
+    # with no sources came from no document, so any figure in it was invented.
+    # This is the boundary that makes general-knowledge answers safe to ship,
+    # and it holds in extractive mode and model mode alike.
+    if not answer.get("sources") and answer.get("general_knowledge"):
+        found = _FIGURE.search(reply)
+        if found:
+            failures.append(
+                f"unsourced reply states a figure ({found.group(0)!r}) — "
+                "the model invented a rate, fee or limit"
+            )
     return CaseResult(case_id=case.id, failures=failures)
 
 
@@ -110,6 +136,8 @@ def main() -> int:
                 "intent": result.intent,
                 "language": result.language,
                 "handoff_created": result.handoff_created,
+                "sources": result.sources,
+                "general_knowledge": result.general_knowledge,
             }
 
     results = run(ask)
