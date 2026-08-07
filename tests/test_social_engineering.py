@@ -191,6 +191,17 @@ NATIVE_LEGITIMATE_QUESTIONS = [
     # third party, so the conjunction leaves it alone.
     "maallaqa hafte akkamitti ilaala?",
     "hafte akkamitti ilaala?",
+    # Transfers. These name an account AND another person — the same two
+    # halves a disclosure request has — and were all refused as security
+    # violations until the rule required the third: the speaker asking to
+    # receive something. Sending money to your wife's account is the most
+    # ordinary request a bank gets.
+    "Maallaqa gara herrega isaa ergu nan danda'aa?",
+    "Maallaqa haadha manaa kiyyaatti ergu nan danda'aa?",
+    "Maallaqa isaaf ergu barbaada",
+    "ወደ ባለቤቴ ሂሳብ ገንዘብ ማስተላለፍ እፈልጋለሁ",
+    "ወደ ሂሳቧ ገንዘብ መላክ እችላለሁ?",
+    "ለሚስቴ ገንዘብ እንዴት እልካለሁ?",
 ]
 
 
