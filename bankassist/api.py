@@ -20,7 +20,7 @@ from .agent import handle_message
 from .config import get_settings
 from .db import get_db, init_db
 from .i18n import LANGUAGE_NAMES, SUPPORTED_LANGUAGES
-from .llm import active_backend
+from .llm import active_backend, credentials_ready
 from .logging_config import configure_logging, log_event
 from .models import AuditLog, Bank, Conversation, Document, Handoff, Message, new_token
 from .ratelimit import SlidingWindowLimiter
@@ -136,6 +136,11 @@ class DocumentBulkIn(BaseModel):
 class HealthOut(BaseModel):
     status: str
     llm: str
+    # Whether the configured backend can actually authenticate. A backend can
+    # be configured correctly and still never run — that exact silent
+    # fallback shipped once — so this makes it checkable from outside without
+    # reading Cloud Run logs. A boolean only: no error text in a public route.
+    llm_ready: bool = False
 
 
 # ---------------------------------------------------------------- public
@@ -143,7 +148,7 @@ class HealthOut(BaseModel):
 
 @app.get("/health", response_model=HealthOut)
 def health() -> HealthOut:
-    return HealthOut(status="ok", llm=active_backend())
+    return HealthOut(status="ok", llm=active_backend(), llm_ready=credentials_ready())
 
 
 @app.get("/banks/{slug}/public")

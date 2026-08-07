@@ -69,11 +69,16 @@ def test_vertex_flag_without_a_project_is_not_vertex(
     assert llm.active_backend() == "extractive-fallback"
 
 
-def _use_vertex(monkeypatch: pytest.MonkeyPatch, location: str = "us-central1") -> None:
+def _use_vertex_env(monkeypatch: pytest.MonkeyPatch, location: str = "us-central1") -> None:
+    """Configure Vertex without stubbing the token, so the auth path runs."""
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "1")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "olink-bank-assist")
     monkeypatch.setenv("VERTEX_LOCATION", location)
     config.reset_settings()
+
+
+def _use_vertex(monkeypatch: pytest.MonkeyPatch, location: str = "us-central1") -> None:
+    _use_vertex_env(monkeypatch, location)
     monkeypatch.setattr(llm, "_vertex_token", lambda: "fake-token")
 
 
@@ -189,3 +194,71 @@ def test_health_reports_the_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     config.reset_settings()
     with TestClient(app) as client:
         assert client.get("/health").json()["llm"] == "vertex"
+
+
+def test_vertex_token_uses_a_transport_that_actually_imports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression that shipped: google.auth.transport.requests needs the
+    `requests` package, an optional extra we don't install because we use
+    httpx. Importing it raised ImportError, generate_answer() fell back, and
+    Vertex silently never ran despite being configured correctly.
+
+    The earlier tests all mocked _vertex_token, so none of them touched this
+    path. This one drives the real function with a fake credential, so the
+    transport must genuinely import and be callable.
+    """
+    _use_vertex_env(monkeypatch)
+
+    refreshed: dict[str, Any] = {}
+
+    class FakeCreds:
+        valid = False
+        token = "minted-token"
+
+        def refresh(self, request: Any) -> None:
+            # google-auth calls the transport; it must be usable, not just
+            # constructible.
+            refreshed["transport"] = type(request).__name__
+            self.valid = True
+
+    import google.auth
+
+    monkeypatch.setattr(google.auth, "default", lambda scopes=None: (FakeCreds(), "proj"))
+    llm.reset_credentials()
+
+    assert llm._vertex_token() == "minted-token"
+    assert refreshed["transport"] == "_HttpxAuthRequest"
+
+
+def test_credentials_ready_is_false_when_auth_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_vertex_env(monkeypatch)
+
+    def broken() -> str:
+        raise llm.LLMUnavailable("nope")
+
+    monkeypatch.setattr(llm, "_vertex_token", broken)
+    assert llm.credentials_ready() is False
+
+
+def test_credentials_ready_is_true_when_a_token_mints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_vertex_env(monkeypatch)
+    monkeypatch.setattr(llm, "_vertex_token", lambda: "tok")
+    assert llm.credentials_ready() is True
+
+
+def test_health_exposes_readiness(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi.testclient import TestClient
+
+    from bankassist.api import app
+
+    _use_vertex_env(monkeypatch)
+    monkeypatch.setattr(llm, "_vertex_token", lambda: "tok")
+    with TestClient(app) as client:
+        body = client.get("/health").json()
+    assert body["llm"] == "vertex"
+    assert body["llm_ready"] is True
