@@ -368,6 +368,43 @@ Remaining polish, not blockers:
       doesn't have. If pooling issues ever do show up in production logs,
       the standard fallback is the direct (port 5432, non-pooled)
       connection string, not that fix.
+      **LIVE as of 2026-08-07** — `https://bankassist-430565798339.us-east1.run.app`,
+      revision `bankassist-00003-5jp` serving 100% of traffic, all four tenants
+      (demo, cbe, dashen, awash) seeded in the production Supabase database.
+      Four more real bugs surfaced only by running the pipeline against
+      production, each fixed in its own PR:
+      (a) **a failing secret fetch didn't stop the job** — bash's `set -e`
+      does not propagate a failing command substitution through a plain
+      assignment, so a missing secret silently left `BANKASSIST_DATABASE_URL`
+      empty and failed much later with a confusing SQLAlchemy URL-parse
+      error; now `|| exit 1` on the substitution itself.
+      (b) **a trailing newline in the secret** (from piping a PowerShell
+      string into `gcloud secrets create --data-file=-`) produced
+      `FATAL: database "postgres\n" does not exist`.
+      (c) **a UTF-8 BOM in the secret** — Windows PowerShell 5.1's
+      `Out-File -Encoding utf8` silently prepends `EF BB BF`, which is not
+      whitespace, survives a plain trim, and makes SQLAlchemy raise the same
+      generic "Could not parse SQLAlchemy URL" error as an *empty* string
+      does. The deploy now strips both, so a re-broken secret cannot silently
+      take the deploy down again.
+      (d) **the Cloud Run revision's runtime service account** is a different
+      identity from the CI deployer SA. Without `--service-account`, Cloud Run
+      defaulted the revision to the project's generic Compute Engine default
+      SA, which had no `secretAccessor` — so migrations succeeded (they run in
+      CI, as the deployer) while the revision itself failed to start. The
+      deploy now pins `bankassist-deployer` as the runtime identity too.
+      **Known tradeoff:** that SA is now both CI deployer and runtime
+      identity, more privilege than the running service needs — worth
+      splitting into a dedicated minimal runtime SA.
+- [ ] **Add `GEMINI_API_KEY` — the highest-leverage change left.** Without it
+      the assistant runs extractive-only: `_extractive_answer()` pastes the
+      top retrieved chunk back verbatim rather than composing an answer, so
+      replies are topically right but do not address the specific question
+      asked. That symptom reads as "needs more data" or "needs training" and
+      is neither — more documents make the pasted text longer, not more
+      responsive. `generate_answer()` is already written and already
+      constrained (answer only from context, never invent a figure); it needs
+      the key in Secret Manager and a line back in `--set-secrets`.
 - [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`
       (needs public HTTPS)
 

@@ -99,12 +99,51 @@ exist), deploys to Cloud Run, and points `APP_BASE_URL` at the live URL.
 Trigger a one-off run anytime via Actions → Deploy to Cloud Run → Run
 workflow — no local `gcloud`/Docker/Python required for any of it.
 
-## Verify
+## Live
+
+**`https://bankassist-430565798339.us-east1.run.app`** — deployed 2026-08-07,
+all four tenants (`demo`, `cbe`, `dashen`, `awash`) seeded.
 
 ```bash
-curl https://<your-cloud-run-url>/health
+curl https://bankassist-430565798339.us-east1.run.app/health
 # {"status":"ok","llm":"gemini"|"extractive-fallback"}
 ```
 
-Then open `/widget?bank=cbe` and `/admin` at that URL — this is the link
-you hand a prospect instead of demoing off a laptop.
+- `/widget?bank=cbe` — the link you hand a prospect instead of demoing off a
+  laptop. Swap the slug for `dashen`, `awash`, or `demo`.
+- `/admin` — asks for a bank slug and that tenant's admin token.
+- There is deliberately **no route at `/`**, so the root returns
+  `{"detail":"Not Found"}`. That is FastAPI answering — i.e. the service is up.
+
+### Admin tokens
+
+The seed scripts no longer print tokens under CI — they used to land in the
+GitHub Actions log on every deploy, readable by anyone with repo access and
+retained by GitHub. Retrieve one from a machine that can reach the database:
+
+```bash
+python -m bankassist.show_token cbe
+python -m bankassist.show_token cbe --rotate   # if a token has been exposed
+```
+
+## Runtime identity — known tradeoff
+
+`deploy.yml` pins `bankassist-deployer` as the Cloud Run **runtime** service
+account as well as the CI deployer. Cloud Run otherwise defaults a revision to
+the project's generic Compute Engine default SA, which has no `secretAccessor`
+and so cannot read `bankassist-database-url` — the revision then fails to start
+even though the `gcloud run deploy` command itself reports success.
+
+Reusing the deployer SA fixed that with no extra manual setup, but it gives the
+running service more privilege than it needs (it can deploy Cloud Run and write
+to Artifact Registry). Worth splitting into a dedicated runtime SA holding only
+`secretmanager.secretAccessor`:
+
+```bash
+gcloud iam service-accounts create bankassist-runtime \
+  --display-name="Bank Assist Cloud Run runtime"
+gcloud secrets add-iam-policy-binding bankassist-database-url \
+  --member="serviceAccount:bankassist-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+# then swap the --service-account value in deploy.yml
+```

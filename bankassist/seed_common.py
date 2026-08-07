@@ -11,6 +11,8 @@ widget (see `bankassist/static/widget.html`) for every prospect tenant.
 
 from __future__ import annotations
 
+import os
+
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
@@ -58,3 +60,23 @@ def seed_prospect_bank(
             reindex_document(db, doc)
         db.commit()
         return bank, True
+
+
+def print_seed_summary(bank: Bank, created: bool, label: str, slug: str) -> None:
+    """Report what a seed run did, without writing the admin token into CI logs.
+
+    The seed scripts run on every deploy, so an unconditional
+    `print(bank.admin_token)` puts every tenant's admin credential into the
+    GitHub Actions log — readable by anyone with repo access and retained by
+    GitHub. Printing locally is genuinely useful for development, so this
+    suppresses only under CI (GitHub Actions sets CI=true) and points at
+    `python -m bankassist.show_token` as the retrieval path.
+    """
+    status = "created" if created else "already exists"
+    print(f"{label} {status}: {bank.name} (slug={bank.slug})")
+    if os.environ.get("CI"):
+        print(f"Admin token: [hidden in CI] — run `python -m bankassist.show_token {slug}`")
+    else:
+        print(f"Admin token: {bank.admin_token}")
+    print(f"Widget:  http://localhost:8100/widget?bank={slug}")
+    print("Admin:   http://localhost:8100/admin")

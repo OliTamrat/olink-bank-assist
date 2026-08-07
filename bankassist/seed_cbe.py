@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from .agent import WHY_CHOOSE_CATEGORY
 from .models import Bank
-from .seed_common import prospect_disclaimer, seed_prospect_bank
+from .seed_common import print_seed_summary, prospect_disclaimer, seed_prospect_bank
 
 CBE_SLUG = "cbe"
 CBE_NAME = "Commercial Bank of Ethiopia"
@@ -419,8 +419,4 @@ def seed() -> tuple[Bank, bool]:
 
 if __name__ == "__main__":
     bank, created = seed()
-    status = "created" if created else "already exists"
-    print(f"CBE prospect-demo bank {status}: {bank.name} (slug={bank.slug})")
-    print(f"Admin token: {bank.admin_token}")
-    print("Widget:  http://localhost:8100/widget?bank=cbe")
-    print("Admin:   http://localhost:8100/admin")
+    print_seed_summary(bank, created, "CBE prospect-demo bank", "cbe")
