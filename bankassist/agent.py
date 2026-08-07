@@ -65,11 +65,15 @@ ACCOUNT_BLOCKED = "account_blocked"      # security template; no account access
 COMPARISON = "comparison"                # "is X better than you?"
 GREETING = "greeting"                    # hello, not a question
 CONTACT_CAPTURED = "contact_captured"    # the customer left a number
+HUMAN_REQUEST = "human_request"          # asked for a person, not for information
 
 # Turns that represent a customer actually asking this bank something. The
 # denominator of every rate below, so greetings and the contact exchange can't
 # quietly inflate the numbers a bank is being sold on.
-SUBSTANTIVE = (ANSWERED, GENERAL_GUIDANCE, UNANSWERED, COMPLAINT, ACCOUNT_BLOCKED, COMPARISON)
+SUBSTANTIVE = (
+    ANSWERED, GENERAL_GUIDANCE, UNANSWERED, COMPLAINT, ACCOUNT_BLOCKED,
+    COMPARISON, HUMAN_REQUEST,
+)
 
 # Substantive turns that did NOT need a person. account_blocked belongs here:
 # refusing to read out an account balance in chat is the assistant working
@@ -297,6 +301,12 @@ def handle_message(
         classifier.COMPLAINT,
         classifier.INVESTMENT_ADVICE,
         classifier.COMPARISON,
+        # Every human-path intent belongs here. Leaving one off means contact
+        # capture returns early and the request is answered with "thank you,
+        # we'll be in touch" while filing nothing — which is how a complaint
+        # bundled with a phone number once reached nobody. A new intent that
+        # routes to a person must be added here in the same change.
+        classifier.HUMAN_REQUEST,
     )
     # An explicit question asked alongside the number deserves an answer too.
     # Deliberately narrow: "my name is Oli, call me on 0911 234 567" must stay
@@ -330,6 +340,28 @@ def handle_message(
             handoff_created=True,
             awaiting_contact=conversation.awaiting_contact,
             outcome=COMPLAINT,
+        )
+    elif intent == classifier.HUMAN_REQUEST:
+        # Same machinery as a complaint — handoff, acknowledgement, contact ask
+        # — with an acknowledgement that answers what was actually said. This
+        # reached production replying "I don't have verified information about
+        # that yet, so I won't guess" to "I need to speak to the manager on
+        # site", which is a non-sequitur: the customer was not asking for
+        # information. It is a separate reason code from "complaint" so a bank
+        # can see the difference between people who are unhappy and people who
+        # simply want a human.
+        _create_handoff(db, bank, conversation, "human_requested", text[:2000])
+        ack = t(language, "human_request_ack")
+        if name:
+            ack = f"{t(language, 'ack_named', name=name)} {ack}"
+        ack = _request_contact(db, bank, conversation, language, ack)
+        result = ChatResult(
+            ack,
+            intent,
+            language,
+            handoff_created=True,
+            awaiting_contact=conversation.awaiting_contact,
+            outcome=HUMAN_REQUEST,
         )
     elif intent == classifier.COMPARISON:
         why_choose = db.execute(

@@ -64,6 +64,13 @@ _STRINGS: dict[str, dict[str, str]] = {
             "I'm sorry you've had this experience. I've flagged your message for our "
             "customer service team so a person can follow up with you."
         ),
+        # Someone asking for a person is not asking a question. This reached
+        # production answering "I don't have verified information about that
+        # yet, so I won't guess" to "I need to speak to the manager on site".
+        "human_request_ack": (
+            "Of course — I've passed you to our customer service team so a person "
+            "can help you directly."
+        ),
         "advice_disclaimer": (
             "Note: this is general financial education, not personal investment advice. "
             "Please speak with a licensed advisor before making investment decisions."
@@ -119,6 +126,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "complaint_ack": (
             "ስለደረሰብዎት ችግር ይቅርታ እንጠይቃለን። መልዕክትዎን ለደንበኞች አገልግሎት "
             "ቡድናችን አስተላልፌዋለሁ — አንድ ሰው በቅርቡ ያገኙዎታል።"
+        ),
+        "human_request_ack": (
+            "እሺ — ወደ ደንበኞች አገልግሎት ቡድናችን አስተላልፌዎታለሁ፤ አንድ ሰው በቀጥታ "
+            "ያግዝዎታል።"
         ),
         "advice_disclaimer": (
             "ማሳሰቢያ፡ ይህ አጠቃላይ የፋይናንስ ትምህርት እንጂ የግል የኢንቨስትመንት ምክር አይደለም። "
@@ -179,6 +190,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Rakkoo isin mudateef dhiifama gaafanna. Ergaa keessan garee tajaajila "
             "maamiltootaaf dabarseera — namni tokko dhiyootti isin qunnama."
         ),
+        "human_request_ack": (
+            "Tole — garee tajaajila maamiltootaa keenyaatti isin dabarseera, "
+            "namni tokko kallattiin isin gargaara."
+        ),
         "advice_disclaimer": (
             "Hubachiisa: kun barnoota faayinaansii waliigalaa malee gorsa invastimantii "
             "dhuunfaa miti. Murtoo gochuu keessan dura gorsaa hayyama qabu mariisisaa."
@@ -233,6 +248,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "complaint_ack": (
             "ብዘጋጠመኩም ጸገም ይቕሬታ ንሓትት። መልእኽትኹም ናብ ጉጅለ ኣገልግሎት ዓማዊል "
             "ኣመሓላሊፈዮ ኣለኹ — ሓደ ሰብ ኣብ ቀረባ ግዜ ክረኽበኩም እዩ።"
+        ),
+        "human_request_ack": (
+            "ሕራይ — ናብ ጉጅለ ኣገልግሎት ዓማዊልና ኣመሓላሊፈኩም ኣለኹ፡ ሓደ ሰብ ብቐጥታ "
+            "ክሕግዘኩም እዩ።"
         ),
         "advice_disclaimer": (
             "መዘኻኸሪ፡ እዚ ሓፈሻዊ ፋይናንሳዊ ትምህርቲ እምበር ናይ ውልቂ ናይ ኢንቨስትመንት ምኽሪ "
@@ -292,6 +311,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "complaint_ack": (
             "Waan ka xunnahay dhibaatada kaa soo gaartay. Fariintaada waxaan u gudbiyey "
             "kooxda adeegga macaamiisha — qof ayaa dhawaan kula soo xiriiri doona."
+        ),
+        "human_request_ack": (
+            "Waa hagaag — waxaan kuu gudbiyey kooxda adeegga macaamiisha, "
+            "qof ayaa si toos ah kuu caawin doona."
         ),
         "advice_disclaimer": (
             "Ogeysiis: tani waa waxbarasho maaliyadeed oo guud, ma aha talo maalgashi oo "

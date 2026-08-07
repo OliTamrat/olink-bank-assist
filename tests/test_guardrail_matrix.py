@@ -131,6 +131,12 @@ def _assert_advice_disclaimer(data: dict[str, Any]) -> None:
     assert t(data["language"], "advice_disclaimer") in data["reply"]
 
 
+def _assert_escalated_to_a_person(data: dict[str, Any]) -> None:
+    assert data["intent"] == "human_request", data["intent"]
+    assert data["handoff_created"] is True, "asking for a person must reach one"
+    assert t(data["language"], "human_request_ack") in data["reply"]
+
+
 # Each guarded intent in two shapes: plain, and bundled with a phone number.
 # The bundled form is how the contact-capture bypass happened, and it is
 # cheap to check everywhere rather than only where it broke.
@@ -152,6 +158,12 @@ PROBES: list[tuple[str, str, Callable[[dict[str, Any]], None]]] = [
         "advice_with_number",
         "Should I invest in ESX shares? call me on 0911234567",
         _assert_advice_disclaimer,
+    ),
+    ("human_plain", "I need to speak to the manager on site", _assert_escalated_to_a_person),
+    (
+        "human_with_number",
+        "Oli 0911234567, and I need to speak to a manager",
+        _assert_escalated_to_a_person,
     ),
 ]
 
@@ -181,8 +193,11 @@ def test_the_guarded_intents_are_all_covered(client: TestClient, demo_bank: Any)
         classifier.ACCOUNT_SPECIFIC,
         classifier.COMPLAINT,
         classifier.INVESTMENT_ADVICE,
+        classifier.HUMAN_REQUEST,
     }
-    exercised = {"account_specific", "complaint", "investment_advice"}
+    exercised = {
+        "account_specific", "complaint", "investment_advice", "human_request",
+    }
     assert guarded == exercised, (
         "a guarded intent was added or renamed without extending this matrix"
     )
