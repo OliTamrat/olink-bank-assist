@@ -187,7 +187,10 @@ _ACCOUNT_RE = re.compile(
 # guessed. The Oromo spelling alternation is real: herrega, herreega, heerega
 # and hereega all appear.
 _OTHERS_ACCOUNT_NOUN = re.compile(
-    r"ሂሳብ|ሒሳብ|ቁጠባ|ካርድ|ፒን|ሚስጥር ቁጥር|"
+    # ቀሪ ("remaining") is an account word only in combination — see the
+    # conjunction below. "ቀሪ ገንዘቧን ላክልኝ" (send me her remaining money) needs
+    # it, because that phrasing names no account at all.
+    r"ሂሳብ|ሒሳብ|ቁጠባ|ካርድ|ፒን|ሚስጥር ቁጥር|ቀሪ|"
     r"h[ea]+rr?[ea]+ga|kaardii|lakkoofsa herr?[ea]*ga|maallaqa|"
     r"xisaab|akoonto|lambarka akoonka",
     re.IGNORECASE,
@@ -196,6 +199,11 @@ _OTHERS_POSSESSIVE = re.compile(
     # Amharic: her/his number, her/his account, my wife/spouse (accusative
     # forms are matched by the stem, so ባለቤቴን contains ባለቤቴ).
     r"ቁጥሯ|ቁጥሩ|ሂሳቧ|ሂሳቡ|ባለቤቴ|ሚስቴ|ባለቤቷ|ባለቤቱ|የእሷ|የእሱ|ሚስቱ|ባሏ|"
+    # "her/his money". ገንዘቡ is genuinely ambiguous — the -ኡ suffix is both
+    # "his" and the definite article, so it also reads as "the money". The
+    # conjunction is what makes including it safe: "ገንዘቡን እንዴት እልካለሁ"
+    # (how do I send the money) names no account word and stays answerable.
+    r"ገንዘቧ|ገንዘቡ|"
     # Afaan Oromo: her, his, my wife, my husband.
     r"ishee|is?saa|haadha manaa|abbaa manaa|"
     # Somali: her/his, my wife — first pass, still needs a native reviewer.
