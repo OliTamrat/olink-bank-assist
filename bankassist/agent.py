@@ -101,6 +101,14 @@ def handle_message(
     language = detected or conversation.language or bank.default_language
     conversation.language = language
 
+    # A volunteered name sticks for the rest of the conversation — being
+    # asked your name twice is worse than never being asked. Only ever set
+    # from an explicit self-introduction, and never logged.
+    introduced = classifier.extract_name(text)
+    if introduced and not conversation.customer_name:
+        conversation.customer_name = introduced[:80]
+    name = conversation.customer_name
+
     intent = classifier.classify_intent(text, bank_aliases=_bank_aliases(bank))
     db.add(
         Message(
@@ -114,12 +122,20 @@ def handle_message(
 
     result: ChatResult
     if intent == classifier.GREETING:
-        result = ChatResult(t(language, "greeting", bank=bank.name), intent, language)
+        greeting = (
+            t(language, "greeting_named", bank=bank.name, name=name)
+            if name
+            else t(language, "greeting", bank=bank.name)
+        )
+        result = ChatResult(greeting, intent, language)
     elif intent == classifier.ACCOUNT_SPECIFIC:
         result = ChatResult(t(language, "account_help"), intent, language)
     elif intent == classifier.COMPLAINT:
         _create_handoff(db, bank, conversation, "complaint", text[:2000])
-        result = ChatResult(t(language, "complaint_ack"), intent, language, handoff_created=True)
+        ack = t(language, "complaint_ack")
+        if name:
+            ack = f"{t(language, 'ack_named', name=name)} {ack}"
+        result = ChatResult(ack, intent, language, handoff_created=True)
     elif intent == classifier.COMPARISON:
         why_choose = db.execute(
             select(Document).where(

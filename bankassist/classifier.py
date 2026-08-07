@@ -67,9 +67,10 @@ QUESTION = "question"  # product / how-to / education — the answerable bucket
 _GREET_WORD = (
     r"hi|hello|hey|hallo|good (morning|afternoon|evening)|greetings|"
     r"selam|selaam|salam|salaam|salaan|nagaa|naga|"
-    r"akkam|akam|ashamaa?|jirta|jirtu|jirtan|fayyaa|"
+    r"akkam|akam|asham\w*|jirta|jirtu|jirtan|fayyaa|there|"
     r"dehna|dehina|nagaadha|iska warran|sidee tahay|subax wanaagsan|"
-    r"ሰላም|ሰላምታ|ጤና ይስጥልኝ|ደህና|ደሕና|ነህ|ነሽ|ኖት|ከመይ|ሓዲኹም|እንደምን|አለህ|አለሽ"
+    r"ሰላም|ሰላምታ|ጤና ይስጥልኝ|ደህና|ደሕና|ነህ|ነሽ|ነኝ|ኖት|ናችሁ|ኑ|ከመይ|ሓዲኹም|"
+    r"እንደምን|አደርክ|አደርሽ|አደራችሁ|ዋልክ|ዋልሽ|አለህ|አለሽ|አላችሁ"
 )
 
 # One or more greeting words in any order, separated only by spaces or
@@ -230,6 +231,14 @@ def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
         return INVESTMENT_ADVICE
     if _comparison_re(bank_aliases).search(text):
         return COMPARISON
+
+    # An introduction with no request attached is someone saying hello —
+    # "I am Oli", "ኦሊ ነኝ". Checked last so a real request always wins:
+    # "I am Oli, what are your rates?" never reaches here, because
+    # extract_name() only accepts a bare introduction as the whole message.
+    if extract_name(text) is not None:
+        return GREETING
+
     return QUESTION
 
 
@@ -237,3 +246,86 @@ def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
 # named here are answered autonomously; everything else routes to a human
 # path or a safety template.
 AUTO_ANSWER_INTENTS = frozenset({GREETING, QUESTION, INVESTMENT_ADVICE, COMPARISON})
+
+
+# --------------------------------------------------------------- name
+
+# Continuations that make "I am ..." a statement of need rather than an
+# introduction. Without this, "Hi, I am looking for a loan" would be read
+# as someone named "looking".
+_NOT_A_NAME = frozenset(
+    [
+        "looking", "interested", "new", "here", "sorry", "confused", "trying",
+        "wondering", "calling", "asking", "having", "unable", "not", "a", "an",
+        "the", "just", "still", "already", "planning", "hoping", "worried",
+        "customer", "client", "student", "unemployed", "employed", "retired",
+    ]
+)
+
+# Where the name sits relative to the marker differs by language: English
+# and Oromo "maqaan koo" put it after, Amharic/Tigrinya verb forms put it
+# before. Both shapes are matched explicitly rather than guessed.
+_NAME_AFTER_RE = re.compile(
+    r"\b(?:my name is|i am called|call me|this is|i am|i'm|im)\s+([^\s,.!?።፣]{2,40})",
+    re.IGNORECASE,
+)
+_NAME_AFTER_STRICT_RE = re.compile(
+    r"\b(?:maqaan koo|maqaan kiyya|magacaygu waa|magacaygu)\s+([^\s,.!?።፣]{2,40})",
+    re.IGNORECASE,
+)
+_NAME_BEFORE_RE = re.compile(
+    r"([^\s,.!?።፣]{2,40})\s+(?:እባላለሁ|እባላለው|ይበሃል|ነኝ|እየ|jedhama|jedhamaa)",
+    re.IGNORECASE,
+)
+_NAME_BETWEEN_RE = re.compile(
+    r"(?:ስሜ|ስመይ)\s+([^\s,.!?።፣]{2,40})(?:\s+(?:ነው|እዩ))?",
+    re.IGNORECASE,
+)
+
+
+def _plausible_name(candidate: str) -> str | None:
+    """Reject anything that is obviously not a person's name."""
+    name = candidate.strip(" ,.!?።፣'\"")
+    if not (2 <= len(name) <= 40):
+        return None
+    lowered = name.lower()
+    if lowered in _NOT_A_NAME:
+        return None
+    # A greeting word sitting where a name should be means the pattern
+    # matched the greeting itself — "ሰላም ነኝ" is "I'm well", not a name.
+    if _GREETING_ONLY_RE.match(name):
+        return None
+    # Digits are never part of a name here, and an account number captured
+    # as one would be stored and echoed back — exactly what must not happen.
+    if any(ch.isdigit() for ch in name):
+        return None
+    return name
+
+
+def extract_name(text: str) -> str | None:
+    """Pull a self-introduced name out of a message, or None.
+
+    Only explicit introductions count. Everything captured here is echoed
+    back to the customer and persisted on the conversation, so the bar is
+    "unmistakably a name" — a false positive would have the assistant
+    cheerfully addressing someone as "looking" or, far worse, as their own
+    account number.
+    """
+    for pattern in (_NAME_BETWEEN_RE, _NAME_AFTER_STRICT_RE, _NAME_BEFORE_RE):
+        match = pattern.search(text)
+        if match:
+            name = _plausible_name(match.group(1))
+            if name:
+                return name
+
+    # Bare "I am X" is the loosest form, so it only counts when X is the
+    # whole remainder — "I am Oli" introduces, "I am looking for a loan"
+    # does not.
+    remainder, _had = strip_greeting(text)
+    match = _NAME_AFTER_RE.search(remainder)
+    if match:
+        tail = remainder[match.start() :]
+        after = tail[match.end() - match.start() :].strip(" ,.!?።፣")
+        if not after or after.lower().startswith(("nice to meet", "ደስ")):
+            return _plausible_name(match.group(1))
+    return None
