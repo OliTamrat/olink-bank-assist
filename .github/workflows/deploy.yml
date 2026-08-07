@@ -54,7 +54,15 @@ jobs:
       - name: Run database migrations and seed tenants
         run: |
           pip install .
-          export BANKASSIST_DATABASE_URL="$(gcloud secrets versions access latest --secret=bankassist-database-url --project=${{ secrets.GCP_PROJECT_ID }})"
+          # A failed `gcloud secrets versions access` here must stop the
+          # job immediately — bash's `set -e` does NOT propagate a failing
+          # command substitution through a plain assignment, so without
+          # this explicit check a missing/misnamed secret silently leaves
+          # BANKASSIST_DATABASE_URL empty and fails much later with a
+          # confusing SQLAlchemy URL-parse error instead of a clear one.
+          DB_URL="$(gcloud secrets versions access latest --secret=bankassist-database-url --project=${{ secrets.GCP_PROJECT_ID }})" \
+            || { echo "::error::Failed to fetch bankassist-database-url from Secret Manager — check it exists and the deployer service account has secretAccessor on it."; exit 1; }
+          export BANKASSIST_DATABASE_URL="$DB_URL"
           python -m alembic upgrade head
           python -m bankassist.seed
           python -m bankassist.seed_cbe
