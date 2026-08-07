@@ -128,6 +128,12 @@ class Message(Base):
     text: Mapped[str] = mapped_column(Text)
     intent: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sources: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # What the assistant actually did on this turn — see agent.Outcome. Set on
+    # assistant messages only; null on the customer's own messages, and on any
+    # assistant message written before migration 0007. Analytics reports those
+    # as unclassified rather than guessing, because a bank is being asked to
+    # trust these numbers.
+    outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

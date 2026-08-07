@@ -36,8 +36,32 @@
   #status { font-size: 12px; color: #64748b; margin-left: auto; }
   .empty { color: #64748b; font-size: 13.5px; padding: 12px 0; }
 .contact{margin:8px 0;font-size:13px}
-.contact a{color:#0f766e;text-decoration:none}
+.contact a{color:#2dd4bf;text-decoration:none}
 .contact.none{color:#9aa0a6;font-style:italic}
+/* Overview. Palette matches the rest of the panel — this is a dark theme,
+   and light cards rendered the labels near-invisible. */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:#111a2c;border:1px solid #1e293b;border-radius:12px;padding:14px 16px}
+.kpi .v{font-size:30px;font-weight:600;line-height:1.15;color:#2dd4bf}
+.kpi .v.muted{color:#64748b;font-weight:400;font-size:22px}
+.kpi .k{font-size:12.5px;color:#94a3b8;margin-top:2px}
+.kpi .sub{font-size:11.5px;color:#64748b;margin-top:6px}
+.panel{background:#111a2c;border:1px solid #1e293b;border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.panel h3{margin:0 0 12px;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8}
+.bar{display:grid;grid-template-columns:180px 1fr 42px;gap:12px;align-items:center;margin:7px 0;font-size:13px;color:#cbd5e1}
+.bar .track{background:#0b1220;border:1px solid #1e293b;border-radius:5px;height:10px;overflow:hidden}
+/* display:block matters — a span is inline, so width and height are ignored
+   and every bar renders as an empty track. */
+.bar .fill{display:block;background:#2dd4bf;height:100%}
+.bar .fill.warn{background:#f59e0b}
+.bar .fill.bad{background:#ef4444}
+.bar .n{text-align:right;color:#94a3b8;font-variant-numeric:tabular-nums}
+.topic{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:baseline;margin:7px 0;font-size:13px;color:#cbd5e1}
+.topic .n{text-align:right;color:#94a3b8;font-variant-numeric:tabular-nums}
+.windowbar{margin-bottom:14px;font-size:12.5px;color:#94a3b8}
+.windowbar button{margin-left:6px;background:#273449;border:none;color:#e2e8f0;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}
+.windowbar button.on{background:#0f766e;color:#fff}
+.note{font-size:12px;color:#64748b;margin-top:12px}
 </style>
 </head>
 <body>
@@ -49,7 +73,8 @@
   <span id="status"></span>
 </header>
 <nav>
-  <button id="tab-docs" class="active" onclick="showTab('docs')">Knowledge Base</button>
+  <button id="tab-overview" class="active" onclick="showTab('overview')">Overview</button>
+  <button id="tab-docs" onclick="showTab('docs')">Knowledge Base</button>
   <button id="tab-convos" onclick="showTab('convos')">Conversations</button>
   <button id="tab-handoffs" onclick="showTab('handoffs')">Handoffs</button>
   <button id="tab-gaps" onclick="showTab('gaps')">Content Gaps</button>
@@ -57,7 +82,7 @@
 <main id="main"><div class="empty">Enter your bank slug and admin token, then Connect.</div></main>
 
 <script>
-var state = { slug: localStorage.getItem("ba_slug") || "", token: localStorage.getItem("ba_token") || "", tab: "docs" };
+var state = { slug: localStorage.getItem("ba_slug") || "", token: localStorage.getItem("ba_token") || "", tab: "overview", days: 30 };
 document.getElementById("slug").value = state.slug;
 document.getElementById("token").value = state.token;
 
@@ -80,16 +105,109 @@ function connect() {
 }
 function showTab(tab) {
   state.tab = tab;
-  ["docs", "convos", "handoffs", "gaps"].forEach(function (t) {
+  ["overview", "docs", "convos", "handoffs", "gaps"].forEach(function (t) {
     document.getElementById("tab-" + t).classList.toggle("active", t === tab);
   });
   if (!state.slug || !state.token) return;
+  if (tab === "overview") loadOverview();
   if (tab === "docs") loadDocs();
   if (tab === "convos") loadConvos();
   if (tab === "handoffs") loadHandoffs();
   if (tab === "gaps") loadGaps();
 }
 function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+
+// ------------------------------------------------ overview
+var OUTCOME_LABEL = {
+  answered:         ["Answered from your content", ""],
+  general_guidance: ["General banking guidance",   "warn"],
+  comparison:       ["Competitive question",       ""],
+  account_blocked:  ["Account request declined",   ""],
+  unanswered:       ["Nobody could answer",        "bad"],
+  complaint:        ["Complaint",                  "bad"],
+  greeting:         ["Greeting",                   ""],
+  contact_captured: ["Contact details given",      ""]
+};
+
+function pct(x) { return x == null ? "\u2014" : Math.round(x * 1000) / 10 + "%"; }
+
+function bars(rows, total, labeller) {
+  if (!rows.length) return '<div class="empty">Nothing yet.</div>';
+  return rows.map(function (r) {
+    var l = labeller(r);
+    var w = total ? Math.max(2, Math.round((r.count / total) * 100)) : 0;
+    return '<div class="bar"><span>' + esc(l[0]) + '</span>' +
+      '<span class="track"><span class="fill ' + l[1] + '" style="width:' + w + '%"></span></span>' +
+      '<span class="n">' + r.count + "</span></div>";
+  }).join("");
+}
+
+function setDays(d) { state.days = d; loadOverview(); }
+
+function loadOverview() {
+  api("/analytics?days=" + state.days).then(function (a) {
+    setStatus(a.conversations + " conversations in window");
+    var langTotal = a.languages.reduce(function (s, r) { return s + r.count; }, 0);
+
+    var windowbar = '<div class="windowbar">Window: ' +
+      [7, 30, 90, 0].map(function (d) {
+        return '<button class="' + (state.days === d ? "on" : "") + '" onclick="setDays(' + d + ')">' +
+          (d ? d + " days" : "All time") + "</button>";
+      }).join("") + "</div>";
+
+    // Rates are null until something has been asked. Showing 0% on a fresh
+    // tenant would read as "the product answers nothing".
+    var kpis = '<div class="kpis">' +
+      '<div class="kpi"><div class="v' + (a.deflection_rate == null ? " muted" : "") + '">' + pct(a.deflection_rate) + '</div>' +
+        '<div class="k">Handled without a person</div>' +
+        '<div class="sub">' + a.resolved_without_a_person + " of " + a.substantive_questions + " questions</div></div>" +
+      '<div class="kpi"><div class="v' + (a.own_content_rate == null ? " muted" : "") + '">' + pct(a.own_content_rate) + '</div>' +
+        '<div class="k">Answered from your own content</div>' +
+        '<div class="sub">' + a.answered_from_own_content + " questions</div></div>" +
+      '<div class="kpi"><div class="v">' + a.conversations + '</div><div class="k">Conversations</div>' +
+        '<div class="sub">' + a.substantive_questions + " questions asked</div></div>" +
+      '<div class="kpi"><div class="v">' + a.handoffs.open + '</div><div class="k">Open handoffs</div>' +
+        '<div class="sub">' + a.handoffs.open_reachable + " reachable, " + a.handoffs.open_unreachable + " with no contact</div></div>" +
+      "</div>";
+
+    // Only the outcomes that are actually questions. Greetings and the contact
+    // exchange are real turns but they are not in the denominator above, and
+    // charting them beside the others implies they are.
+    var SUBSTANTIVE = ["answered", "general_guidance", "comparison",
+                       "account_blocked", "unanswered", "complaint"];
+    var qRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) > -1; });
+    var otherRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) < 0; });
+
+    var outcomes = '<div class="panel"><h3>What happened to each question</h3>' +
+      bars(qRows, a.substantive_questions, function (r) {
+        return OUTCOME_LABEL[r.outcome] || [r.outcome, ""];
+      }) +
+      (otherRows.length
+        ? '<div class="note">Not counted as questions: ' +
+          otherRows.map(function (r) {
+            return (OUTCOME_LABEL[r.outcome] || [r.outcome])[0].toLowerCase() + " \u00d7" + r.count;
+          }).join(", ") + ".</div>"
+        : "") +
+      (a.unclassified_turns
+        ? '<div class="note">' + a.unclassified_turns + " earlier turns predate outcome tracking and are left out of every rate here.</div>"
+        : "") +
+      "</div>";
+
+    var languages = '<div class="panel"><h3>Languages customers used</h3>' +
+      bars(a.languages, langTotal, function (r) { return [r.name || r.language, ""]; }) + "</div>";
+
+    var topics = '<div class="panel"><h3>Most asked</h3>' +
+      (a.top_topics.length
+        ? a.top_topics.map(function (t) {
+            return '<div class="topic"><span class="n">' + t.count + '\u00d7</span>' +
+              "<span>" + esc(t.example) + "</span></div>";
+          }).join("")
+        : '<div class="empty">Nothing yet.</div>') +
+      '<div class="note">Phone numbers and email addresses are removed from this list.</div></div>';
+
+    document.getElementById("main").innerHTML = windowbar + kpis + outcomes + languages + topics;
+  }).catch(function (e) { setStatus(e.message); });
+}
 
 // ------------------------------------------------ documents
 function docForm(doc) {

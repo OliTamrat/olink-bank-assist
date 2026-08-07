@@ -53,6 +53,29 @@ MAX_CONTACT_ASKS = 2
 # of a handoff — never silence, and never a claim about the competitor.
 WHY_CHOOSE_CATEGORY = "why-choose-us"
 
+# What the assistant did on a turn, written to Message.outcome and grouped by
+# the analytics endpoint. Deliberately a small, stable vocabulary: these names
+# end up in front of a bank as the report on whether the product works, so
+# adding one is a product decision, not a refactor.
+ANSWERED = "answered"                    # from this bank's own content
+GENERAL_GUIDANCE = "general_guidance"    # universal banking, carries no sources
+UNANSWERED = "unanswered"                # nothing found — a content gap
+COMPLAINT = "complaint"                  # routed to a person
+ACCOUNT_BLOCKED = "account_blocked"      # security template; no account access
+COMPARISON = "comparison"                # "is X better than you?"
+GREETING = "greeting"                    # hello, not a question
+CONTACT_CAPTURED = "contact_captured"    # the customer left a number
+
+# Turns that represent a customer actually asking this bank something. The
+# denominator of every rate below, so greetings and the contact exchange can't
+# quietly inflate the numbers a bank is being sold on.
+SUBSTANTIVE = (ANSWERED, GENERAL_GUIDANCE, UNANSWERED, COMPLAINT, ACCOUNT_BLOCKED, COMPARISON)
+
+# Substantive turns that did NOT need a person. account_blocked belongs here:
+# refusing to read out an account balance in chat is the assistant working
+# correctly, and it files no handoff.
+RESOLVED = (ANSWERED, GENERAL_GUIDANCE, ACCOUNT_BLOCKED, COMPARISON)
+
 
 def _bank_aliases(bank: Bank) -> tuple[str, ...]:
     return tuple({alias for alias in (bank.slug, bank.name) if alias})
@@ -76,6 +99,10 @@ class ChatResult:
     # prompt for it — the widget swaps the input placeholder — instead of
     # leaving the ask to be read past.
     awaiting_contact: bool = False
+    # What this turn did. Required and keyword-only on purpose: a default would
+    # let a new branch ship unclassified and quietly skew every metric built on
+    # it, which is the failure mode analytics can least afford.
+    outcome: str = field(kw_only=True)
 
 
 def _extractive_answer(bank: Bank, chunks: list[RetrievedChunk], language: str) -> str:
@@ -208,7 +235,7 @@ def _capture_contact(
         # ever formatted into a template that ignores it.
         name=conversation.customer_name or "",
     )
-    return ChatResult(reply, classifier.QUESTION, language)
+    return ChatResult(reply, classifier.QUESTION, language, outcome=CONTACT_CAPTURED)
 
 
 def handle_message(
@@ -228,15 +255,20 @@ def handle_message(
     name = conversation.customer_name
 
     intent = classifier.classify_intent(text, bank_aliases=_bank_aliases(bank))
-    db.add(
-        Message(
-            conversation_id=conversation.id,
-            bank_id=bank.id,
-            role="user",
-            text=text,
-            intent=intent,
-        )
+    # Held so the turn's outcome can be stamped on it once known. Both rows of
+    # a turn carry the same outcome, which is what lets analytics ask "which
+    # customer messages were real questions?" exactly instead of guessing from
+    # intent — and intent guesses badly here: a reply of "Oli 0911234567"
+    # classifies as an ordinary question, and ranked topics by intent put a
+    # customer's name and phone number in the report.
+    user_message = Message(
+        conversation_id=conversation.id,
+        bank_id=bank.id,
+        role="user",
+        text=text,
+        intent=intent,
     )
+    db.add(user_message)
 
     result: ChatResult
     # The customer was just asked how to reach them. Try to read this message
@@ -255,9 +287,9 @@ def handle_message(
             if name
             else t(language, "greeting", bank=bank.name)
         )
-        result = ChatResult(greeting, intent, language)
+        result = ChatResult(greeting, intent, language, outcome=GREETING)
     elif intent == classifier.ACCOUNT_SPECIFIC:
-        result = ChatResult(t(language, "account_help"), intent, language)
+        result = ChatResult(t(language, "account_help"), intent, language, outcome=ACCOUNT_BLOCKED)
     elif intent == classifier.COMPLAINT:
         _create_handoff(db, bank, conversation, "complaint", text[:2000])
         ack = t(language, "complaint_ack")
@@ -270,6 +302,7 @@ def handle_message(
             language,
             handoff_created=True,
             awaiting_contact=conversation.awaiting_contact,
+            outcome=COMPLAINT,
         )
     elif intent == classifier.COMPARISON:
         why_choose = db.execute(
@@ -279,11 +312,11 @@ def handle_message(
         ).scalars().first()
         if why_choose is None:
             reply = t(language, "comparison_fallback", bank=bank.name)
-            result = ChatResult(reply, intent, language)
+            result = ChatResult(reply, intent, language, outcome=COMPARISON)
         else:
             reply = f"{t(language, 'comparison_intro', bank=bank.name)}\n\n{why_choose.content}"
             sources = [{"document_id": why_choose.id, "title": why_choose.title}]
-            result = ChatResult(reply, intent, language, sources=sources)
+            result = ChatResult(reply, intent, language, sources=sources, outcome=COMPARISON)
     else:
         # Search the question, not the hello. Greeting words are ordinary
         # content words to BM25, so leaving them in pads the query's
@@ -355,7 +388,12 @@ def handle_message(
             )
             reply = f"{general}\n\n{t(language, 'general_guidance', bank=bank.name)}"
             result = ChatResult(
-                reply, intent, language, handoff_created=True, general_knowledge=True
+                reply,
+                intent,
+                language,
+                handoff_created=True,
+                general_knowledge=True,
+                outcome=GENERAL_GUIDANCE,
             )
         elif answer is None:
             _create_handoff(db, bank, conversation, "unanswered_question", text[:2000])
@@ -393,6 +431,7 @@ def handle_message(
                 handoff_created=True,
                 suggestions=suggestions,
                 awaiting_contact=conversation.awaiting_contact,
+                outcome=UNANSWERED,
             )
         else:
             reply = answer
@@ -402,8 +441,9 @@ def handle_message(
                 {"document_id": c.document_id, "title": c.title} for c in chunks
             ]
             deduped = list({s["document_id"]: s for s in sources}.values())
-            result = ChatResult(reply, intent, language, sources=deduped)
+            result = ChatResult(reply, intent, language, sources=deduped, outcome=ANSWERED)
 
+    user_message.outcome = result.outcome
     db.add(
         Message(
             conversation_id=conversation.id,
@@ -412,6 +452,7 @@ def handle_message(
             text=result.reply,
             intent=intent,
             sources=result.sources or None,
+            outcome=result.outcome,
         )
     )
     db.commit()
@@ -425,6 +466,7 @@ def handle_message(
         language=result.language,
         handoff=result.handoff_created,
         sources=len(result.sources),
+        outcome=result.outcome,
         # Whether we now have a way to reach this customer — never the number
         # itself, which is personal data exactly like the chat text.
         reachable=bool(conversation.contact_phone),

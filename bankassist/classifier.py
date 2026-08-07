@@ -466,3 +466,27 @@ def extract_contact(text: str) -> tuple[str | None, str | None]:
         if candidate and len(candidate.split()) <= _MAX_BARE_NAME_WORDS:
             name = _plausible_name(candidate)
     return name, contact
+
+
+_REDACTED = "[contact removed]"
+
+
+def redact_contact(text: str) -> str:
+    """Blank out anything that parses as a phone number or email address.
+
+    Used on aggregate reports — top topics, content gaps — which are the
+    artifacts most likely to be exported, pasted into a deck and shown to
+    people who never touched the chat. The individual handoff row still
+    carries the customer's exact words and their contact fields, because an
+    operator returning the call genuinely needs both.
+
+    A customer can volunteer a number unprompted ("call me on 0911234567
+    about a loan"), which is an ordinary question and lands in these reports
+    on merit. Filtering by how the turn was classified cannot catch that;
+    scrubbing the text can.
+    """
+    out = _EMAIL_RE.sub(_REDACTED, text)
+    for match in list(_PHONE_CANDIDATE.finditer(out)):
+        if _valid_phone(match.group(0)):
+            out = out.replace(match.group(0), _REDACTED)
+    return out
