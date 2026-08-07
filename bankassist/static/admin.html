@@ -49,6 +49,7 @@
   <button id="tab-docs" class="active" onclick="showTab('docs')">Knowledge Base</button>
   <button id="tab-convos" onclick="showTab('convos')">Conversations</button>
   <button id="tab-handoffs" onclick="showTab('handoffs')">Handoffs</button>
+  <button id="tab-gaps" onclick="showTab('gaps')">Content Gaps</button>
 </nav>
 <main id="main"><div class="empty">Enter your bank slug and admin token, then Connect.</div></main>
 
@@ -76,13 +77,14 @@ function connect() {
 }
 function showTab(tab) {
   state.tab = tab;
-  ["docs", "convos", "handoffs"].forEach(function (t) {
+  ["docs", "convos", "handoffs", "gaps"].forEach(function (t) {
     document.getElementById("tab-" + t).classList.toggle("active", t === tab);
   });
   if (!state.slug || !state.token) return;
   if (tab === "docs") loadDocs();
   if (tab === "convos") loadConvos();
   if (tab === "handoffs") loadHandoffs();
+  if (tab === "gaps") loadGaps();
 }
 function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
 
@@ -190,6 +192,32 @@ function loadHandoffs() {
     }).join("") : '<div class="empty">No handoffs. When the assistant cannot answer or a customer complains, it appears here.</div>';
   }).catch(function (e) { setStatus(e.message); });
 }
+// ------------------------------------------------ content gaps
+// The handoff list is a pile; this is the work queue. Ranked by how many
+// customers asked, so the bank writes the most-wanted content first.
+function loadGaps() {
+  api("/content-gaps").then(function (rows) {
+    var asked = rows.reduce(function (n, g) { return n + g.count; }, 0);
+    setStatus(rows.length + " distinct gaps across " + asked + " questions");
+    document.getElementById("main").innerHTML = rows.length ? rows.map(function (g) {
+      var generic = g.reasons["answered_from_general_knowledge"] || 0;
+      var none = g.reasons["unanswered_question"] || 0;
+      return '<div class="card">' +
+        '<div class="meta">' +
+          '<span class="pill">asked ' + g.count + '\u00d7</span>' +
+          (none ? '<span class="pill open">' + none + ' unanswered</span>' : "") +
+          (generic ? '<span class="pill">' + generic + ' answered generically</span>' : "") +
+          g.last_asked.slice(0, 16).replace("T", " ") +
+        "</div>" +
+        "<h3>" + esc(g.examples[0] || g.signature) + "</h3>" +
+        (g.examples.length > 1
+          ? '<pre>also asked as: ' + g.examples.slice(1).map(esc).join(" | ") + "</pre>"
+          : "") +
+        "</div>";
+    }).join("") : '<div class="empty">No content gaps yet. When customers ask something this bank has no content for, it is grouped and ranked here — the shortest path to knowing what to write next.</div>';
+  }).catch(function (e) { setStatus(e.message); });
+}
+
 function closeHandoff(id) {
   api("/handoffs/" + id + "/close", { method: "POST" }).then(loadHandoffs).catch(function (e) { setStatus(e.message); });
 }
