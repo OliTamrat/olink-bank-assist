@@ -75,6 +75,17 @@ jobs:
           python -m bankassist.seed_dashen
           python -m bankassist.seed_awash
 
+      # Explicitly set the *runtime* identity too. Without --service-account
+      # here, Cloud Run defaults a new revision to the project's generic
+      # Compute Engine default service account, which was never granted
+      # secretAccessor — deploys succeeded but the revision itself failed to
+      # start with "Permission denied on secret ... for Revision service
+      # account NNN-compute@developer.gserviceaccount.com". Reusing
+      # bankassist-deployer (already has secretAccessor + serviceAccountUser)
+      # fixes this with zero new manual gcloud commands. Known tradeoff:
+      # this SA is now both the CI deployer and the runtime identity, more
+      # privilege than the running service strictly needs — fine for now,
+      # worth splitting into a dedicated minimal runtime SA later.
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy ${{ env.SERVICE }} \
@@ -86,6 +97,7 @@ jobs:
             --min-instances 0 \
             --max-instances 3 \
             --memory 512Mi \
+            --service-account "bankassist-deployer@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-secrets "BANKASSIST_DATABASE_URL=bankassist-database-url:latest" \
             --quiet
 
