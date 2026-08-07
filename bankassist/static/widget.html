@@ -316,6 +316,10 @@
   var chat = document.getElementById("chat");
   var input = document.getElementById("input");
   var send = document.getElementById("send");
+  // Swapped in while the assistant is waiting for a name and number, so the
+  // request is visible in the box the customer is about to type into.
+  var DEFAULT_PROMPT = input.getAttribute("placeholder");
+  var CONTACT_PROMPT = "Your name and phone number…";
   var langSel = document.getElementById("lang");
   var bankName = "";
 
@@ -563,6 +567,10 @@
         if (data.suggestions && data.suggestions.length) {
           addSuggestions(data.suggestions.map(function (sg) { return sg.title; }));
         }
+        // The reply just asked how to reach this customer. Say so in the box
+        // they are about to type into: the ask is the last thing before a
+        // list of suggested topics, and it is easy to read straight past.
+        input.placeholder = data.awaiting_contact ? CONTACT_PROMPT : DEFAULT_PROMPT;
       })
       .catch(function () {
         t.remove();

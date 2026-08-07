@@ -102,6 +102,19 @@ class Conversation(Base):
     # (log_event carries metadata only) and only ever set from an explicit
     # self-introduction — see classifier.extract_name.
     customer_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # A phone number or email the customer gave so a person could call them
+    # back about a handoff. Personal data, exactly like customer_name: never
+    # logged, only ever set from a message sent in reply to an explicit ask.
+    # Held on the conversation so a second handoff in the same chat inherits
+    # it — being asked for your number twice reads as nobody being on the
+    # other end.
+    contact_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # True between asking for contact details and getting (or giving up on)
+    # them. One turn only: if the customer replies with something that isn't
+    # contact details, the flag clears and the message is answered normally.
+    # Nagging a customer who changed the subject is worse than missing a
+    # phone number.
+    awaiting_contact: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -126,6 +139,13 @@ class Handoff(Base):
     conversation_id: Mapped[str] = mapped_column(String(36), index=True)
     reason: Mapped[str] = mapped_column(String(64))
     detail: Mapped[str] = mapped_column(Text, default="")
+    # Snapshot of how to reach this customer, so an operator working the queue
+    # sees who to call on the row itself. Copied from the conversation when the
+    # handoff is filed, and backfilled onto still-open handoffs if the details
+    # arrive afterwards — which is the normal order, since we only ask once a
+    # handoff exists.
+    contact_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="open")  # open | closed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

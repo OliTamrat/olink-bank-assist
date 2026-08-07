@@ -288,6 +288,13 @@ _NOT_A_NAME = frozenset(
         "wondering", "calling", "asking", "having", "unable", "not", "a", "an",
         "the", "just", "still", "already", "planning", "hoping", "worried",
         "customer", "client", "student", "unemployed", "employed", "retired",
+        # Prepositions and fillers that sit exactly where a name would in
+        # "call me on 0911234567" or "this is about my loan" — telephony and
+        # topic phrasing, not an introduction. These matter most on the
+        # contact-capture turn, where the customer is replying to a direct
+        # question and short answers are the norm.
+        "on", "at", "in", "about", "regarding", "me", "my", "your", "yes",
+        "no", "ok", "okay", "please", "thanks", "thank", "sure", "hello",
     ]
 )
 
@@ -318,7 +325,10 @@ def _plausible_name(candidate: str) -> str | None:
     if not (2 <= len(name) <= 40):
         return None
     lowered = name.lower()
-    if lowered in _NOT_A_NAME:
+    # Per word, not per phrase. A multi-word candidate is only a name if every
+    # word is name-like: "call me on" survived a whole-string check and was
+    # stored as somebody's name.
+    if any(word in _NOT_A_NAME for word in lowered.split()):
         return None
     # A greeting word sitting where a name should be means the pattern
     # matched the greeting itself — "ሰላም ነኝ" is "I'm well", not a name.
@@ -358,3 +368,101 @@ def extract_name(text: str) -> str | None:
         if not after or after.lower().startswith(("nice to meet", "ደስ")):
             return _plausible_name(match.group(1))
     return None
+
+
+# ---------------------------------------------------------------- contact
+
+# Phone numbers are matched by finding digit runs and then *validating* them,
+# rather than by one regex that has to anticipate every way a person spaces a
+# number. "0911234567", "0911 234 567" and "+251 91 123 4567" are the same
+# number and all three reach an operator; a pattern strict enough to be safe
+# was not forgiving enough to be useful.
+_PHONE_CANDIDATE = re.compile(r"\+?\d[\d\s.\-()]{6,20}\d")
+_EMAIL_RE = re.compile(r"[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}", re.IGNORECASE)
+
+# In the awaiting-contact turn a bare name is expected ("Oli", "Oli Tamrat"),
+# so extract_name's requirement of an explicit introduction is too strict.
+_MAX_BARE_NAME_WORDS = 3
+
+
+def normalize_phone(raw: str) -> str:
+    """Strip formatting so two spellings of one number compare equal."""
+    cleaned = re.sub(r"[\s.\-()]", "", raw)
+    return cleaned
+
+
+def _valid_phone(raw: str) -> str | None:
+    """Accept a digit run only if it is shaped like a reachable number.
+
+    Deliberately narrow on the local forms, because the thing that must never
+    be captured here is an account number. Ethiopian mobiles are 09/07 plus
+    eight digits, or +251 with the same; CBE account numbers are thirteen
+    digits starting with 1, so they match none of these rules. Anything else
+    has to carry an explicit country code, which an account number never does.
+    """
+    cleaned = normalize_phone(raw)
+    plus = cleaned.startswith("+")
+    digits = cleaned.lstrip("+")
+    if not digits.isdigit():
+        return None
+    if digits.startswith("251") and len(digits) == 12 and digits[3] in "97":
+        return "+" + digits
+    if digits.startswith("0") and len(digits) == 10 and digits[1] in "97":
+        return digits
+    if plus and 8 <= len(digits) <= 15:
+        return "+" + digits
+    return None
+
+
+def extract_contact(text: str) -> tuple[str | None, str | None]:
+    """Pull (name, phone-or-email) out of a reply to the contact request.
+
+    Only ever called when the assistant has just asked for these, which is
+    what makes the looser name rule safe: an unprompted message is still
+    handled by extract_name's strict introduction patterns.
+
+    Returns (None, None) when the customer replied with something else
+    entirely. That is a normal outcome, not an error — they changed the
+    subject, and the caller answers the message instead of asking again.
+    """
+    email = _EMAIL_RE.search(text)
+    contact: str | None = email.group(0) if email else None
+
+    consumed: list[str] = [email.group(0)] if email else []
+    if contact is None:
+        for match in _PHONE_CANDIDATE.finditer(text):
+            valid = _valid_phone(match.group(0))
+            if valid:
+                contact = valid
+                consumed.append(match.group(0))
+                break
+
+    # Look for the name in what is left once the contact details are removed,
+    # so "Oli 0911234567" yields "Oli" rather than a string containing digits.
+    remainder = text
+    for piece in consumed:
+        remainder = remainder.replace(piece, " ")
+
+    name = extract_name(remainder) or extract_name(text)
+
+    # Both looser rules below require contact details in the same message.
+    # Without that guard a customer answering "yes" gets stored as being named
+    # "yes" and addressed that way for the rest of the chat, and a blocklist of
+    # filler words would have to be right in five languages. Tying them to a
+    # number found alongside costs nothing real: a name with no way to call it
+    # is not actionable for an operator anyway.
+    if name is None and contact is not None:
+        # An explicit introduction carrying trailing text — "my name is Oli,
+        # call me on 0911234567". extract_name rejects that shape on purpose,
+        # because unprompted "I am looking for a loan" must not read as a
+        # name. Here the valid number is the evidence that the customer is
+        # answering the question we just asked.
+        intro = _NAME_AFTER_RE.search(remainder)
+        if intro:
+            name = _plausible_name(intro.group(1))
+    if name is None and contact is not None:
+        stripped, _greeted = strip_greeting(remainder)
+        candidate = stripped.strip(" ,.!?።፣-")
+        if candidate and len(candidate.split()) <= _MAX_BARE_NAME_WORDS:
+            name = _plausible_name(candidate)
+    return name, contact

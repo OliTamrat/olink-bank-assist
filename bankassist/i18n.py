@@ -41,6 +41,18 @@ _STRINGS: dict[str, dict[str, str]] = {
             "I want to be sure I understood you correctly. "
             "Were you asking about one of these?"
         ),
+        "ask_contact": (
+            "So a person from our team can get back to you, may I have your name "
+            "and the best phone number to reach you on?"
+        ),
+        "contact_saved": (
+            "Thank you — I've passed your details to our customer service team. "
+            "They will contact you on {contact}."
+        ),
+        "contact_saved_named": (
+            "Thank you {name} — I've passed your details to our customer service "
+            "team. They will contact you on {contact}."
+        ),
         "account_help": (
             "For your security, I can't access individual account details in this chat. "
             "Please use the mobile banking app, visit a branch, or contact customer care. "
@@ -87,6 +99,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "did_you_mean": (
             "በትክክል መረዳቴን ማረጋገጥ እፈልጋለሁ። "
             "ከእነዚህ ውስጥ ስለ አንዱ እየጠየቁ ነበር?"
+        ),
+        "ask_contact": (
+            "ከቡድናችን አንድ ሰው እንዲያገኝዎት፣ ስምዎን እና የሚደረስብዎትን የስልክ ቁጥር "
+            "ሊነግሩኝ ይችላሉ?"
+        ),
+        "contact_saved": (
+            "አመሰግናለሁ — መረጃዎን ለደንበኞች አገልግሎት ቡድናችን አስተላልፌያለሁ። "
+            "በ{contact} ያገኙዎታል።"
+        ),
+        "contact_saved_named": (
+            "አመሰግናለሁ {name} — መረጃዎን ለደንበኞች አገልግሎት ቡድናችን አስተላልፌያለሁ። "
+            "በ{contact} ያገኙዎታል።"
         ),
         "account_help": (
             "ለደህንነትዎ ሲባል በዚህ ውይይት ውስጥ የግል ሂሳብ መረጃ ማየት አልችልም። "
@@ -135,6 +159,19 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Sirriitti isin hubadhuu mirkaneeffachuun barbaada. "
             "Kanneen keessaa isa tokko gaafachaa turtanii?"
         ),
+        "ask_contact": (
+            "Namni garee keenyaa akka isin qunnamuuf, maqaa keessanii fi "
+            "lakkoofsa bilbilaa ittiin isin argannu naaf kennuu dandeessuu?"
+        ),
+        "contact_saved": (
+            "Galatoomaa — odeeffannoo keessan gara garee tajaajila maamiltootaa "
+            "keenyaatti dabarseera. Lakkoofsa {contact} irratti isin qunnamu."
+        ),
+        "contact_saved_named": (
+            "Galatoomaa {name} — odeeffannoo keessan gara garee tajaajila "
+            "maamiltootaa keenyaatti dabarseera. Lakkoofsa {contact} irratti "
+            "isin qunnamu."
+        ),
         "account_help": (
             "Nageenya keessaniif, marii kana keessatti odeeffannoo herrega dhuunfaa arguu "
             "hin danda'u. Maaloo appii baankii mobaayilaa fayyadamaa, damee daawwadhaa "
@@ -182,6 +219,18 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ብልክዕ ከም ዝተረዳእኩኹም ከረጋግጽ እደሊ። "
             "ካብዞም ሓደ ትሓቱ ነይርኩም?"
         ),
+        "ask_contact": (
+            "ሓደ ኣባል ጋንታና ክረኽበኩም ምእንቲ፡ ስምኩምን እትርከቡሉ ቁጽሪ ተሌፎንን "
+            "ክትህቡኒ ትኽእሉ ዶ?"
+        ),
+        "contact_saved": (
+            "የቐንየለይ — ሓበሬታኹም ናብ ጋንታ ኣገልግሎት ዓማዊልና ኣመሓላሊፈዮ ኣለኹ። "
+            "ብ{contact} ክረኽቡኹም እዮም።"
+        ),
+        "contact_saved_named": (
+            "የቐንየለይ {name} — ሓበሬታኹም ናብ ጋንታ ኣገልግሎት ዓማዊልና ኣመሓላሊፈዮ ኣለኹ። "
+            "ብ{contact} ክረኽቡኹም እዮም።"
+        ),
         "account_help": (
             "ንድሕነትኩም፣ ኣብዚ ዝርርብ ናይ ውልቂ ሕሳብ ሓበሬታ ክርኢ ኣይክእልን። "
             "በጃኹም ናይ ሞባይል ባንኪ መተግበሪ ተጠቐሙ፣ ጨንፈር ብጽሑ ወይ ንኣገልግሎት ዓማዊል ርኸቡ።"
@@ -228,6 +277,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "did_you_mean": (
             "Waxaan doonayaa inaan hubiyo inaan si sax ah u fahmay. "
             "Ma waxaad wax ka weydiinaysay mid ka mid ah kuwan?"
+        ),
+        "ask_contact": (
+            "Si qof ka mid ah kooxdayadu ay kuula soo xiriiraan, ma i siin "
+            "kartaa magacaaga iyo lambarka telefoonka ee lagugu heli karo?"
+        ),
+        "contact_saved": (
+            "Mahadsanid — macluumaadkaaga waxaan u gudbiyay kooxda adeegga "
+            "macaamiisha. Waxay kugula soo xiriiri doonaan {contact}."
+        ),
+        "contact_saved_named": (
+            "Mahadsanid {name} — macluumaadkaaga waxaan u gudbiyay kooxda "
+            "adeegga macaamiisha. Waxay kugula soo xiriiri doonaan {contact}."
         ),
         "account_help": (
             "Amnigaaga awgiis, wadahadalkan kuma eegi karo macluumaadka xisaabta gaarka ah. "
