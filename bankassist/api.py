@@ -153,6 +153,7 @@ def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         "name": bank.name,
         "slug": bank.slug,
         "primary_color": bank.primary_color,
+        "logo_url": bank.logo_url,
         "default_language": bank.default_language,
         "disclaimer": bank.disclaimer,
         "languages": [
@@ -198,14 +199,24 @@ def chat(
     )
 
 
+# Both pages are single files with their CSS and JS inlined, so a cached
+# copy pins the *entire* UI — after a deploy a returning visitor keeps
+# seeing the old widget with no way to tell, which is exactly what happened
+# after the capability-chip redesign shipped. There is no hashed-asset
+# filename to bust here, so the HTML itself must not be cached. These are
+# tiny documents served on a cold open; revalidating costs nothing next to
+# demoing a stale UI to a prospect.
+_NO_STORE = {"Cache-Control": "no-store, must-revalidate"}
+
+
 @app.get("/widget")
 def widget_page() -> FileResponse:
-    return FileResponse(_STATIC / "widget.html", media_type="text/html")
+    return FileResponse(_STATIC / "widget.html", media_type="text/html", headers=_NO_STORE)
 
 
 @app.get("/admin")
 def admin_page() -> FileResponse:
-    return FileResponse(_STATIC / "admin.html", media_type="text/html")
+    return FileResponse(_STATIC / "admin.html", media_type="text/html", headers=_NO_STORE)
 
 
 # ---------------------------------------------------------------- telegram

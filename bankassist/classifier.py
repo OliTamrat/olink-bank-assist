@@ -103,17 +103,26 @@ _COMPLAINT_RE = re.compile(
 # alternatives ("than you", "than this bank", "which bank is better") always
 # apply; a tenant's own name/slug is spliced in by _comparison_re() below so
 # "is Dashen better than CBE" is caught for the CBE tenant without this
-# module knowing "CBE" exists. Scoped to clear comparison phrasing; a rarer
-# shape like "what does X offer that we don't" isn't covered and falls
-# through to the ordinary retrieval path (a safe, if less confident,
-# default) — a deliberate scoping choice, not an oversight.
+# module knowing "CBE" exists.
+#
+# The differentiator family ("what makes you different", "what sets you
+# apart") was added after a live demo: "What makes Awash Bank different from
+# other banks in Ethiopia?" fell through to retrieval, matched nothing (no
+# bank's own content discusses how it compares to others) and handed off —
+# on the single most likely question a bank's own executives ask a sales
+# demo. It reads as the assistant being unable to sell its own bank, which
+# is the opposite of what the why-choose document exists for.
 _COMPARISON_GENERIC = (
     r"\bis .*(better|worse) than (you|this bank)\b|"
     r"\bcompare (you|this bank) (to|with)\b|"
     r"\bwhy (choose|use|pick|should i (choose|use|pick)) you\b|"
     r"\bwhich (bank )?is better\b|"
     r"\bis there a better bank\b|"
-    r"\bshould i (switch|move|change) banks?\b"
+    r"\bshould i (switch|move|change) banks?\b|"
+    r"\bwhat makes (you|this bank)[^.?!]*\b(different|special|unique|stand out)\b|"
+    r"\bwhat sets (you|this bank) apart\b|"
+    r"\bhow (are|is) (you|this bank) different\b|"
+    r"\bwhy (should i )?bank with (you|this bank)\b"
 )
 
 
@@ -135,7 +144,19 @@ def _comparison_re(bank_aliases: tuple[str, ...]) -> re.Pattern[str]:
             rf"\b{escaped} (vs\.?|versus) \w|"
             rf"\bcompare {escaped} (to|with|and)\b|"
             rf"\bwhy (choose|use|pick|should i (choose|use|pick)) {escaped}\b|"
-            rf"\bshould i (switch|move|change) (banks? )?to {escaped}\b"
+            rf"\bshould i (switch|move|change) (banks? )?to {escaped}\b|"
+            # Differentiator phrasings. `[^.?!]*` keeps the gap inside one
+            # sentence so a bank name early in a long multi-part message
+            # can't reach forward and capture an unrelated "different".
+            # These require the tenant's OWN name, so a product question
+            # like "what makes Sharik different from a normal account?"
+            # stays on the retrieval path where it belongs.
+            rf"\bwhat makes {escaped}[^.?!]*\b(different|special|unique|stand out)\b|"
+            rf"\bwhat sets {escaped} apart\b|"
+            rf"\bhow (is|are) {escaped} different\b|"
+            rf"\bwhy (should i )?bank with {escaped}\b|"
+            rf"\bwhy {escaped} (over|rather than|instead of)\b|"
+            rf"\bdifference between {escaped} and\b"
         )
     return re.compile("|".join(parts), re.IGNORECASE)
 
