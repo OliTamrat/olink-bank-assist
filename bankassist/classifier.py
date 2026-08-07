@@ -164,7 +164,7 @@ _ACCOUNT_RE = re.compile(
     rf"(the |her |his |their |my )?{_ACCOUNT_NOUN}\b|"
     r"\bbalance (for|of|on) account\b|"
     r"\boverride (the )?security\b|"
-    r"\bባላንስ|ቀሪ ሂሳቤ|ሂሳቤ|ካርዴ|"
+    r"\bባላንስ|ቀሪ ሂሳቤ|ሂሳቤ|ካርዴ|ፒኔ|ሚስጥር ቁጥሬ|"
     r"herrega koo|kaardii koo|xisaabtayda|kaarkayga",
     re.IGNORECASE,
 )
@@ -204,6 +204,20 @@ _OTHERS_POSSESSIVE = re.compile(
     # conjunction is what makes including it safe: "ገንዘቡን እንዴት እልካለሁ"
     # (how do I send the money) names no account word and stays answerable.
     r"ገንዘቧ|ገንዘቡ|"
+    # ቁጥፘ is a keyboard variant of ቁጥሯ ("her number") seen in real input.
+    r"ቁጥፘ|"
+    # "…forgot it". Not a possessive at all — the third-party signal in
+    # "ሚስጥር ቁጥሩን ረሳችው" (she forgot her PIN) is the VERB, and a rule that only
+    # looked for possessives missed five of six phrasings of this request.
+    #
+    # The first-person forms belong here too: "I forgot my PIN" is just as
+    # account-specific as "she forgot hers", and both should get the security
+    # template rather than an attempt at an answer.
+    #
+    # Completed past forms only, never the bare stem ረሳ — that would also
+    # match the conditional ብረሳ in "what should I do if I forget my PIN",
+    # which is a general how-to the bank should answer.
+    r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|ረስታለች|ረስተዋል|"
     # Afaan Oromo: her, his, my wife, my husband.
     r"ishee|is?saa|haadha manaa|abbaa manaa|"
     # Somali: her/his, my wife — first pass, still needs a native reviewer.
