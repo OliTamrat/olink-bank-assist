@@ -5,6 +5,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +13,13 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from . import agent as agent_module
 from . import telegram
 from .agent import handle_message
+from .classifier import redact_contact
 from .config import get_settings
 from .db import get_db, init_db
 from .i18n import LANGUAGE_NAMES, SUPPORTED_LANGUAGES
@@ -489,7 +492,11 @@ def content_gaps(
 
     grouped: dict[str, dict[str, Any]] = {}
     for h in rows:
-        question = (h.detail or "").strip()
+        # Same scrubbing as the analytics report, and for the same reason:
+        # this is an aggregate view that gets exported. The handoff row itself
+        # still carries the exact words and the contact fields, which is what
+        # an operator returning the call actually needs.
+        question = redact_contact((h.detail or "").strip())
         if not question:
             continue
         key = content_signature(question) or question.lower()
@@ -514,6 +521,160 @@ def content_gaps(
 
     ranked = sorted(grouped.values(), key=lambda g: (-g["count"], g["signature"]))
     return ranked[:50]
+
+
+# How far back the dashboard looks by default. A month is long enough to show a
+# trend and short enough that "is it working *now*" isn't diluted by the first
+# week of a pilot, when the knowledge base is still being filled in.
+DEFAULT_ANALYTICS_DAYS = 30
+MAX_TOP_TOPICS = 15
+
+
+@app.get("/admin/api/{slug}/analytics")
+def analytics(
+    days: int = DEFAULT_ANALYTICS_DAYS,
+    bank: Bank = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """What this assistant did, in the terms a bank decides renewal on.
+
+    Content Gaps answers "what should we write next". This answers the prior
+    question — "is it working at all" — and the two are deliberately different
+    reports: a bank that only ever sees its failures will conclude the product
+    is failing.
+
+    Every rate here is reported alongside the counts it came from, and any
+    rate whose denominator is zero is returned as null rather than 0. A fresh
+    tenant showing "0% deflection" would be a lie told by a division.
+    """
+    days = max(0, min(days, 365))
+    since = datetime.now(UTC) - timedelta(days=days) if days else None
+
+    def _window(column: Any) -> list[Any]:
+        return [column >= since] if since is not None else []
+
+    # --- outcomes -----------------------------------------------------
+    outcome_rows = db.execute(
+        select(Message.outcome, func.count())
+        .where(Message.bank_id == bank.id, Message.role == "assistant")
+        .where(*_window(Message.created_at))
+        .group_by(Message.outcome)
+    ).all()
+    counts = {outcome: n for outcome, n in outcome_rows if outcome}
+    # Assistant turns written before migration 0007 carry no outcome. Reported
+    # rather than dropped: a reader is entitled to know some turns aren't
+    # represented in the percentages above them.
+    unclassified = sum(n for outcome, n in outcome_rows if not outcome)
+
+    substantive = sum(counts.get(o, 0) for o in agent_module.SUBSTANTIVE)
+    resolved = sum(counts.get(o, 0) for o in agent_module.RESOLVED)
+    answered = counts.get(agent_module.ANSWERED, 0)
+
+    # --- conversations, languages, channels ---------------------------
+    conversations = db.execute(
+        select(func.count())
+        .select_from(Conversation)
+        .where(Conversation.bank_id == bank.id)
+        .where(*_window(Conversation.created_at))
+    ).scalar_one()
+
+    languages = [
+        {
+            "language": lang or "unknown",
+            "name": LANGUAGE_NAMES.get(lang or "", "Unknown"),
+            "count": n,
+        }
+        for lang, n in db.execute(
+            select(Conversation.language, func.count())
+            .where(Conversation.bank_id == bank.id)
+            .where(*_window(Conversation.created_at))
+            .group_by(Conversation.language)
+        ).all()
+    ]
+    languages.sort(key=lambda row: (-int(row["count"]), str(row["language"])))
+
+    channels = [
+        {"channel": channel, "count": n}
+        for channel, n in db.execute(
+            select(Conversation.channel, func.count())
+            .where(Conversation.bank_id == bank.id)
+            .where(*_window(Conversation.created_at))
+            .group_by(Conversation.channel)
+        ).all()
+    ]
+    channels.sort(key=lambda row: -int(row["count"]))
+
+    # --- what customers actually asked --------------------------------
+    # Grouped by content signature, the same way content gaps are, so the two
+    # reports name the same topic the same way.
+    #
+    # Filtered on the recorded outcome, never on the guessed intent. A reply of
+    # "Oli 0911234567" to the contact request classifies as an ordinary
+    # question, so an intent filter ranked a customer's name and phone number
+    # as a top topic — wrong as analytics, and personal data surfacing in the
+    # one report most likely to be exported and shown around.
+    question_rows = db.execute(
+        select(Message.text)
+        .where(
+            Message.bank_id == bank.id,
+            Message.role == "user",
+            Message.outcome.in_(agent_module.SUBSTANTIVE),
+        )
+        .where(*_window(Message.created_at))
+        .order_by(Message.created_at.desc())
+        .limit(2000)
+    ).scalars().all()
+
+    topics: dict[str, dict[str, Any]] = {}
+    for text in question_rows:
+        # Scrubbed before the signature is computed, so a volunteered number
+        # can reach neither the grouping key nor the example.
+        question = redact_contact((text or "").strip())
+        if not question:
+            continue
+        key = content_signature(question) or question.lower()
+        topic = topics.setdefault(key, {"signature": key, "count": 0, "example": question})
+        topic["count"] += 1
+    top_topics = sorted(topics.values(), key=lambda t: (-int(t["count"]), str(t["signature"])))
+
+    # --- the handoff queue, as work rather than history ---------------
+    handoff_rows = db.execute(
+        select(Handoff.status, Handoff.contact_phone)
+        .where(Handoff.bank_id == bank.id)
+        .where(*_window(Handoff.created_at))
+    ).all()
+    open_handoffs = [h for h in handoff_rows if h.status == "open"]
+    reachable = sum(1 for h in open_handoffs if h.contact_phone)
+
+    return {
+        "window_days": days,
+        "since": since.isoformat() if since else None,
+        "conversations": conversations,
+        "substantive_questions": substantive,
+        "resolved_without_a_person": resolved,
+        # Null, not zero, when nothing has been asked yet.
+        "deflection_rate": round(resolved / substantive, 4) if substantive else None,
+        "answered_from_own_content": answered,
+        "own_content_rate": round(answered / substantive, 4) if substantive else None,
+        "outcomes": [
+            {"outcome": o, "count": counts.get(o, 0)}
+            for o in (*agent_module.SUBSTANTIVE, agent_module.GREETING,
+                      agent_module.CONTACT_CAPTURED)
+            if counts.get(o, 0)
+        ],
+        "unclassified_turns": unclassified,
+        "languages": languages,
+        "channels": channels,
+        "top_topics": top_topics[:MAX_TOP_TOPICS],
+        "handoffs": {
+            "open": len(open_handoffs),
+            "closed": sum(1 for h in handoff_rows if h.status != "open"),
+            # Of the people still waiting on a callback, how many can actually
+            # be called. An open handoff nobody can reach is a dead letter.
+            "open_reachable": reachable,
+            "open_unreachable": len(open_handoffs) - reachable,
+        },
+    }
 
 
 @app.post("/admin/api/{slug}/handoffs/{handoff_id}/close")
