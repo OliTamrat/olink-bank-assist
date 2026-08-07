@@ -245,14 +245,59 @@ def _endpoint_and_headers() -> tuple[str, dict[str, str], dict[str, str]]:
     raise LLMUnavailable("no LLM backend configured")
 
 
-def _call_model(system: str, user: str, max_output_tokens: int) -> str:
-    """One generateContent round-trip. Raises LLMUnavailable on any failure."""
+def _extract_text(data: dict[str, Any]) -> str:
+    """Pull the answer out of a generateContent response, or say why there isn't one.
+
+    Indexing straight into candidates[0].content.parts[0].text raises a bare
+    KeyError the moment the model returns a candidate with no parts, and the
+    caller then logs "LLM call failed: 'parts'" — which names nothing. The
+    single most common cause is finishReason=MAX_TOKENS, so surface it: that
+    one word is the difference between a five-minute fix and a silent feature.
+
+    Thought parts are skipped. A thinking model can return its reasoning
+    alongside the answer, and pasting that to a bank customer would be worse
+    than returning nothing.
+    """
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise LLMUnavailable(f"no candidates (promptFeedback={data.get('promptFeedback')!r})")
+    candidate = candidates[0]
+    parts = (candidate.get("content") or {}).get("parts") or []
+    text = "".join(
+        part["text"]
+        for part in parts
+        if isinstance(part, dict) and "text" in part and not part.get("thought")
+    ).strip()
+    if not text:
+        raise LLMUnavailable(
+            f"no text in completion (finishReason={candidate.get('finishReason')!r})"
+        )
+    return text
+
+
+def _call_model(system: str, user: str, max_output_tokens: int, *, thinking_budget: int) -> str:
+    """One generateContent round-trip. Raises LLMUnavailable on any failure.
+
+    thinking_budget is deliberately required rather than defaulted. On Gemini
+    2.5 models maxOutputTokens caps thinking *and* answer together, and
+    thinking is on by default — so a caller that sizes the cap for the answer
+    alone can have the whole budget consumed before a single output token is
+    produced, and get back a candidate with no text. That is not a loud
+    failure: it degrades to the extractive path, which looks like "the model
+    had nothing to say" rather than "the call never really ran". Making every
+    call site state its budget is what keeps that from being an accident.
+    """
     settings = get_settings()
     url, headers, params = _endpoint_and_headers()
     body = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens},
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": max_output_tokens,
+            # Explicit, never inherited. The default is the model's to change.
+            "thinkingConfig": {"thinkingBudget": thinking_budget},
+        },
     }
     try:
         resp = httpx.post(
@@ -263,15 +308,15 @@ def _call_model(system: str, user: str, max_output_tokens: int) -> str:
             timeout=settings.request_timeout,
         )
         resp.raise_for_status()
-        data = resp.json()
-        text: str = data["candidates"][0]["content"]["parts"][0]["text"]
+        data: dict[str, Any] = resp.json()
     except Exception as exc:  # noqa: BLE001 — any failure means: use the fallback
         logger.warning("LLM call failed: %s", exc)
         raise LLMUnavailable(str(exc)) from exc
-    cleaned = text.strip()
-    if not cleaned:
-        raise LLMUnavailable("empty completion")
-    return cleaned
+    try:
+        return _extract_text(data)
+    except LLMUnavailable as exc:
+        logger.warning("LLM call returned no usable text: %s", exc)
+        raise
 
 
 _SEARCH_TRANSLATE_PROMPT = """You turn a bank customer's question into an English \
@@ -327,7 +372,11 @@ def answer_from_general_knowledge(question: str, language: str, bank_name: str) 
         bank_name=bank_name,
         language_name=LANGUAGE_NAMES.get(language, "English"),
     )
-    cleaned = _call_model(system, question, max_output_tokens=400)
+    # Thinking on, and the cap covers thinking + answer. The decline checklist
+    # in _GENERAL_PROMPT is the safety property here — the model has to weigh
+    # "would answering this need a figure or a limit?" — so this is exactly
+    # the call that should reason before replying.
+    cleaned = _call_model(system, question, max_output_tokens=1200, thinking_budget=512)
     if INSUFFICIENT_CONTEXT in cleaned:
         raise LLMDeclined(cleaned)
     return cleaned
@@ -347,7 +396,15 @@ def translate_for_search(question: str) -> str:
     informativeness gate still decides whether anything was really found —
     so a bad translation costs a miss, never a wrong answer.
     """
-    return _call_model(_SEARCH_TRANSLATE_PROMPT, question, max_output_tokens=64)
+    # Thinking off: this is a mechanical transformation, not a judgement, and
+    # it sits on the miss path where latency is already worst. The 64-token
+    # cap this replaces was the bug — with thinking on by default, the budget
+    # was spent before any query came out, translate_for_search raised
+    # LLMUnavailable on every call, agent.py swallowed it into english="",
+    # and cross-language retrieval never ran in production at all.
+    return _call_model(
+        _SEARCH_TRANSLATE_PROMPT, question, max_output_tokens=256, thinking_budget=0
+    )
 
 
 def generate_answer(
@@ -361,10 +418,14 @@ def generate_answer(
         bank_name=bank_name,
         language_name=LANGUAGE_NAMES.get(language, "English"),
     )
+    # Same reasoning as the general path: deciding INSUFFICIENT_CONTEXT is a
+    # judgement about whether the retrieved text answers the question, and the
+    # 512 cap had to cover thinking as well as a multi-sentence answer.
     cleaned = _call_model(
         system,
         f"CONTEXT:\n{context}\n\nCUSTOMER QUESTION:\n{question}",
-        max_output_tokens=512,
+        max_output_tokens=1500,
+        thinking_budget=512,
     )
     if INSUFFICIENT_CONTEXT in cleaned:
         raise LLMDeclined(cleaned)

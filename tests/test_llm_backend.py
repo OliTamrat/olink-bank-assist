@@ -358,3 +358,133 @@ def test_key_file_is_the_fallback_when_metadata_is_absent(
     monkeypatch.setattr(httpx, "get", dead_get)
     monkeypatch.setattr(llm, "_token_from_key_file", lambda: ("key-file-token", 3600.0))
     assert llm._vertex_token() == "key-file-token"
+
+
+# ------------------------------------------------------- thinking budgets
+#
+# The regression these lock in: on Gemini 2.5 models maxOutputTokens caps
+# thinking AND answer together, and thinking is on unless you say otherwise.
+# translate_for_search asked for 64 tokens, the budget went entirely to
+# thinking, the response came back with a candidate carrying no parts, the
+# old indexing raised KeyError('parts'), _call_model turned that into
+# LLMUnavailable, and agent.py swallowed it into english="" — so
+# cross-language retrieval was dead in production while every test passed,
+# because every test monkeypatched translate_for_search itself.
+
+
+def _capture(monkeypatch: pytest.MonkeyPatch, text: str = "loan information") -> dict[str, Any]:
+    seen: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        seen["json"] = kwargs.get("json")
+        return httpx.Response(
+            200,
+            json={"candidates": [{"content": {"parts": [{"text": text}]}}]},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    return seen
+
+
+def test_translation_disables_thinking_and_leaves_room_for_a_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_vertex(monkeypatch)
+    seen = _capture(monkeypatch)
+
+    assert llm.translate_for_search("waa'ee liqii barbaada") == "loan information"
+
+    cfg = seen["json"]["generationConfig"]
+    assert cfg["thinkingConfig"]["thinkingBudget"] == 0
+    assert cfg["maxOutputTokens"] >= 256
+
+
+def test_answer_paths_budget_for_thinking_on_top_of_the_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both judgement calls must leave room for the answer after thinking.
+
+    generate_answer and answer_from_general_knowledge each have to decide
+    whether to decline before writing anything. If the cap only covers the
+    prose, the decline reasoning eats it and the caller sees an empty
+    completion — which degrades to extractive and looks like the model simply
+    had nothing useful to say.
+    """
+    for call in (
+        lambda: llm.generate_answer("q", [CHUNK], "en", "Demo Bank"),
+        lambda: llm.answer_from_general_knowledge("How do I use an ATM?", "en", "Demo Bank"),
+    ):
+        _use_vertex(monkeypatch)
+        seen = _capture(monkeypatch, text="Insert your card and enter your PIN.")
+        call()
+        cfg = seen["json"]["generationConfig"]
+        budget = cfg["thinkingConfig"]["thinkingBudget"]
+        assert budget > 0
+        assert cfg["maxOutputTokens"] - budget >= 512
+
+
+def test_a_candidate_with_no_parts_names_the_finish_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The exact production shape of the bug, and the diagnosis it now gives.
+
+    Previously this raised KeyError('parts') and was logged as
+    "LLM call failed: 'parts'", which names nothing at all.
+    """
+    _use_vertex(monkeypatch)
+
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"candidates": [{"finishReason": "MAX_TOKENS", "content": {"role": "model"}}]},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    with pytest.raises(llm.LLMUnavailable, match="MAX_TOKENS"):
+        llm.translate_for_search("waa'ee liqii barbaada")
+
+
+def test_thought_parts_are_never_shown_to_a_customer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_vertex(monkeypatch)
+
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {"text": "The user is asking about loans...", "thought": True},
+                                {"text": "Bring a valid ID."},
+                            ]
+                        }
+                    }
+                ]
+            },
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    assert llm.generate_answer("q", [CHUNK], "en", "Demo Bank") == "Bring a valid ID."
+
+
+def test_a_blocked_prompt_degrades_instead_of_erroring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_vertex(monkeypatch)
+
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"promptFeedback": {"blockReason": "SAFETY"}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    with pytest.raises(llm.LLMUnavailable, match="no candidates"):
+        llm.generate_answer("q", [CHUNK], "en", "Demo Bank")
