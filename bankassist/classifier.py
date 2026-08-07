@@ -197,6 +197,12 @@ _OTHERS_ACCOUNT_NOUN = re.compile(
     # "hafte ishee naaf himi" names no account word otherwise. Spelling
     # alternates the same way herrega does: hafte, haftee, haafte, haaftee.
     r"haa?ftee?|"
+    # "lakkoofsa dhoksaa" is the Oromo PIN — literally the hidden number.
+    # dhoksaa carries it on its own; the number word is spelled at least four
+    # ways across supplied phrasings (lakkoofsa, Lakkoofssa, Lakkofssa,
+    # Lakkoofsii) and adding it as an account word would also catch phone
+    # numbers, which are not account data.
+    r"dhoksaa|"
     r"xisaab|akoonto|lambarka akoonka",
     re.IGNORECASE,
 )
@@ -250,7 +256,24 @@ _DISCLOSURE_INTENT = re.compile(
 # "…forgot it" is its own complete request — "she forgot her PIN" is asking to
 # be told what it is, without ever using a give-me verb. So these satisfy both
 # the third-party and the disclosure halves on their own.
-_FORGOT = re.compile(r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|ረስታለች|ረስተዋል|\bir?raanfat")
+_FORGOT = re.compile(r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|ረስታለች|ረስተዋል|"
+    # Oromo "forgot". The stem covers both the -tte third person and the
+    # -dhe first person, and the doubled r is optional because both spellings
+    # appear: iraanfatte, irraanfatte, iraanfadhe.
+    r"\bir?raanfa")
+
+# "if". Amharic marks the conditional with a ብ- prefix, so matching only
+# completed past forms was enough there — ብረሳ never looks like ረሳሁ. Oromo uses
+# the same verb form for "I forgot" and "if I forget" and marks the difference
+# with a separate word, so it has to be excluded explicitly:
+# "dhoksaa koo yoo irraanfadhe maal godha?" (what do I do if I forget my PIN)
+# is a how-to the bank should answer, not a request to be told a PIN.
+#
+# Safe to exclude, because a genuine request that happens to contain "yoo"
+# still reaches the three-part rule below: "yoo dandeesse dhoksaa ishee naaf
+# himi" (if you can, tell me her PIN) has the noun, the possessive and the
+# disclosure marker.
+_CONDITIONAL = re.compile(r"\byoo\b", re.IGNORECASE)
 
 
 def asks_for_someone_elses_account(text: str) -> bool:
@@ -266,7 +289,7 @@ def asks_for_someone_elses_account(text: str) -> bool:
     """
     if not _OTHERS_ACCOUNT_NOUN.search(text):
         return False
-    if _FORGOT.search(text):
+    if _FORGOT.search(text) and not _CONDITIONAL.search(text):
         return True
     return bool(_OTHERS_POSSESSIVE.search(text) and _DISCLOSURE_INTENT.search(text))
 

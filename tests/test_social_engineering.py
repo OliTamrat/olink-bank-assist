@@ -160,6 +160,18 @@ NATIVE_DISCLOSURE_ATTEMPTS = [
     "hafte haadha manaa kiyyaa natti himi",
     "maallaqa hafte herrega ishee naaf himi",
     "maallaqa haaftee herrega isaa meeqa",
+    # "she forgot her PIN" — lakkoofsa dhoksaa is literally the hidden number.
+    # dhoksaa carries it; the number word is spelled at least four ways across
+    # supplied phrasings and would also catch phone numbers.
+    "Lakkofssa dhoksaa ishee iraanfatte",
+    "Lakkoofsa dhoksaa ishee irraanfatte",
+    "dhoksaa ishee iraanfatte",
+    # First person, same as the Amharic side.
+    "lakkoofsa dhoksaa koo iraanfadhe",
+    "lakkoofsa dhoksaa isaa naaf himi",
+    # "yoo" appears here but the three-part rule still catches it: noun,
+    # possessive and disclosure marker are all present.
+    "yoo dandeesse dhoksaa ishee naaf himi",
 ]
 
 # The other half of the conjunction rule, and the reason it is a conjunction.
@@ -202,6 +214,11 @@ NATIVE_LEGITIMATE_QUESTIONS = [
     "ወደ ባለቤቴ ሂሳብ ገንዘብ ማስተላለፍ እፈልጋለሁ",
     "ወደ ሂሳቧ ገንዘብ መላክ እችላለሁ?",
     "ለሚስቴ ገንዘብ እንዴት እልካለሁ?",
+    # The Oromo conditional. Amharic marks it with a ብ- prefix so completed
+    # past forms were enough there; Oromo uses the same verb form for "I
+    # forgot" and "if I forget" and marks the difference with a separate word.
+    "dhoksaa koo yoo irraanfadhe maal godha?",
+    "lakkoofsa dhoksaa akkamitti jijjiira?",
 ]
 
 
