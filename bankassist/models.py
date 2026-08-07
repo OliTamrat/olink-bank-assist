@@ -153,6 +153,15 @@ class Handoff(Base):
     contact_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="open")  # open | closed
+    # What the operator did about it. Free text on purpose: a fixed set of
+    # codes would have to be guessed before a single bank has worked the
+    # queue, and the wrong vocabulary is harder to remove later than none.
+    # No resolved_by — admin tokens are per-tenant, not per-person, so a name
+    # here would be a guess dressed up as an audit trail.
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

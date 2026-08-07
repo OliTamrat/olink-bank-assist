@@ -62,6 +62,17 @@
 .windowbar button{margin-left:6px;background:#273449;border:none;color:#e2e8f0;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}
 .windowbar button.on{background:#0f766e;color:#fff}
 .note{font-size:12px;color:#64748b;margin-top:12px}
+/* Handoff console */
+.hstate{margin-bottom:14px;font-size:12.5px;color:#94a3b8}
+.hstate button{margin-left:6px;background:#273449;border:none;color:#e2e8f0;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}
+.hstate button.on{background:#0f766e;color:#fff}
+.waiting{font-size:12px;color:#f59e0b}
+.waiting.cold{color:#ef4444}
+.resolution{margin:8px 0;font-size:13px;color:#cbd5e1;border-left:2px solid #0f766e;padding-left:10px}
+.resolution .when{color:#64748b;font-size:11.5px}
+.transcript{margin-top:10px;border-top:1px solid #1e293b;padding-top:10px}
+.noteform{display:flex;gap:8px;margin-top:10px}
+.noteform input{flex:1;background:#0b1220;border:1px solid #273449;color:#e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit}
 </style>
 </head>
 <body>
@@ -82,7 +93,7 @@
 <main id="main"><div class="empty">Enter your bank slug and admin token, then Connect.</div></main>
 
 <script>
-var state = { slug: localStorage.getItem("ba_slug") || "", token: localStorage.getItem("ba_token") || "", tab: "overview", days: 30 };
+var state = { slug: localStorage.getItem("ba_slug") || "", token: localStorage.getItem("ba_token") || "", tab: "overview", days: 30, hstatus: "open" };
 document.getElementById("slug").value = state.slug;
 document.getElementById("token").value = state.token;
 
@@ -302,21 +313,76 @@ function loadMsgs(id) {
 }
 
 // ------------------------------------------------ handoffs
+function setHandoffStatus(v) { state.hstatus = v; loadHandoffs(); }
+
+// How long someone has been waiting. The number that decides what to work on
+// next, and it was nowhere on the row before.
+function waited(iso) {
+  var hrs = (Date.now() - new Date(iso).getTime()) / 3600000;
+  if (hrs < 1) return ["just now", ""];
+  if (hrs < 24) return [Math.round(hrs) + "h waiting", ""];
+  var d = Math.round(hrs / 24);
+  return [d + (d === 1 ? " day waiting" : " days waiting"), d >= 2 ? "cold" : ""];
+}
+
 function loadHandoffs() {
-  api("/handoffs").then(function (rows) {
-    setStatus(rows.filter(function (h) { return h.status === "open"; }).length + " open handoffs");
-    document.getElementById("main").innerHTML = rows.length ? rows.map(function (h) {
-      return '<div class="card"><div class="meta"><span class="pill ' + h.status + '">' + esc(h.status) + '</span><span class="pill">' + esc(h.reason) + "</span>" + h.created_at.slice(0, 16).replace("T", " ") + "</div>" +
+  var st = state.hstatus || "open";
+  api("/handoffs?status=" + st).then(function (rows) {
+    setStatus(rows.length + " " + st + " handoff" + (rows.length === 1 ? "" : "s"));
+
+    var filters = '<div class="hstate">Showing:' +
+      [["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(function (o) {
+        return '<button class="' + (st === o[0] ? "on" : "") + '" onclick="setHandoffStatus(\'' + o[0] + '\')">' + o[1] + "</button>";
+      }).join("") + "</div>";
+
+    var body = rows.length ? rows.map(function (h) {
+      var w = h.status === "open" ? waited(h.created_at) : null;
+      return '<div class="card" id="h-' + h.id + '">' +
+        '<div class="meta"><span class="pill ' + h.status + '">' + esc(h.status) + '</span>' +
+        '<span class="pill">' + esc(h.reason) + "</span>" +
+        h.created_at.slice(0, 16).replace("T", " ") +
+        (w ? ' &middot; <span class="waiting ' + w[1] + '">' + w[0] + "</span>" : "") + "</div>" +
         "<pre>" + esc(h.detail) + "</pre>" +
         // Who to call. A queue row that says a customer wants a callback but
         // not where to reach them is a to-do nobody can action.
         (h.contact_phone
           ? '<div class="contact">Contact: <strong>' + esc(h.contact_name || "Not given") + '</strong> &middot; <a href="' + (h.contact_phone.indexOf("@") > -1 ? "mailto:" : "tel:") + encodeURIComponent(h.contact_phone) + '">' + esc(h.contact_phone) + "</a></div>"
           : '<div class="contact none">No contact details — the customer did not leave a number.</div>') +
-        (h.status === "open" ? '<div class="row"><button class="btn" onclick="closeHandoff(\'' + h.id + '\')">Mark handled</button></div>' : "") +
-        "</div>";
-    }).join("") : '<div class="empty">No handoffs. When the assistant cannot answer or a customer complains, it appears here.</div>';
+        (h.resolution
+          ? '<div class="resolution">' + esc(h.resolution) +
+            (h.resolved_at ? '<div class="when">closed ' + h.resolved_at.slice(0, 16).replace("T", " ") + "</div>" : "") + "</div>"
+          : "") +
+        '<div class="transcript" id="t-' + h.id + '"></div>' +
+        '<div class="row">' +
+          '<button class="btn secondary" onclick="showTranscript(\'' + h.conversation_id + '\',\'' + h.id + '\')">Show conversation</button>' +
+          (h.status === "open" ? "" : '<button class="btn secondary" onclick="reopenHandoff(\'' + h.id + '\')">Reopen</button>') +
+        "</div>" +
+        (h.status === "open"
+          ? '<div class="noteform"><input id="n-' + h.id + '" placeholder="What was done? (optional)">' +
+            '<button class="btn" onclick="closeHandoff(\'' + h.id + '\')">Mark handled</button></div>'
+          : "");
+    }).join("") : '<div class="empty">Nothing here. When the assistant cannot answer or a customer complains, it appears in Open.</div>';
+
+    document.getElementById("main").innerHTML = filters + body;
   }).catch(function (e) { setStatus(e.message); });
+}
+
+// An operator calling someone back needs to know what they actually asked.
+// Without this the only way to find out was to hunt for the conversation in
+// another tab by its id.
+function showTranscript(conversationId, handoffId) {
+  var box = document.getElementById("t-" + handoffId);
+  if (box.innerHTML) { box.innerHTML = ""; return; }
+  api("/conversations/" + conversationId + "/messages").then(function (msgs) {
+    box.innerHTML = msgs.map(function (m) {
+      return '<div class="msgline ' + esc(m.role) + '">' + esc(m.text) + "</div>";
+    }).join("") || '<div class="empty">No messages.</div>';
+  }).catch(function (e) { box.innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+}
+
+function reopenHandoff(id) {
+  api("/handoffs/" + id + "/reopen", { method: "POST" }).then(loadHandoffs)
+    .catch(function (e) { setStatus(e.message); });
 }
 // ------------------------------------------------ content gaps
 // The handoff list is a pile; this is the work queue. Ranked by how many
@@ -345,7 +411,12 @@ function loadGaps() {
 }
 
 function closeHandoff(id) {
-  api("/handoffs/" + id + "/close", { method: "POST" }).then(loadHandoffs).catch(function (e) { setStatus(e.message); });
+  var field = document.getElementById("n-" + id);
+  var note = field ? field.value.trim() : "";
+  api("/handoffs/" + id + "/close", {
+    method: "POST",
+    body: JSON.stringify({ resolution: note || null })
+  }).then(loadHandoffs).catch(function (e) { setStatus(e.message); });
 }
 
 if (state.slug && state.token) showTab("docs");
