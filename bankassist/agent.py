@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from . import classifier
 from .i18n import t
-from .llm import LLMUnavailable, generate_answer
+from .llm import LLMDeclined, LLMUnavailable, generate_answer
 from .logging_config import log_event
 from .models import AuditLog, Bank, Conversation, Document, Handoff, Message
 from .retrieval import RetrievedChunk, retrieve, suggest_topics
@@ -158,7 +158,22 @@ def handle_message(
         query, _greeted = classifier.strip_greeting(text)
         query = query or text
         chunks = retrieve(db, bank.id, query)
-        if not chunks:
+
+        # Retrieval finding something is not the same as that something
+        # answering the question. The model reads the retrieved text and can
+        # decline — Awash's only ATM document covers fraud safety, which
+        # does not explain how to use an ATM. A decline has to land in the
+        # miss path: shipping it as an answer attached a source chip to a
+        # non-answer, offered the customer nothing further, and filed no
+        # handoff, so the bank never learned the content was missing.
+        answer: str | None = None
+        if chunks:
+            try:
+                answer = _answer_from_knowledge(bank, query, chunks, language)
+            except LLMDeclined:
+                answer = None
+
+        if answer is None:
             _create_handoff(db, bank, conversation, "unanswered_question", text[:2000])
             reply = t(language, "unknown")
             # Retrieval is lexical, so a customer who phrases a question
@@ -185,7 +200,7 @@ def handle_message(
                 reply, intent, language, handoff_created=True, suggestions=suggestions
             )
         else:
-            reply = _answer_from_knowledge(bank, query, chunks, language)
+            reply = answer
             if intent == classifier.INVESTMENT_ADVICE:
                 reply = f"{reply}\n\n{t(language, 'advice_disclaimer')}"
             sources = [
