@@ -60,11 +60,59 @@ COMPLAINT = "complaint"
 COMPARISON = "comparison"  # "is X better than us?" — answer confidently, never via retrieval
 QUESTION = "question"  # product / how-to / education — the answerable bucket
 
-_GREETING_RE = re.compile(
-    r"^\s*(hi|hello|hey|good (morning|afternoon|evening)|selam|salam|salaan|"
-    r"akkam|ashamaa?|ሰላም|ሰላምታ|ጤና ይስጥልኝ|ከመይ)\W*$",
+# Greeting vocabulary across the five supported languages, including the
+# companions that make up a full greeting ("akkam jirta", "ደህና ነህ") — those
+# are part of the greeting, not a question, and stripping them is what lets
+# a whole greeting resolve to nothing left over.
+_GREET_WORD = (
+    r"hi|hello|hey|hallo|good (morning|afternoon|evening)|greetings|"
+    r"selam|selaam|salam|salaam|salaan|nagaa|naga|"
+    r"akkam|akam|ashamaa?|jirta|jirtu|jirtan|fayyaa|"
+    r"dehna|dehina|nagaadha|iska warran|sidee tahay|subax wanaagsan|"
+    r"ሰላም|ሰላምታ|ጤና ይስጥልኝ|ደህና|ደሕና|ነህ|ነሽ|ኖት|ከመይ|ሓዲኹም|እንደምን|አለህ|አለሽ"
+)
+
+# One or more greeting words in any order, separated only by spaces or
+# punctuation. The old pattern allowed exactly ONE, so the most natural
+# openings a bilingual customer types — "Hi akkam?", "Hello selam",
+# "akkam jirta?" — fell through to retrieval, matched nothing and handed
+# off. Found on the live Awash demo.
+_SEP = r"[\s,\.!\?;:\-–—፣።፥]*"
+_GREETING_ONLY_RE = re.compile(
+    rf"^{_SEP}(?:(?:{_GREET_WORD}){_SEP})+$",
     re.IGNORECASE,
 )
+_GREETING_PREFIX_RE = re.compile(
+    rf"^{_SEP}(?:(?:{_GREET_WORD}){_SEP})+",
+    re.IGNORECASE,
+)
+
+# A name introduction after a greeting is still a greeting, not a question:
+# "ሰላም ኦሊ እባላለሁ" ("hello, I'm Oli") is someone saying hello. Deliberately
+# limited to explicit name-introduction forms — a bare "I am" would swallow
+# "hello, I am looking for a loan", which is a real question.
+_INTRODUCTION_RE = re.compile(
+    r"\b(my name is|i am called|call me)\b|"
+    r"\b(maqaan koo|jedhama|na jedhu)\b|"
+    r"\b(magacaygu|waxaa la i yidhaahdaa)\b|"
+    r"እባላለሁ|ስሜ|ይበሃል|ስመይ|እባላለው",
+    re.IGNORECASE,
+)
+
+
+def strip_greeting(text: str) -> tuple[str, bool]:
+    """Split a leading greeting off the rest of the message.
+
+    Returns (remainder, had_greeting). Used both to classify and to search:
+    greeting words are content words to BM25, so leaving them in pads a
+    query's content-word count and raises the informativeness bar that
+    `retrieval.retrieve()` applies — making a greeted question *harder* to
+    answer than the same question asked bluntly.
+    """
+    match = _GREETING_PREFIX_RE.match(text)
+    if not match or not match.group(0).strip():
+        return text, False
+    return text[match.end() :].strip(), True
 
 _ACCOUNT_RE = re.compile(
     r"\bmy (account|balance|card|statement|loan|pin|transaction)|"
@@ -162,8 +210,18 @@ def _comparison_re(bank_aliases: tuple[str, ...]) -> re.Pattern[str]:
 
 
 def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
-    if _GREETING_RE.match(text):
+    if _GREETING_ONLY_RE.match(text):
         return GREETING
+
+    # A greeting can prefix a real request ("Hello, what are your loan
+    # rates?"). Classify what's actually being asked, not the hello — but
+    # only after confirming the remainder isn't just an introduction.
+    remainder, had_greeting = strip_greeting(text)
+    if had_greeting:
+        if not remainder or _INTRODUCTION_RE.search(remainder):
+            return GREETING
+        text = remainder
+
     if _COMPLAINT_RE.search(text):
         return COMPLAINT
     if _ACCOUNT_RE.search(text):

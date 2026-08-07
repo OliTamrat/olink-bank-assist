@@ -134,7 +134,14 @@ def handle_message(
             sources = [{"document_id": why_choose.id, "title": why_choose.title}]
             result = ChatResult(reply, intent, language, sources=sources)
     else:
-        chunks = retrieve(db, bank.id, text)
+        # Search the question, not the hello. Greeting words are ordinary
+        # content words to BM25, so leaving them in pads the query's
+        # content-word count and raises the informativeness bar in
+        # retrieve() — which made "Selam, how do I open an account?" harder
+        # to answer than the same question asked bluntly.
+        query, _greeted = classifier.strip_greeting(text)
+        query = query or text
+        chunks = retrieve(db, bank.id, query)
         if not chunks:
             _create_handoff(db, bank, conversation, "unanswered_question", text[:2000])
             reply = t(language, "unknown")
@@ -148,7 +155,7 @@ def handle_message(
             # so a genuine knowledge gap stays visible to the bank.
             suggestions = [
                 {"document_id": s.document_id, "title": s.title}
-                for s in suggest_topics(db, bank.id, text)
+                for s in suggest_topics(db, bank.id, query)
             ]
             if suggestions:
                 reply = f"{reply}\n\n{t(language, 'did_you_mean')}"
@@ -162,7 +169,7 @@ def handle_message(
                 reply, intent, language, handoff_created=True, suggestions=suggestions
             )
         else:
-            reply = _answer_from_knowledge(bank, text, chunks, language)
+            reply = _answer_from_knowledge(bank, query, chunks, language)
             if intent == classifier.INVESTMENT_ADVICE:
                 reply = f"{reply}\n\n{t(language, 'advice_disclaimer')}"
             sources = [
