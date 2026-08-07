@@ -455,14 +455,26 @@ def list_messages(
 
 @app.get("/admin/api/{slug}/handoffs")
 def list_handoffs(
-    bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+    status: str = "open",
+    bank: Bank = Depends(require_admin),
+    db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    rows = db.execute(
-        select(Handoff)
-        .where(Handoff.bank_id == bank.id)
-        .order_by(Handoff.created_at.desc())
-        .limit(200)
-    ).scalars().all()
+    """The work queue. Defaults to open, oldest first.
+
+    Newest-first is the wrong order for work: a customer who has been waiting
+    three days for a callback outranks one who asked five minutes ago, and the
+    old default buried them at the bottom of 200 rows. Closed handoffs keep
+    newest-first, because that view is history rather than a queue.
+    """
+    if status not in {"open", "closed", "all"}:
+        raise HTTPException(status_code=400, detail="status must be open, closed or all")
+
+    query = select(Handoff).where(Handoff.bank_id == bank.id)
+    if status != "all":
+        query = query.where(Handoff.status == status)
+    order = Handoff.created_at.asc() if status == "open" else Handoff.created_at.desc()
+
+    rows = db.execute(query.order_by(order).limit(200)).scalars().all()
     return [
         {
             "id": h.id, "reason": h.reason, "detail": h.detail, "status": h.status,
@@ -471,6 +483,8 @@ def list_handoffs(
             # works it, and until now a row said a customer wanted a callback
             # without saying where to.
             "contact_name": h.contact_name, "contact_phone": h.contact_phone,
+            "resolution": h.resolution,
+            "resolved_at": h.resolved_at.isoformat() if h.resolved_at else None,
         }
         for h in rows
     ]
@@ -688,14 +702,58 @@ def analytics(
     }
 
 
-@app.post("/admin/api/{slug}/handoffs/{handoff_id}/close")
-def close_handoff(
-    handoff_id: str, bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
-) -> dict[str, str]:
+class HandoffCloseIn(BaseModel):
+    resolution: str | None = Field(default=None, max_length=2000)
+
+
+def _get_handoff(db: Session, bank: Bank, handoff_id: str) -> Handoff:
     handoff = db.get(Handoff, handoff_id)
     if handoff is None or handoff.bank_id != bank.id:
         raise HTTPException(status_code=404, detail="Unknown handoff")
+    return handoff
+
+
+@app.post("/admin/api/{slug}/handoffs/{handoff_id}/close")
+def close_handoff(
+    handoff_id: str,
+    body: HandoffCloseIn | None = None,
+    bank: Bank = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Close a handoff, optionally recording what was done about it.
+
+    The body stays optional so closing without a note still works — an
+    operator clearing an obvious duplicate should not be forced to write
+    prose, and requiring it would only produce a queue full of "done".
+    """
+    handoff = _get_handoff(db, bank, handoff_id)
     handoff.status = "closed"
-    _audit(db, bank, "handoff_closed", "handoff", handoff.id, None)
+    handoff.resolved_at = datetime.now(UTC)
+    if body is not None and body.resolution:
+        handoff.resolution = body.resolution.strip() or None
+    # The note may quote the customer, so it is audited as a fact rather than
+    # a value — same rule as chat text everywhere else.
+    _audit(
+        db, bank, "handoff_closed", "handoff", handoff.id,
+        {"had_resolution": bool(handoff.resolution)},
+    )
     db.commit()
-    return {"status": "closed"}
+    return {"status": "closed", "resolution": handoff.resolution}
+
+
+@app.post("/admin/api/{slug}/handoffs/{handoff_id}/reopen")
+def reopen_handoff(
+    handoff_id: str, bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+) -> dict[str, str]:
+    """Put a handoff back in the queue.
+
+    Closing is the only irreversible action in this panel otherwise, and the
+    realistic case is mundane: nobody picked up. The previous resolution is
+    left in place — it is the record of the attempt that did not work.
+    """
+    handoff = _get_handoff(db, bank, handoff_id)
+    handoff.status = "open"
+    handoff.resolved_at = None
+    _audit(db, bank, "handoff_reopened", "handoff", handoff.id, None)
+    db.commit()
+    return {"status": "open"}
