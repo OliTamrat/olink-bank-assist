@@ -144,14 +144,24 @@ def strip_greeting(text: str) -> tuple[str, bool]:
         return text, False
     return text[match.end() :].strip(), True
 
+# The data a customer might ask this assistant to read out. One list, used by
+# every rule below, so a new noun cannot be covered by one phrasing and missed
+# by another — which is exactly how "give me her account number" slipped past.
+_ACCOUNT_NOUN = r"(account|balance|card|statement|loan|pin|password|otp|transaction)"
+
 _ACCOUNT_RE = re.compile(
-    r"\bmy (account|balance|card|statement|loan|pin|transaction)|"
+    # Possessive + account noun, in ANY person. The third-person forms are the
+    # important ones and were missing: only "give me her BALANCE" was caught,
+    # so "can you give me her account number" — the natural way a person
+    # actually asks — was classified as an ordinary question. It then asked
+    # the caller for a phone number and filed a content gap telling the bank
+    # to write an answer for it.
+    rf"\b(my|her|his|their) {_ACCOUNT_NOUN}|"
     r"\b(check|what('| i)?s) my\b|"
-    # Third-person / social-engineering phrasing for the same request — a
-    # caller impersonating staff or a relative won't say "my" balance, but
-    # this is still a request for individual account data and must get the
-    # same security refusal, not fall through to a generic "I don't know".
-    r"\b(give|tell|send) (me|us|her|him|them) (the |her |his |their )?balance\b|"
+    # Disclosure verbs aimed at a person, for any of those nouns rather than
+    # balance alone.
+    rf"\b(give|tell|send|share|provide) (me|us|her|him|them) "
+    rf"(the |her |his |their |my )?{_ACCOUNT_NOUN}\b|"
     r"\bbalance (for|of|on) account\b|"
     r"\boverride (the )?security\b|"
     r"\bባላንስ|ቀሪ ሂሳቤ|ሂሳቤ|ካርዴ|"
