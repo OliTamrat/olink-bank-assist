@@ -488,3 +488,32 @@ def test_a_blocked_prompt_degrades_instead_of_erroring(
     monkeypatch.setattr(httpx, "post", fake_post)
     with pytest.raises(llm.LLMUnavailable, match="no candidates"):
         llm.generate_answer("q", [CHUNK], "en", "Demo Bank")
+
+
+def test_health_reports_the_deployed_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A merged commit can silently fail to deploy — the workflow_run trigger
+    did not fire once, and CI on main was green the whole time. Without this
+    field, answering "is main actually live?" meant reading Actions history.
+    Now it is one request compared against `git rev-parse origin/main`.
+    """
+    from fastapi.testclient import TestClient
+
+    from bankassist.api import app
+
+    monkeypatch.setenv("BANKASSIST_GIT_SHA", "c46fedf6ddf6a1cecb2c2eb6f2496111af85598b")
+    config.reset_settings()
+    with TestClient(app) as client:
+        assert client.get("/health").json()["revision"] == "c46fedf"
+
+
+def test_health_revision_is_empty_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Local dev is not "a deployed commit"; saying so is more honest than
+    # inventing a value.
+    from fastapi.testclient import TestClient
+
+    from bankassist.api import app
+
+    monkeypatch.delenv("BANKASSIST_GIT_SHA", raising=False)
+    config.reset_settings()
+    with TestClient(app) as client:
+        assert client.get("/health").json()["revision"] == ""
