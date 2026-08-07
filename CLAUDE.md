@@ -176,6 +176,43 @@ Two false positives are expensive and both are closed by
 The number is personal data, exactly like the chat text: the audit log records
 that contact was captured and how many handoffs it unblocked, never the value.
 
+### The account guardrail — the rule that keeps being wrong
+
+Found in production twice on the same day, so it is worth stating how it is
+built rather than only that it exists.
+
+**English uses single tokens; the other languages use a conjunction.** That
+asymmetry is deliberate, not an inconsistency to tidy up.
+
+- `_ACCOUNT_NOUN` is **one list shared by every English rule**, so a noun
+  cannot be covered by one phrasing and missed by another. That is exactly how
+  "can you give me her account number" slipped past a rule whose own comment
+  said it caught social engineering: it matched `balance` and nothing else.
+- `asks_for_someone_elses_account()` requires **an account word AND a
+  third-party possessive in the same message** for Amharic, Oromo, Somali and
+  Tigrinya. Single tokens cannot work there: ንገረኝ ("tell me") and ስጠኝ ("give
+  me") open perfectly ordinary questions, and ቁጥሩ ("his number") is what you
+  say in "what is the customer service phone number". Matching any of those
+  alone would refuse a large share of legitimate Amharic traffic — damaging
+  the multilingual differentiator in the act of protecting it.
+
+**Non-English security patterns come from a native speaker, never a guess.**
+The Oromo spellings are the proof: `herrega`, `herreega`, `heerega` and
+`hereega` all appear in ordinary use, and three of the four turned up across a
+single set of supplied phrasings. No amount of care would have produced that
+from the outside.
+
+**Tigrinya is a strict xfail and Somali is an unreviewed first pass.** Left
+failing in CI on purpose. A wrong guess in this rule can only over-refuse
+rather than under-refuse, but neither language should be recorded as closed
+until someone who speaks it says so.
+
+**Getting this wrong is not one bug, it is three.** When the refusal misses,
+the message becomes an ordinary unanswered question — so the assistant also
+asks the caller for a phone number "so a person can follow up", and files a
+content gap telling the bank to write an answer for "can you give me her
+account number". Check all three whenever you touch this.
+
 ### The general-knowledge boundary (bounded exception to tool-output-is-truth)
 
 ATM mechanics are identical on every machine on earth. An assistant that
@@ -217,7 +254,9 @@ What makes this safe rather than a hallucination licence:
    investment-education intents are answered autonomously. The intent rules
    are deterministic regexes.
 3. **Account-specific → fixed security template.** The bot has no account
-   access in Phases 1–2 and must never claim otherwise.
+   access in Phases 1–2 and must never claim otherwise. This includes asking
+   for *someone else's* data — see "The account guardrail" below, which is the
+   rule that has been wrong most often.
 4. **Education, never advice.** Investment answers always append the
    education-not-advice disclaimer in the user's language, **triggered by
    intent, not by retrieval success** — a padded or evasive investment
@@ -603,6 +642,11 @@ lender (smaller, faster procurement, hungrier).
 
 - **Extractive mode is a feature, not a bug** — the assistant must stay fully
   demoable with no LLM backend; never make the model a hard dependency.
+- **A guardrail tested with wording derived from its own regex proves
+  nothing.** The account rule matched `balance`, the suite tested "give me her
+  balance", and both agreed with each other while the natural phrasing walked
+  straight through. Write security cases the way a person types, then check
+  the negative direction separately — over-refusal is its own failure.
 - **Never mock the thing you are trying to verify.** Vertex shipped inert and
   cross-language retrieval shipped dead for the same reason: the mock stood
   exactly where the bug was. A feature that calls the model needs at least one
