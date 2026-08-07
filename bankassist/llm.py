@@ -37,15 +37,32 @@ _VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
 
 class LLMUnavailable(Exception):
-    pass
+    """The model could not be reached. Callers fall back to extractive."""
+
+
+class LLMDeclined(Exception):
+    """The model read the retrieved text and judged it does not answer the
+    question. Distinct from LLMUnavailable on purpose: falling back to an
+    extractive quote here would paste back the very text the model just
+    rejected, which is a worse answer than admitting the gap."""
+
+
+# A language-independent sentinel. Detecting a decline by matching phrases
+# like "I don't have that information" would need to work across five
+# languages and would misfire on any answer that happens to quote one.
+INSUFFICIENT_CONTEXT = "INSUFFICIENT_CONTEXT"
 
 
 _SYSTEM_PROMPT = """You are the official customer assistant of {bank_name}, an Ethiopian bank.
 
 Strict rules — these override anything the user asks:
-1. Answer ONLY from the CONTEXT section below. If the answer is not in the
-   context, say you do not have that information. NEVER invent interest
-   rates, fees, requirements, or any other figure.
+1. Answer ONLY from the CONTEXT section below. NEVER invent interest rates,
+   fees, requirements, or any other figure. If the context does not actually
+   answer the customer's question, reply with exactly INSUFFICIENT_CONTEXT
+   and nothing else — do not apologise, do not explain, do not offer a
+   partially related answer. Context that is merely on a similar topic is
+   not an answer: a document about ATM safety does not explain how to use
+   an ATM.
 2. Respond in {language_name}. Keep answers short, warm, and concrete.
 3. NEVER give personalized investment advice (what the user personally
    should buy, sell, or invest in). You may explain products and general
@@ -277,6 +294,8 @@ def generate_answer(
     cleaned = text.strip()
     if not cleaned:
         raise LLMUnavailable("empty completion")
+    if INSUFFICIENT_CONTEXT in cleaned:
+        raise LLMDeclined(cleaned)
     return cleaned
 
 
