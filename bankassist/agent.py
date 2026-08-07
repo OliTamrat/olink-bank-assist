@@ -437,20 +437,34 @@ def handle_message(
                 {"document_id": s.document_id, "title": s.title}
                 for s in suggest_topics(db, bank.id, query)
             ]
-            # Contact first, alternatives second. The other order is what a
-            # customer reported as the assistant changing the subject: it
-            # promised a person would follow up, then immediately offered
-            # unrelated topics, and never collected any way to follow up on.
-            # Handle the concern, then offer alternatives.
-            reply = _request_contact(db, bank, conversation, language, reply)
             if suggestions:
-                reply = f"{reply}\n\n{t(language, 'did_you_mean')}"
+                # The titles go in the reply *text*, not only in the
+                # suggestions field. The widget renders them as tappable
+                # chips, but Telegram sends result.reply and nothing else — so
+                # anything living only in the field is invisible there, and an
+                # intro line ending in a colon would announce a list that never
+                # arrives. The widget showing both is mild redundancy; the
+                # alternative is a whole channel that reads as broken.
+                listed = "\n".join(f"• {s['title']}" for s in suggestions)
+                reply = f"{reply}\n\n{t(language, 'related_topics')}\n{listed}"
             # The disclaimer is triggered by intent (a regex match, decided
             # before retrieval ever runs), not by whether specific content
             # was found — it must never be skippable just because a pressure
             # or padded phrasing dodged the knowledge base too.
             if intent == classifier.INVESTMENT_ADVICE:
                 reply = f"{reply}\n\n{t(language, 'advice_disclaimer')}"
+            # The contact request goes LAST, after everything else this turn
+            # has to say. Putting it anywhere else loses it: a customer
+            # reported being asked for a name and number and then, in the same
+            # breath, asked a *second* question ("were you asking about one of
+            # these?") with tappable topic chips under it. People answer the
+            # last question they were asked. The ask was there, it was polite,
+            # and it collected nothing.
+            #
+            # So: one question per turn, and it is this one. The related
+            # topics above are phrased as a statement for the same reason —
+            # they are an offer to browse, not a competing question.
+            reply = _request_contact(db, bank, conversation, language, reply)
             result = ChatResult(
                 reply,
                 intent,

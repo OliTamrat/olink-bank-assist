@@ -104,3 +104,44 @@ def test_cross_tenant_isolation_from_dashen(
     ).json()
     assert "Amole" not in data["reply"]
     assert "Dashen Mobile Plus" not in data["reply"]
+
+
+def test_transfer_fee_question_in_everyday_words(
+    client: TestClient, awash_bank: Any
+) -> None:
+    """Reported from the live demo, verbatim.
+
+    "Transfers to Other Banks and Wallets" answers this — fees vary by amount
+    and channel, and AwashBIRR shows the applicable fee before you confirm.
+    The customer never saw it: they said "charged" and "sent", the document
+    says "fees" and "transfer", and BM25 matches exact tokens.
+
+    The tell was that suggest_topics still ranked that exact document first
+    and offered it as a chip. The system knew which document answered the
+    question and declined to read it.
+    """
+    data = client.post(
+        "/chat/awash",
+        json={"message": "How much do I get charged if I sent from other banks"},
+    ).json()
+    assert [s["title"] for s in data["sources"]] == ["Transfers to Other Banks and Wallets"]
+
+
+def test_the_same_question_asked_four_other_ways(
+    client: TestClient, awash_bank: Any
+) -> None:
+    """Vocabulary, not phrasing luck.
+
+    One passing phrasing would only prove the synonym list was written from
+    that phrasing — the mistake this project has already made once, with a
+    guardrail regex tested using wording derived from itself.
+    """
+    for message in (
+        "How much is the transfer fee to another bank?",
+        "What are the fees for transfers to other banks?",
+        "What does it cost to send money to another bank?",
+        "Is there a charge for sending money to another bank?",
+    ):
+        data = client.post("/chat/awash", json={"message": message}).json()
+        titles = [s["title"] for s in data["sources"]]
+        assert "Transfers to Other Banks and Wallets" in titles, message

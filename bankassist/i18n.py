@@ -37,10 +37,12 @@ _STRINGS: dict[str, dict[str, str]] = {
             "published information. Please check with {bank} for anything specific "
             "to your account."
         ),
-        "did_you_mean": (
-            "I want to be sure I understood you correctly. "
-            "Were you asking about one of these?"
-        ),
+        # A statement, not a question. This used to ask "Were you asking about
+        # one of these?" and sat *after* the contact request, so the turn
+        # closed by asking something other than the thing we needed answered.
+        # Topic chips are an offer to browse; they must never compete with the
+        # one question a turn is actually for.
+        "related_topics": "In the meantime, these related topics may help:",
         "ask_contact": (
             "So a person from our team can get back to you, may I have your name "
             "and the best phone number to reach you on?"
@@ -96,10 +98,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "አጠቃላይ መመሪያ — ይህ የተለመደ የባንክ አሠራር እንጂ የ{bank} ይፋዊ መረጃ አይደለም። "
             "ከሂሳብዎ ጋር ለተያያዘ ማንኛውም ጉዳይ {bank}ን ያማክሩ።"
         ),
-        "did_you_mean": (
-            "በትክክል መረዳቴን ማረጋገጥ እፈልጋለሁ። "
-            "ከእነዚህ ውስጥ ስለ አንዱ እየጠየቁ ነበር?"
-        ),
+        "related_topics": "እስከዚያው ድረስ፣ እነዚህ ተዛማጅ ርዕሶች ሊረዱዎት ይችላሉ፦",
         "ask_contact": (
             "ከቡድናችን አንድ ሰው እንዲያገኝዎት፣ ስምዎን እና የሚደረስብዎትን የስልክ ቁጥር "
             "ሊነግሩኝ ይችላሉ?"
@@ -155,9 +154,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Qajeelfama waliigalaa — kun hojimaata baankii idilee malee odeeffannoo "
             "ifaa {bank} miti. Waan herrega keessan ilaallatu kamiyyuu {bank} gaafadhaa."
         ),
-        "did_you_mean": (
-            "Sirriitti isin hubadhuu mirkaneeffachuun barbaada. "
-            "Kanneen keessaa isa tokko gaafachaa turtanii?"
+        "related_topics": (
+            "Hanga sanaatti, mata dureewwan walqabatan kunneen isin gargaaruu danda'u:"
         ),
         "ask_contact": (
             "Namni garee keenyaa akka isin qunnamuuf, maqaa keessanii fi "
@@ -215,10 +213,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ሓፈሻዊ መምርሒ — እዚ ልሙድ ናይ ባንክ ኣሰራርሓ እምበር ወግዓዊ ሓበሬታ {bank} ኣይኮነን። "
             "ምስ ሕሳብኩም ዝተኣሳሰር ዝኾነ ነገር {bank} ሕተቱ።"
         ),
-        "did_you_mean": (
-            "ብልክዕ ከም ዝተረዳእኩኹም ከረጋግጽ እደሊ። "
-            "ካብዞም ሓደ ትሓቱ ነይርኩም?"
-        ),
+        "related_topics": "ኣብ መንጎኡ፡ እዞም ተዛመድቲ ኣርእስትታት ክሕግዙኹም ይኽእሉ፦",
         "ask_contact": (
             "ሓደ ኣባል ጋንታና ክረኽበኩም ምእንቲ፡ ስምኩምን እትርከቡሉ ቁጽሪ ተሌፎንን "
             "ክትህቡኒ ትኽእሉ ዶ?"
@@ -274,9 +269,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "macluumaadka rasmiga ah ee {bank}. Wax kasta oo la xiriira xisaabtaada "
             "la xaqiiji {bank}."
         ),
-        "did_you_mean": (
-            "Waxaan doonayaa inaan hubiyo inaan si sax ah u fahmay. "
-            "Ma waxaad wax ka weydiinaysay mid ka mid ah kuwan?"
+        "related_topics": (
+            "Inta u dhaxaysa, mawduucyada la xiriira ee hoos ku qoran "
+            "ayaa laga yaabaa inay ku caawiyaan:"
         ),
         "ask_contact": (
             "Si qof ka mid ah kooxdayadu ay kuula soo xiriiraan, ma i siin "
