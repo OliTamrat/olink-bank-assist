@@ -2,65 +2,290 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bank Assist</title>
 <style>
-  :root { --brand: #0f766e; }
+  /* The brand hue is injected per tenant from the bank's primary_color, so
+     everything else stays neutral — an arbitrary brand color (CBE's deep
+     maroon, Dashen's blue) has to look deliberate against this shell. */
+  :root {
+    --brand: #0f766e;
+    --bg: #fbfbfd;
+    --surface: #ffffff;
+    --surface-2: #f4f5f8;
+    --line: #e5e7ec;
+    --text: #14161a;
+    --text-2: #5b6270;
+    --text-3: #8b93a1;
+    --radius: 16px;
+    --shadow: 0 1px 2px rgba(16,18,24,.04), 0 8px 24px -12px rgba(16,18,24,.10);
+    /* Accent for small glyphs/numerals. A tenant brand can be very dark
+       (CBE's maroon), which disappears against the dark shell — so dark mode
+       lifts it toward white rather than using --brand raw. */
+    --accent: var(--brand);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: color-mix(in srgb, var(--brand) 45%, #ffffff);
+      --bg: #0c0d10;
+      --surface: #141619;
+      --surface-2: #1b1e23;
+      --line: #262a31;
+      --text: #f2f3f5;
+      --text-2: #a3aab8;
+      --text-3: #6f7787;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+
   * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
   body {
-    font-family: "Noto Sans Ethiopic", "Segoe UI", system-ui, sans-serif;
-    background: #f1f5f9; height: 100vh; display: flex; flex-direction: column;
+    font-family: "Noto Sans Ethiopic", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column;
+    -webkit-font-smoothing: antialiased;
   }
+
+  /* ---------------------------------------------------------- header */
   header {
-    background: var(--brand); color: #fff; padding: 14px 18px;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 18px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    position: relative; z-index: 2;
   }
-  header .name { font-weight: 700; font-size: 16px; }
-  header .sub { font-size: 11px; opacity: .85; }
-  header select {
-    border: none; border-radius: 8px; padding: 6px 8px; font-size: 13px;
-    background: rgba(255,255,255,.92); color: #111;
+  .mark {
+    width: 38px; height: 38px; border-radius: 11px; flex: none;
+    background: var(--brand);
+    display: grid; place-items: center;
+    color: #fff; font-weight: 700; font-size: 15px;
+    letter-spacing: -.02em;
+    box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--brand) 55%, transparent);
   }
-  #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-  .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 14.5px;
-         line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
-  .user { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
-  .bot  { align-self: flex-start; background: #fff; color: #0f172a; border: 1px solid #e2e8f0;
-          border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-  .srcs { align-self: flex-start; font-size: 11.5px; color: #64748b; margin: -4px 0 0 6px; }
-  .typing { align-self: flex-start; color: #94a3b8; font-size: 13px; padding: 4px 8px; }
-  form { display: flex; gap: 8px; padding: 12px 14px; background: #fff; border-top: 1px solid #e2e8f0; }
-  input[type=text] {
-    flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 11px 14px;
-    font-size: 14.5px; font-family: inherit; outline-color: var(--brand);
+  .who { min-width: 0; flex: 1; }
+  /* Wrap to two lines rather than truncate — on a prospect demo the bank's
+     own name is the one string that must never read "Commercial Bank of…". */
+  .who .name {
+    font-weight: 650; font-size: 15px; letter-spacing: -.01em; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
   }
-  button {
-    background: var(--brand); color: #fff; border: none; border-radius: 10px;
-    padding: 0 20px; font-size: 14.5px; font-weight: 600; cursor: pointer;
+  .who .sub {
+    font-size: 11.5px; color: var(--text-2);
+    display: flex; align-items: center; gap: 5px; margin-top: 1px;
   }
-  button:disabled { opacity: .5; cursor: default; }
-  .notice { text-align: center; font-size: 11px; color: #94a3b8; padding: 4px 10px 8px; background:#fff; }
+  .live {
+    width: 6px; height: 6px; border-radius: 50%; background: #16a34a; flex: none;
+    box-shadow: 0 0 0 0 rgba(22,163,74,.5);
+    animation: pulse 2.4s ease-out infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(22,163,74,.45); }
+    70%  { box-shadow: 0 0 0 6px rgba(22,163,74,0); }
+    100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+  }
+  select#lang {
+    border: 1px solid var(--line); border-radius: 9px; flex: none;
+    max-width: 118px; padding: 7px 8px; font-size: 12px; font-family: inherit;
+    background: var(--surface-2); color: var(--text);
+    cursor: pointer; outline-color: var(--brand);
+  }
+
   .disclaimer {
-    text-align: center; font-size: 11.5px; font-weight: 600; color: #7c2d12;
-    background: #fef3c7; padding: 7px 12px; border-bottom: 1px solid #fde68a; display: none;
+    font-size: 11.5px; line-height: 1.45; font-weight: 550;
+    color: #92400e; background: #fffbeb;
+    border-bottom: 1px solid #fde68a;
+    padding: 8px 18px; display: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    .disclaimer { color: #fcd34d; background: #231b09; border-bottom-color: #3f2f0a; }
+  }
+
+  /* ---------------------------------------------------------- chat */
+  #chat {
+    flex: 1; overflow-y: auto; padding: 22px 18px 8px;
+    display: flex; flex-direction: column; gap: 4px;
+    scroll-behavior: smooth;
+  }
+
+  .turn { display: flex; flex-direction: column; margin-bottom: 14px; }
+  .turn.user { align-items: flex-end; }
+
+  .bubble {
+    max-width: 88%; padding: 11px 15px;
+    font-size: 14.5px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word;
+    animation: rise .28s cubic-bezier(.2,.7,.3,1) both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  .user .bubble {
+    background: var(--brand); color: #fff;
+    border-radius: 16px 16px 5px 16px;
+  }
+  .bot .bubble {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 16px 16px 16px 5px;
+    box-shadow: var(--shadow);
+  }
+
+  /* Assistant row: small spark mark beside the reply so the AI turn reads
+     as a distinct actor rather than just "the other bubble color". */
+  .botrow { display: flex; gap: 9px; align-items: flex-start; max-width: 100%; }
+  .spark {
+    width: 26px; height: 26px; border-radius: 8px; flex: none; margin-top: 2px;
+    background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+    display: grid; place-items: center;
+  }
+  .spark svg { width: 14px; height: 14px; }
+
+  /* ------------------------------------------------- capability meta */
+  /* These chips are the point of the redesign: the API already returns
+     detected language, classified intent, and source attribution on every
+     turn. Surfacing them is what makes the intelligence legible. */
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin: 7px 0 0 35px;
+    animation: rise .3s .06s cubic-bezier(.2,.7,.3,1) both;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4.5px;
+    font-size: 11px; font-weight: 550; letter-spacing: .01em;
+    padding: 3.5px 8px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-2);
+    border: 1px solid var(--line);
+  }
+  .chip svg { width: 11px; height: 11px; opacity: .75; }
+  .chip.guard { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+  .chip.human { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+  @media (prefers-color-scheme: dark) {
+    .chip.guard { color: #fbbf24; background: #241b08; border-color: #3f2f0a; }
+    .chip.human { color: #93c5fd; background: #101a2e; border-color: #1e3a5f; }
+  }
+  .chip.src { cursor: pointer; }
+  .chip.src:hover { border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); color: var(--text); }
+
+  /* ------------------------------------------------- source cards */
+  .cites { margin: 8px 0 0 35px; display: none; flex-direction: column; gap: 6px; }
+  .cites.open { display: flex; }
+  .cite {
+    display: flex; gap: 9px; align-items: flex-start;
+    padding: 9px 11px; border-radius: 11px;
+    background: var(--surface); border: 1px solid var(--line);
+    font-size: 12.5px; color: var(--text-2); line-height: 1.4;
+    animation: rise .24s cubic-bezier(.2,.7,.3,1) both;
+  }
+  .cite .n {
+    width: 17px; height: 17px; border-radius: 5px; flex: none;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent); font-size: 10px; font-weight: 700;
+    display: grid; place-items: center; margin-top: 1px;
+  }
+  .cite .t { color: var(--text); font-weight: 550; }
+
+  /* ------------------------------------------------- suggestions */
+  .suggest {
+    display: flex; flex-wrap: wrap; gap: 7px;
+    margin: 4px 0 2px 35px;
+    animation: rise .3s .12s cubic-bezier(.2,.7,.3,1) both;
+  }
+  .sg {
+    font-family: inherit; font-size: 12.5px; font-weight: 500;
+    padding: 8px 13px; border-radius: 999px; cursor: pointer;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--line);
+    transition: border-color .15s, transform .15s, background .15s;
+  }
+  .sg:hover {
+    border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+    background: color-mix(in srgb, var(--brand) 5%, var(--surface));
+    transform: translateY(-1px);
+  }
+
+  /* ------------------------------------------------- thinking */
+  .think {
+    display: flex; align-items: center; gap: 9px;
+    margin-bottom: 14px;
+    animation: rise .2s both;
+  }
+  .think .label {
+    font-size: 12.5px; color: var(--text-3);
+    background: linear-gradient(90deg, var(--text-3) 20%, var(--text) 45%, var(--text-3) 70%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 1.7s linear infinite;
+  }
+  @keyframes shimmer { to { background-position: -220% 0; } }
+
+  /* ------------------------------------------------- composer */
+  .composer { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line); }
+  form { display: flex; gap: 9px; align-items: flex-end; }
+  .field {
+    flex: 1; display: flex; align-items: center;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 14px; padding: 3px 4px 3px 14px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .field:focus-within {
+    border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent);
+  }
+  input[type=text] {
+    flex: 1; border: 0; background: none; outline: none;
+    padding: 11px 0; font-size: 14.5px; font-family: inherit; color: var(--text);
+  }
+  input[type=text]::placeholder { color: var(--text-3); }
+  button#send {
+    width: 38px; height: 38px; flex: none; border: 0; border-radius: 11px;
+    background: var(--brand); color: #fff; cursor: pointer;
+    display: grid; place-items: center;
+    transition: opacity .15s, transform .15s;
+  }
+  button#send:hover:not(:disabled) { transform: scale(1.05); }
+  button#send:disabled { opacity: .35; cursor: default; }
+  button#send svg { width: 17px; height: 17px; }
+
+  .notice {
+    text-align: center; font-size: 10.5px; line-height: 1.4;
+    color: var(--text-3); padding: 8px 16px 0;
+  }
+
+  @media (max-width: 420px) {
+    .bubble { max-width: 92%; font-size: 14px; }
+    .meta, .cites, .suggest { margin-left: 0; }
   }
 </style>
 </head>
 <body>
+
 <div class="disclaimer" id="disclaimer"></div>
+
 <header>
-  <div>
-    <div class="name" id="bankName">…</div>
-    <div class="sub" id="assistLabel">Virtual assistant</div>
+  <div class="mark" id="mark">·</div>
+  <div class="who">
+    <div class="name" id="bankName">Connecting…</div>
+    <div class="sub"><span class="live"></span><span id="assistLabel">AI Assistant</span></div>
   </div>
   <select id="lang" title="Language"></select>
 </header>
+
 <div id="chat"></div>
-<form id="form">
-  <input id="input" type="text" autocomplete="off" placeholder="Ask about accounts, transfers, loans…">
-  <button id="send" type="submit">Send</button>
-</form>
-<div class="notice">Answers come from the bank's official information. General education only — not personal investment advice.</div>
+
+<div class="composer">
+  <form id="form">
+    <div class="field">
+      <input id="input" type="text" autocomplete="off" placeholder="Ask about accounts, transfers, loans…">
+    </div>
+    <button id="send" type="submit" title="Send" aria-label="Send">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </button>
+  </form>
+  <div class="notice">Answers are drawn from this bank's official information and cited. General education only — not personal investment advice.</div>
+</div>
+
 <script>
 (function () {
   var params = new URLSearchParams(location.search);
@@ -71,60 +296,187 @@
   var input = document.getElementById("input");
   var send = document.getElementById("send");
   var langSel = document.getElementById("lang");
+  var bankName = "";
 
-  function addMsg(text, cls) {
-    var el = document.createElement("div");
-    el.className = "msg " + cls;
-    el.textContent = text;
-    chat.appendChild(el);
-    chat.scrollTop = chat.scrollHeight;
-    return el;
+  var LANGS = { en: "English", am: "አማርኛ", om: "Afaan Oromoo", ti: "ትግርኛ", so: "Soomaali" };
+
+  // Intent -> what the bank's evaluator should understand happened. These
+  // mirror classifier.py's taxonomy; the point is to make a refusal read as
+  // a deliberate policy control rather than the bot failing to answer.
+  var INTENTS = {
+    question:          { label: "Product guidance", icon: "book" },
+    greeting:          null,
+    comparison:        { label: "Competitive query", icon: "chart" },
+    investment_advice: { label: "Advice guardrail", icon: "shield", cls: "guard" },
+    account_specific:  { label: "Account-data guardrail", icon: "lock", cls: "guard" },
+    complaint:         { label: "Complaint", icon: "flag", cls: "guard" }
+  };
+
+  var ICONS = {
+    book:   '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+    chart:  '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    lock:   '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    flag:   '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
+    globe:  '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/>',
+    doc:    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+    user:   '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    spark:  '<path d="M12 3l1.9 5.4L19 10l-5.1 1.6L12 17l-1.9-5.4L5 10l5.1-1.6z"/>'
+  };
+
+  function svg(name, extra) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+           'stroke-linecap="round" stroke-linejoin="round"' + (extra || "") + '>' + ICONS[name] + '</svg>';
   }
-  function addSources(sources) {
-    if (!sources || !sources.length) return;
-    var el = document.createElement("div");
-    el.className = "srcs";
-    el.textContent = "Source: " + sources.map(function (s) { return s.title; }).join(" · ");
-    chat.appendChild(el);
-    chat.scrollTop = chat.scrollHeight;
+  function el(tag, cls, html) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  function scroll() { chat.scrollTop = chat.scrollHeight; }
+
+  function addUser(text) {
+    var turn = el("div", "turn user");
+    var b = el("div", "bubble");
+    b.textContent = text;
+    turn.appendChild(b);
+    chat.appendChild(turn);
+    scroll();
   }
 
+  function addBot(text, reveal) {
+    var turn = el("div", "turn bot");
+    var row = el("div", "botrow");
+    var sp = el("div", "spark", svg("spark", ' style="fill:currentColor;stroke:none" class="brandfill"'));
+    sp.firstChild.style.color = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+    var b = el("div", "bubble");
+    row.appendChild(sp); row.appendChild(b);
+    turn.appendChild(row);
+    chat.appendChild(turn);
+
+    if (!reveal) { b.textContent = text; scroll(); return turn; }
+
+    // Progressive reveal. The response arrives complete from a single POST —
+    // this is a presentation choice, not true token streaming. It reads as
+    // live generation, which is what a prospect expects from an AI product.
+    var words = text.split(/(\s+)/), i = 0;
+    (function step() {
+      if (i >= words.length) { scroll(); return; }
+      b.textContent += words[i++];
+      scroll();
+      setTimeout(step, words[i - 1] && words[i - 1].trim() ? 16 : 8);
+    })();
+    return turn;
+  }
+
+  function addMeta(turn, data) {
+    var chips = [];
+
+    // Language auto-detection — invisible before this redesign, and the
+    // single most persuasive capability for an Ethiopian bank.
+    if (data.language && LANGS[data.language]) {
+      chips.push('<span class="chip">' + svg("globe") + LANGS[data.language] + '</span>');
+    }
+    var it = INTENTS[data.intent];
+    if (it) {
+      chips.push('<span class="chip ' + (it.cls || "") + '">' + svg(it.icon) + it.label + '</span>');
+    }
+    if (data.handoff_created) {
+      chips.push('<span class="chip human">' + svg("user") + 'Routed to a person</span>');
+    }
+    var n = (data.sources || []).length;
+    if (n) {
+      chips.push('<span class="chip src" data-toggle="1">' + svg("doc") + n + ' source' + (n > 1 ? "s" : "") + '</span>');
+    }
+    if (!chips.length) return;
+
+    var meta = el("div", "meta", chips.join(""));
+    turn.appendChild(meta);
+
+    if (n) {
+      var cites = el("div", "cites");
+      (data.sources || []).forEach(function (s, idx) {
+        cites.appendChild(el("div", "cite",
+          '<span class="n">' + (idx + 1) + '</span><span><span class="t">' +
+          String(s.title).replace(/[<>&]/g, "") + '</span><br>Official ' + bankName + ' information</span>'));
+      });
+      turn.appendChild(cites);
+      var tog = meta.querySelector('[data-toggle]');
+      tog.addEventListener("click", function () { cites.classList.toggle("open"); scroll(); });
+    }
+    scroll();
+  }
+
+  function addSuggestions(list) {
+    var wrap = el("div", "suggest");
+    list.forEach(function (q) {
+      var b = el("button", "sg");
+      b.type = "button";
+      b.textContent = q;
+      b.addEventListener("click", function () { wrap.remove(); ask(q); });
+      wrap.appendChild(b);
+    });
+    chat.appendChild(wrap);
+    scroll();
+  }
+
+  function thinking() {
+    var t = el("div", "think",
+      '<div class="spark">' + svg("spark", ' style="fill:currentColor;stroke:none"') + '</div>' +
+      '<span class="label">Searching official information…</span>');
+    t.querySelector(".spark svg").style.color = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+    chat.appendChild(t);
+    scroll();
+    return t;
+  }
+
+  // ------------------------------------------------------------ boot
   fetch(api + "/banks/" + encodeURIComponent(slug) + "/public")
     .then(function (r) { if (!r.ok) throw new Error("bank"); return r.json(); })
     .then(function (cfg) {
+      bankName = cfg.name;
       document.getElementById("bankName").textContent = cfg.name;
-      document.title = cfg.name + " — Assistant";
-      document.documentElement.style.setProperty("--brand", cfg.primary_color);
+      document.title = cfg.name + " — AI Assistant";
+      if (cfg.primary_color) {
+        document.documentElement.style.setProperty("--brand", cfg.primary_color);
+      }
+      document.getElementById("mark").textContent =
+        cfg.name.replace(/[^A-Za-zሀ-፿ ]/g, "").split(/\s+/)
+          .filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase() || "AI";
+
       if (cfg.disclaimer) {
         var d = document.getElementById("disclaimer");
         d.textContent = cfg.disclaimer;
         d.style.display = "block";
       }
-      var auto = document.createElement("option");
-      auto.value = ""; auto.textContent = "Auto";
+
+      var auto = el("option"); auto.value = ""; auto.textContent = "Auto";
       langSel.appendChild(auto);
-      cfg.languages.forEach(function (l) {
-        var o = document.createElement("option");
-        o.value = l.code; o.textContent = l.name;
+      (cfg.languages || []).forEach(function (l) {
+        var o = el("option"); o.value = l.code; o.textContent = l.name;
         langSel.appendChild(o);
       });
-      addMsg("Selam! Ask me anything about " + cfg.name + " — accounts, transfers, loans, saving. ሰላም! በአማርኛም መጠየቅ ይችላሉ።", "bot");
+
+      addBot("Selam! I'm " + cfg.name + "'s AI assistant. Ask me about accounts, transfers, loans or saving — in English or አማርኛ, I'll follow your language automatically.", false);
+      addSuggestions([
+        "How do I open an account?",
+        "What do I need for a loan?",
+        "ሰላም፣ የሞባይል ባንኪንግ እንዴት እጠቀማለሁ?"
+      ]);
     })
     .catch(function () {
       document.getElementById("bankName").textContent = "Bank not found";
+      document.getElementById("assistLabel").textContent = "Check the ?bank= slug";
       input.disabled = true; send.disabled = true;
     });
 
-  document.getElementById("form").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var text = input.value.trim();
-    if (!text) return;
-    addMsg(text, "user");
+  // ------------------------------------------------------------ ask
+  function ask(text) {
+    addUser(text);
     input.value = "";
     send.disabled = true;
-    var typing = document.createElement("div");
-    typing.className = "typing"; typing.textContent = "…";
-    chat.appendChild(typing);
+    var t = thinking();
 
     var body = { message: text, conversation_id: conversationId };
     if (langSel.value) body.language = langSel.value;
@@ -137,15 +489,21 @@
       .then(function (r) { if (!r.ok) throw new Error("chat"); return r.json(); })
       .then(function (data) {
         conversationId = data.conversation_id;
-        typing.remove();
-        addMsg(data.reply, "bot");
-        addSources(data.sources);
+        t.remove();
+        var turn = addBot(data.reply, true);
+        addMeta(turn, data);
       })
       .catch(function () {
-        typing.remove();
-        addMsg("Sorry — something went wrong. Please try again.", "bot");
+        t.remove();
+        addBot("Sorry — something went wrong reaching the assistant. Please try again.", false);
       })
       .finally(function () { send.disabled = false; input.focus(); });
+  }
+
+  document.getElementById("form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var text = input.value.trim();
+    if (text) ask(text);
   });
 })();
 </script>
