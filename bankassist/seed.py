@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from .db import get_engine, init_db
 from .models import Bank, Document
 from .retrieval import reindex_document
+from .seed_common import print_seed_summary
 
 DEMO_SLUG = "demo"
 
@@ -275,8 +276,4 @@ def seed() -> tuple[Bank, bool]:
 
 if __name__ == "__main__":
     bank, created = seed()
-    status = "created" if created else "already exists"
-    print(f"Demo bank {status}: {bank.name} (slug={bank.slug})")
-    print(f"Admin token: {bank.admin_token}")
-    print("Widget:  http://localhost:8100/widget?bank=demo")
-    print("Admin:   http://localhost:8100/admin")
+    print_seed_summary(bank, created, "Demo bank", "demo")
