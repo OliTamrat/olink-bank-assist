@@ -25,14 +25,60 @@ BM25_B = 0.75
 
 # Function words that must never count as "we found relevant knowledge".
 # They still contribute to BM25 ranking; they just can't be the only match.
+_STOPWORDS_EN = [
+    "a", "an", "and", "are", "about", "at", "be", "by", "can", "do", "does",
+    "for", "from", "how", "i", "in", "is", "it", "me", "my", "of", "on",
+    "or", "our", "please", "tell", "that", "the", "this", "to", "we",
+    "what", "when", "where", "which", "who", "why", "will", "with", "you",
+    "your", "yes", "no", "not", "want", "wanted", "know", "need", "would",
+    "could", "should", "there", "have", "has", "was", "were", "am",
+]
+
+# These lists exist because the stopword set was English-only, and that made
+# the gate in retrieve() measurably harsher in every other language. The
+# min-informative bar scales with a query's content-word count, so untagged
+# function words inflate the denominator:
+#
+#   "I wanted to know about ATM"   -> 3 content words -> needs 1 match  (passes)
+#   "ስለ ATM ማወቅ ፈልጌ ነበር"            -> 5 content words -> needs 3 matches (fails)
+#
+# Same question, same corpus, three times the burden of proof — on a product
+# sold on native-language support. Found on the live Awash demo, where an
+# Amharic ATM question handed off while a bare "ATM" answered fine.
+#
+# Conservative by design: only unambiguous function words (to-be forms,
+# interrogatives, pronouns, postpositions, "about"/"want"/"know" verbs).
+# Anything that could carry banking meaning is deliberately left out — a
+# missing stopword only costs recall, a wrong one costs precision.
+_STOPWORDS_AM = [
+    "ስለ", "ነው", "ናቸው", "ነበር", "ናት", "ነኝ", "ነህ", "ነሽ", "እና", "ወይም",
+    "ላይ", "ውስጥ", "ጋር", "ወደ", "ምን", "ምንድን", "ምንድነው", "እንዴት", "መቼ", "የት",
+    "ማን", "ለምን", "የትኛው", "ይህ", "ያ", "እኔ", "እኛ", "አንተ", "አንቺ", "እርስዎ",
+    "እባክዎ", "እባክህ", "እባክሽ", "አዎ", "ግን", "ደግሞ", "እንደ", "ማወቅ", "ፈልጌ",
+    "እፈልጋለሁ", "ነገር", "አለ", "ይችላል", "እችላለሁ", "ማድረግ", "ብዬ", "ነኝ",
+]
+_STOPWORDS_OM = [
+    "waa'ee", "waee", "waa", "ee", "akkam", "maal", "maali", "eessa", "yoom", "eenyu",
+    "maaliif", "kana", "sana", "kan", "ani", "ati", "isin", "nu", "nuti",
+    "fi", "ykn", "yookaan", "keessa", "irratti", "waliin", "gara", "irraa",
+    "barbaada", "barbaade", "beekuu", "jira", "ture", "koo", "keessan",
+    "isaa", "hin", "akka", "moo", "immoo", "garuu", "tokko", "maaloo",
+]
+_STOPWORDS_TI = [
+    "ብዛዕባ", "እንታይ", "ከመይ", "መዓስ", "ኣበይ", "መን", "ስለምንታይ", "እዚ", "እቲ",
+    "ኣነ", "ንሕና", "ንስኻ", "ንስኺ", "ንስኻትኩም", "እዩ", "እያ", "እዮም", "ነይሩ",
+    "ግን", "ከምኡ", "ክፈልጥ", "እደሊ", "ምስ", "ኣብ", "ናብ", "ካብ", "ወይ", "እሞ",
+]
+_STOPWORDS_SO = [
+    "saabsan", "maxay", "maxaa", "sidee", "goorma", "xagee", "yaa",
+    "kan", "taas", "kani", "aniga", "adiga", "annaga", "iyaga",
+    "iyo", "ama", "gudaha", "dul", "ku", "ka", "la", "ah", "waa",
+    "ayaa", "oo", "in", "doonayaa", "rabaa", "ogaan", "waxaan", "waxa",
+    "fadlan", "haa", "maya",
+]
+
 _STOPWORDS = frozenset(
-    [
-        "a", "an", "and", "are", "about", "at", "be", "by", "can", "do", "does",
-        "for", "from", "how", "i", "in", "is", "it", "me", "my", "of", "on",
-        "or", "our", "please", "tell", "that", "the", "this", "to", "we",
-        "what", "when", "where", "which", "who", "why", "will", "with", "you",
-        "your", "yes", "no", "not",
-    ]
+    _STOPWORDS_EN + _STOPWORDS_AM + _STOPWORDS_OM + _STOPWORDS_TI + _STOPWORDS_SO
 )
 
 
