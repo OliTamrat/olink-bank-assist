@@ -99,6 +99,7 @@ jobs:
             --memory 512Mi \
             --service-account "bankassist-deployer@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-secrets "BANKASSIST_DATABASE_URL=bankassist-database-url:latest" \
+            --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }},VERTEX_LOCATION=us-central1" \
             --quiet
 
       # Cloud Run's URL isn't known until after the service exists, so this
@@ -109,9 +110,16 @@ jobs:
       - name: Point APP_BASE_URL at the live Cloud Run URL
         run: |
           URL="$(gcloud run services describe ${{ env.SERVICE }} --project ${{ secrets.GCP_PROJECT_ID }} --region ${{ env.REGION }} --format='value(status.url)')"
+          # --update-env-vars MERGES; --set-env-vars REPLACES the whole
+          # environment. This step runs after the deploy that sets the Vertex
+          # variables, so using --set here would silently delete them and
+          # drop the service back to extractive answers with no error.
           gcloud run services update ${{ env.SERVICE }} \
             --project "${{ secrets.GCP_PROJECT_ID }}" \
             --region "${{ env.REGION }}" \
-            --set-env-vars "APP_BASE_URL=${URL}" \
+            --update-env-vars "APP_BASE_URL=${URL}" \
             --quiet
           echo "Deployed: $URL"
+          gcloud run services describe ${{ env.SERVICE }} \
+            --project "${{ secrets.GCP_PROJECT_ID }}" --region "${{ env.REGION }}" \
+            --format='value(spec.template.spec.containers[0].env)'
