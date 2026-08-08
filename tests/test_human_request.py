@@ -151,13 +151,17 @@ def test_escalation_is_recognised_in_amharic_and_oromo(
 
 
 @pytest.mark.parametrize("message", [
-    # ኃላፊነት is "liability" — ኃላፊ ("head") sits inside it, so a bare match
-    # turns a question about the bank's obligations into a demand for a
-    # manager. This is why that alternative carries (?!ነት).
+    # ኃላፊነት is "responsibility/role" — ኃላፊ ("head") sits inside it, so a bare
+    # match turns a question about what the bank is responsible for into a
+    # demand for a manager. The inflected forms are covered separately below,
+    # since they are what broke the first version of the guard.
     "የባንኩ ኃላፊነት ምንድን ነው?",
-    # የገንዘብ አመራር is "money management" — a budgeting question, which is why
-    # አመራር only counts alongside a talk verb.
-    "የገንዘብ አመራር ምክር ይስጡኝ",
+    # "የገንዘብ አመራር ምክር ይስጡኝ" used to sit here, on my assumption that አመራር
+    # could mean "money management" and therefore needed a talk verb beside
+    # it. A native speaker corrected the premise: አመራር is leadership — the
+    # people — and the financial sense is አስተዳደር or አያያዝ. The case was
+    # guarding a sentence nobody would write, and the fence it justified cost
+    # real recall on the phrasings people do.
     "የቁጠባ ሂሳብ እንዴት እከፍታለሁ?",
     "የብድር ወለድ ስንት ነው?",
 ])
@@ -166,4 +170,46 @@ def test_ordinary_amharic_questions_are_not_escalation(
 ) -> None:
     """Over-refusal is the failure mode you cannot see from inside: a customer
     asking a real question gets routed to a queue and nothing logs it wrong."""
+    assert _ask(client, message)["intent"] != "human_request", message
+
+
+# ------------------------------------------- Ethiopic inflection, both ways
+
+
+@pytest.mark.parametrize("message", [
+    # Ethiopic inflects the FINAL character rather than appending to it, so
+    # matching a noun's citation form misses every inflected use of it.
+    # አመራር -> አመራሩ was classified as an ordinary question.
+    "ከአመራሩ ጋር መነጋገር እፈልጋለሁ",
+    "አመራሩን ማነጋገር እፈልጋለሁ",
+    "ሥራ አስኪያጁን ማነጋገር እፈልጋለሁ",   # አስኪያጅ -> አስኪያጁ
+    "ማኔጀሩን ማነጋገር እፈልጋለሁ",        # ማኔጀር  -> ማኔጀሩ
+    # These three are stable under suffixing and were already fine — kept so a
+    # future rewrite of the character classes cannot quietly drop them.
+    "ኃላፊውን ማነጋገር እፈልጋለሁ",
+    "ከአለቃው ጋር መነጋገር እፈልጋለሁ",
+    "ተቆጣጣሪውን ማነጋገር እችላለሁ?",
+])
+def test_inflected_manager_words_still_escalate(
+    client: TestClient, demo_bank: Any, message: str
+) -> None:
+    assert _ask(client, message)["intent"] == "human_request", message
+
+
+@pytest.mark.parametrize("message", [
+    # ኃላፊነት is "responsibility/role" and contains ኃላፊ outright. The first
+    # guard was (?!ነት), which the inflected forms walk straight past: ኃላፊነቱ is
+    # ኃላፊ + ነ + ቱ and contains no "ነት" at all. Hence (?!ነ).
+    "የባንኩ ኃላፊነት ምንድን ነው?",
+    "የባንኩ ኃላፊነቱ ምንድን ነው?",
+    "የባንኩ ኃላፊነቷ ምንድን ነው?",
+    "ኃላፊነታችን ምንድን ነው?",
+    "የደንበኛው ኃላፊነትን ማወቅ እፈልጋለሁ",
+])
+def test_a_question_about_responsibility_is_not_a_demand_for_a_manager(
+    client: TestClient, demo_bank: Any, message: str
+) -> None:
+    """Asking what the bank is responsible for is a question about the bank,
+    not a request to escalate. Routing it to a queue answers something the
+    customer did not ask and logs nothing as wrong."""
     assert _ask(client, message)["intent"] != "human_request", message

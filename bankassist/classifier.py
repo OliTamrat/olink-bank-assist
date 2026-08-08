@@ -342,15 +342,32 @@ _HUMAN_REQUEST_RE = re.compile(
     # (management) were missing entirely, and only ማነጋገር was listed, not the
     # equally common መነጋገር.
     #
-    # አለቃ, ሥራ አስኪያጅ, ተቆጣጣሪ and ማኔጀር stand alone — none is a banking product
-    # term. Two do NOT:
-    #   ኃላፊ needs (?!ነት), or ኃላፊነት ("liability") turns "የባንኩ ኃላፊነት ምንድን ነው?"
-    #     into an escalation request.
-    #   አመራር needs a talk context, because የገንዘብ አመራር is "money management" —
-    #     a legitimate question about budgeting, not a request for a manager.
-    r"አለቃ|ተቆጣጣሪ|ማኔጀር|ሥራ አስኪያጅ|ስራ አስኪያጅ|"
-    r"ኃላፊ(?!ነት)|ሃላፊ(?!ነት)|ኀላፊ(?!ነት)|"
-    r"አመራር\s*(ጋር|ጋራ)|አመራር.{0,15}(ማነጋገር|መነጋገር|ማውራት)|"
+    # አለቃ, አመራር, ኃላፊ, ሥራ አስኪያጅ, ተቆጣጣሪ and ማኔጀር all stand alone: a native
+    # speaker confirmed these are the words a demand for a manager reaches
+    # for, and none is a banking product term.
+    #
+    # ኃላፊ is the one exception, and the exclusion has to be (?!ነ), not the
+    # (?!ነት) written first. ኃላፊነት is "responsibility/role" and contains ኃላፊ
+    # outright, so a bare match turns "የባንኩ ኃላፊነት ምንድን ነው?" — what is the
+    # bank's role — into a demand for a manager. But Ethiopic inflects the
+    # FINAL character rather than appending to it, so ኃላፊነቱ is ኃላፊ + ነ + ቱ
+    # and contains no "ነት" at all: (?!ነት) let it straight through. Blocking a
+    # bare ነ is safe because "ኃላፊ ነው" ("is the head") has a space, which the
+    # lookahead sees.
+    #
+    # The same inflection rule is why several nouns below take a character
+    # class on their last letter: አመራር becomes አመራሩ (ር -> ሩ), ማኔጀር becomes
+    # ማኔጀሩ, አስኪያጅ becomes አስኪያጁ. Matching the citation form alone missed
+    # every one of those — "ከአመራሩ ጋር" classified as an ordinary question.
+    # አለቃ, ተቆጣጣሪ and ኃላፊ are unaffected: their suffixes attach after a
+    # vowel-final character that does not itself change.
+    #
+    # An earlier pass also fenced አመራር behind a talk verb, on my own guess
+    # that የገንዘብ አመራር would mean "money management". A native speaker
+    # corrected it: አመራር is leadership — the people — and the financial sense
+    # is አስተዳደር or አያያዝ. The fence cost recall for nothing and is gone.
+    r"አለቃ|ተቆጣጣሪ|አመራ[ርሩሪ]|ማኔጀ[ርሩ]|ሥራ አስኪያ[ጅጁ]|ስራ አስኪያ[ጅጁ]|"
+    r"ኃላፊ(?!ነ)|ሃላፊ(?!ነ)|ኀላፊ(?!ነ)|"
     r"ሰው\s*(ማነጋገር|መነጋገር|ማውራት|ማግኘት)|ሰው አነጋግሩኝ|ከሰው ጋር|"
     r"ወኪል ጋር|ወኪል ማነጋገር|ደንበኞች አገልግሎት\s*(ማነጋገር|መነጋገር)|"
     # Oromo. "Itti gaafatamaa yookiin bulchaa wajjiin haasa'uu barbaada"
