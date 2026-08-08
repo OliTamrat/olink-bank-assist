@@ -29,6 +29,13 @@ class Settings:
     # queue must never be throttled, and throttling them would be a denial of
     # service dressed up as a security control. <=0 disables.
     admin_auth_failures_per_ip: int
+    # Whether the admin session cookie carries the Secure flag. Default TRUE
+    # and only relaxed by an explicit opt-out, so a misconfiguration means
+    # "login does not work locally" rather than "the session cookie went over
+    # plain HTTP in production". Deliberately not inferred from the request
+    # scheme: behind a TLS-terminating proxy the app sees http, so inference
+    # would fail open in exactly the environment that matters.
+    admin_cookie_secure: bool
 
 
 @lru_cache
@@ -56,6 +63,9 @@ def get_settings() -> Settings:
         admin_auth_failures_per_ip=int(
             os.environ.get("BANKASSIST_ADMIN_AUTH_FAILURES_PER_IP", "10")
         ),
+        admin_cookie_secure=os.environ.get(
+            "BANKASSIST_ADMIN_COOKIE_INSECURE", ""
+        ).strip().lower() not in {"1", "true", "yes", "on"},
     )
 
 
