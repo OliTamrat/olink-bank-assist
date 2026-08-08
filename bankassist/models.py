@@ -174,11 +174,19 @@ class Handoff(Base):
     # What the operator did about it. Free text on purpose: a fixed set of
     # codes would have to be guessed before a single bank has worked the
     # queue, and the wrong vocabulary is harder to remove later than none.
-    # No resolved_by — admin tokens are per-tenant, not per-person, so a name
-    # here would be a guess dressed up as an audit trail.
     resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Nullable, and it will stay nullable. Every handoff resolved before
+    # per-person logins existed has no person to name, and one resolved through
+    # the break-glass token still has none — a tenant-wide token is not
+    # somebody. Writing "admin" into those rows would turn "we do not know"
+    # into a specific false claim, which is the one thing an audit trail must
+    # never do. Null means exactly what it says; audit_log.actor carries
+    # "admin-token" for the break-glass case.
+    resolved_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -204,6 +212,59 @@ class AuditLog(Base):
 # a password and a TOTP secret without a nullable column per method.
 
 
+class Role(Base):
+    """A named bundle of permissions, owned by one bank.
+
+    Per-bank rather than global, including the two built-ins, which are seeded
+    once per tenant. Three reasons, in order of weight:
+
+    1. A bank can reshape its own org structure — rename a role, take
+       `documents.write` off it — without that reaching another bank. Shared
+       rows would make one tenant's edit everyone's.
+    2. Every query stays bank-scoped, which is the multi-tenancy rule this
+       codebase applies everywhere else. Global roles would mean
+       `bank_id == x OR bank_id IS NULL` at each lookup, and the day someone
+       forgets the OR is the day a role goes missing — or worse, the day they
+       write it as `bank_id != x` by accident.
+    3. `UNIQUE(bank_id, name)` actually holds. With a nullable `bank_id`,
+       Postgres treats NULLs as distinct, so the constraint would silently
+       permit two system roles both called `admin` — a uniqueness guarantee
+       that is not one.
+
+    The cost is duplicated rows per tenant and a seeding step. That is cheap
+    and boring, which is what this should be.
+    """
+
+    __tablename__ = "roles"
+    __table_args__ = (UniqueConstraint("bank_id", "name", name="uq_roles_bank_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    bank_id: Mapped[str] = mapped_column(ForeignKey("banks.id"), index=True)
+    name: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Marks the two roles seeded for every tenant. They can be edited — a bank
+    # narrowing its own `operator` is the point — but not deleted, so a tenant
+    # cannot remove the only role that holds users.manage and lock itself out.
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class RolePermission(Base):
+    """One permission granted to one role.
+
+    A row per grant rather than a JSON list on `roles`, so "which roles can
+    repoint the handoff webhook" is a one-line query instead of a scan that
+    parses every blob — the question an access review actually asks.
+    """
+
+    __tablename__ = "role_permissions"
+
+    role_id: Mapped[str] = mapped_column(
+        ForeignKey("roles.id"), primary_key=True, index=True
+    )
+    permission: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
 class User(Base):
     """A person with access to one tenant's admin panel."""
 
@@ -214,9 +275,10 @@ class User(Base):
     bank_id: Mapped[str] = mapped_column(ForeignKey("banks.id"), index=True)
     email: Mapped[str] = mapped_column(String(320))
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    # operator | admin. The permission bundle each name maps to lives in code
-    # for now; it becomes data when a bank wants a role of its own.
-    role: Mapped[str] = mapped_column(String(32), default="operator")
+    # The role's id, not its name. A bank renaming "operator" must not silently
+    # drop everyone holding it back to no permissions, which is exactly what a
+    # name-matched lookup would do.
+    role_id: Mapped[str] = mapped_column(ForeignKey("roles.id"), index=True)
     # Disabled rather than deleted, so an audit entry naming this id still
     # resolves after the person has left the bank.
     disabled_at: Mapped[datetime | None] = mapped_column(
