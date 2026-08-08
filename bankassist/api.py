@@ -5,6 +5,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import admin_auth, handoff_webhook, passwords, telegram
+from . import admin_auth, handoff_webhook, passwords, permissions, roles, telegram
 from . import agent as agent_module
 from .agent import handle_message
 from .classifier import redact_contact
@@ -40,6 +41,7 @@ from .models import (
     Document,
     Handoff,
     Message,
+    Role,
     User,
     UserCredential,
     new_token,
@@ -160,18 +162,137 @@ def require_admin(
     return bank
 
 
+TOKEN_ACTOR = "admin-token"
+"""What the audit log records when the break-glass token acted.
+
+Honest about being unattributable. The alternative — writing "admin", as every
+row did before per-person logins — reads like a person and is not one, and an
+audit trail that quietly invents an actor is worse than one that admits it has
+no name for this.
+"""
+
+
+@dataclass(frozen=True)
+class Principal:
+    """Who is making this request.
+
+    Either a signed-in person or the tenant's break-glass token, resolved to
+    the one bank they are allowed to act on. Routes take this instead of a
+    `Bank` so that every action already knows who to attribute.
+    """
+
+    bank: Bank
+    user: User | None  # None when the shared token authenticated this call
+
+    @property
+    def audit_actor(self) -> str:
+        return self.user.id if self.user is not None else TOKEN_ACTOR
+
+
 def _audit(db: Session, bank: Bank, action: str, entity_type: str, entity_id: str,
-           metadata: dict[str, Any] | None = None) -> None:
+           metadata: dict[str, Any] | None = None, *, actor: str) -> None:
+    """Record an admin action. `actor` is required and has no default.
+
+    Deliberately not defaulted to `admin-token`. A default would let a new
+    route silently attribute a person's action to the shared token, and the
+    whole point of this change is that the log stops guessing. Making it
+    required means mypy refuses to compile a call site that forgot — the
+    reviewer does not have to notice.
+    """
     db.add(
         AuditLog(
             bank_id=bank.id,
-            actor="admin",
+            actor=actor,
             action=action,
             entity_type=entity_type,
             entity_id=str(entity_id),
             log_metadata=metadata,
         )
     )
+
+
+def require(permission: str) -> Callable[..., Principal]:
+    """Guard a route with a permission. Session first, token as break-glass.
+
+    A route names a capability, never a role. That is what lets a bank move
+    `documents.write` off its operators without anyone editing this file, and
+    what makes "who can repoint the handoff webhook" a query rather than a
+    reading of the source.
+
+    Three properties worth being explicit about:
+
+    **A session is bound to one tenant.** A person signed in at bank A calling
+    bank B's URL is refused even if they are an administrator at A. Without
+    this check the whole per-tenant model would be decoration — so it is
+    asserted directly, not left to follow from how the routes happen to be
+    written.
+
+    **Lacking a permission is 403, not 401.** They are signed in; the answer is
+    "not you", not "who are you". Collapsing the two would make the admin panel
+    bounce a legitimate operator to the login screen where a clear refusal
+    belongs.
+
+    **The token holds every permission**, and is checked only after the session
+    path declines. It is break-glass: bootstrapping a tenant's first user,
+    automation with no person involved, and recovery when the last
+    administrator locks themselves out. It audits as `admin-token`.
+    """
+
+    def dependency(
+        slug: str,
+        request: Request,
+        x_admin_token: str = Header(default=""),
+        db: Session = Depends(get_db),
+    ) -> Principal:
+        user = admin_auth.resolve(db, request.cookies.get(admin_auth.COOKIE_NAME))
+        if user is not None:
+            bank = _get_bank(db, slug)
+            if user.bank_id != bank.id:
+                # Deliberately 403 and not 404. Hiding the tenant's existence
+                # from someone already authenticated elsewhere buys nothing —
+                # slugs are public, they sit in the widget URL on the bank's
+                # own website — and a 404 here would send an operator hunting
+                # for a typo instead of telling them the truth.
+                log_event(
+                    logger, "admin_cross_tenant_denied",
+                    bank=slug, user_id=user.id, user_bank_id=user.bank_id,
+                    permission=permission,
+                )
+                raise HTTPException(
+                    status_code=403, detail="Not permitted for this bank"
+                )
+            if not roles.user_has(db, user, permission):
+                log_event(
+                    logger, "admin_permission_denied",
+                    bank=slug, user_id=user.id, permission=permission,
+                )
+                raise HTTPException(status_code=403, detail="Not permitted")
+            return Principal(bank=bank, user=user)
+        return Principal(bank=require_admin(slug, request, x_admin_token, db), user=None)
+
+    return dependency
+
+
+# One `Depends` per permission, built at import rather than per request.
+#
+# Also why routes read `= NeedsDocumentsWrite` rather than
+# `= Depends(require(...))`: a call inside a default argument is evaluated once
+# at import time. That is harmless here and is the shape of a real bug
+# elsewhere, so ruff flags it (B008), and silencing that fifteen times would be
+# worse than naming the dependencies once.
+#
+# This block is the entire access-control policy of the admin API, in one
+# screen. `tests/test_permissions.py` fails if it drifts from the registry or
+# leaves an admin route unguarded.
+NeedsAnalyticsRead = Depends(require(permissions.Perm.ANALYTICS_READ))
+NeedsConversationsRead = Depends(require(permissions.Perm.CONVERSATIONS_READ))
+NeedsHandoffsRead = Depends(require(permissions.Perm.HANDOFFS_READ))
+NeedsHandoffsResolve = Depends(require(permissions.Perm.HANDOFFS_RESOLVE))
+NeedsGapsRead = Depends(require(permissions.Perm.GAPS_READ))
+NeedsDocumentsRead = Depends(require(permissions.Perm.DOCUMENTS_READ))
+NeedsDocumentsWrite = Depends(require(permissions.Perm.DOCUMENTS_WRITE))
+NeedsIntegrationsManage = Depends(require(permissions.Perm.INTEGRATIONS_MANAGE))
+NeedsUsersManage = Depends(require(permissions.Perm.USERS_MANAGE))
 
 
 # ---------------------------------------------------------------- schemas
@@ -417,13 +538,15 @@ class TelegramConnectIn(BaseModel):
 @app.post("/admin/api/{slug}/telegram/connect")
 def telegram_connect(
     slug: str, payload: TelegramConnectIn,
-    bank: Bank = Depends(require_admin), db: Session = Depends(get_db),
+    principal: Principal = NeedsIntegrationsManage, db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    bank = principal.bank
     bank.telegram_bot_token = payload.bot_token
     bank.telegram_webhook_secret = new_token()
     webhook_url = f"{get_settings().app_base_url}/webhooks/telegram/{bank.slug}"
     response = telegram.set_webhook(payload.bot_token, webhook_url, bank.telegram_webhook_secret)
-    _audit(db, bank, "telegram_connected", "bank", bank.id, {"webhook_url": webhook_url})
+    _audit(db, bank, "telegram_connected", "bank", bank.id, {"webhook_url": webhook_url},
+           actor=principal.audit_actor)
     db.commit()
     return {"webhook_url": webhook_url, "telegram_response": response}
 
@@ -452,7 +575,22 @@ class ChangePasswordIn(BaseModel):
     new_password: str = Field(min_length=passwords.MIN_LENGTH, max_length=1024)
 
 
-ROLES = ("operator", "admin")
+def _identity(db: Session, user: User) -> dict[str, Any]:
+    """What the admin panel is told about the person it just signed in.
+
+    Includes the permission list, so the UI can hide what this person cannot
+    do instead of offering buttons that answer 403. That is a courtesy, never
+    a control — `require()` is the control and it re-checks on every request.
+    A tampered response can hide a button; it cannot grant anything.
+    """
+    role = db.get(Role, user.role_id)
+    return {
+        "email": user.email,
+        "display_name": user.display_name,
+        "role": role.name if role is not None else None,
+        "permissions": sorted(roles.permissions_for_user(db, user)),
+        "bank_id": user.bank_id,
+    }
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -566,12 +704,13 @@ def login(
         db, user, ip=client_ip, user_agent=request.headers.get("user-agent")
     )
     user.last_login_at = datetime.now(UTC)
-    _audit(db, bank, "admin_login", "user", user.id, {"email": user.email})
+    _audit(db, bank, "admin_login", "user", user.id, {"email": user.email},
+           actor=user.id)
     db.commit()
 
     _set_session_cookie(response, token)
     log_event(logger, "admin_login", bank=slug, user=user.email, client_ip=client_ip)
-    return {"email": user.email, "display_name": user.display_name, "role": user.role}
+    return _identity(db, user)
 
 
 @app.post("/admin/api/{slug}/logout")
@@ -587,36 +726,47 @@ def logout(
 
 
 @app.get("/admin/api/{slug}/me")
-def me(user: User = Depends(require_user)) -> dict[str, Any]:
-    return {
-        "email": user.email,
-        "display_name": user.display_name,
-        "role": user.role,
-        "bank_id": user.bank_id,
-    }
+def me(
+    user: User = Depends(require_user), db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    return _identity(db, user)
 
 
 @app.post("/admin/api/{slug}/users", status_code=201)
 def create_user(
     slug: str,
     payload: CreateUserIn,
-    bank: Bank = Depends(require_admin),
+    principal: Principal = NeedsUsersManage,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Create a user. Authenticated by the SHARED TOKEN, on purpose.
+    """Create a colleague. Needs `users.manage`, or the break-glass token.
 
-    This is the bootstrap path: a tenant with no users yet has no person who
-    could authorise creating the first one. The shared token is what breaks
-    that circle, and it is why it survives rather than being deleted.
+    The token path is the bootstrap: a tenant with no users yet has nobody who
+    could authorise creating the first one, and that circle is the reason the
+    shared token survives rather than being deleted.
 
     Setting a password directly here is acceptable *for bootstrap* and is not
     the intended way to onboard a team — that is an emailed invitation, which
     lands with the email service. Until then this is the only path, and it has
     the weakness the scope document names: the initial secret passes through
     whoever runs this call.
+
+    The role is resolved by name against this bank's own roles, so a bank that
+    has defined one of its own can assign it here without a code change. An
+    unknown name is refused rather than defaulted — quietly creating someone as
+    an `operator` because "supervisor" was misspelt would be a surprise in the
+    direction of granting access nobody asked for.
     """
-    if payload.role not in ROLES:
-        raise HTTPException(status_code=422, detail=f"role must be one of {ROLES}")
+    bank = principal.bank
+    role = roles.role_by_name(db, bank.id, payload.role)
+    if role is None:
+        available = sorted(
+            r.name
+            for r in db.execute(select(Role).where(Role.bank_id == bank.id)).scalars()
+        )
+        raise HTTPException(
+            status_code=422, detail=f"Unknown role. This bank has: {available}"
+        )
 
     email = payload.email.strip().lower()
     existing = db.execute(
@@ -627,7 +777,7 @@ def create_user(
 
     user = User(
         bank_id=bank.id, email=email,
-        display_name=payload.display_name, role=payload.role,
+        display_name=payload.display_name, role_id=role.id,
     )
     db.add(user)
     db.flush()
@@ -639,9 +789,9 @@ def create_user(
     )
     # The password is never audited, logged or echoed back.
     _audit(db, bank, "user_created", "user", user.id,
-           {"email": email, "role": payload.role})
+           {"email": email, "role": role.name}, actor=principal.audit_actor)
     db.commit()
-    return {"id": user.id, "email": user.email, "role": user.role}
+    return {"id": user.id, "email": user.email, "role": role.name}
 
 
 @app.post("/admin/api/{slug}/me/password")
@@ -681,7 +831,8 @@ def change_own_password(
     )
     bank = db.get(Bank, user.bank_id)
     if bank is not None:
-        _audit(db, bank, "password_changed", "user", user.id, {"email": user.email})
+        _audit(db, bank, "password_changed", "user", user.id, {"email": user.email},
+               actor=user.id)
     db.commit()
     _set_session_cookie(response, token)
     return {"changed": True}
@@ -696,7 +847,7 @@ class HandoffWebhookIn(BaseModel):
 @app.post("/admin/api/{slug}/handoff-webhook")
 def set_handoff_webhook(
     slug: str, payload: HandoffWebhookIn,
-    bank: Bank = Depends(require_admin), db: Session = Depends(get_db),
+    principal: Principal = NeedsIntegrationsManage, db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Point handoffs at the bank's own contact-centre tool.
 
@@ -709,10 +860,12 @@ def set_handoff_webhook(
     phone number, and posting that over plain http would put it on the wire in
     clear text on the way to a third party.
     """
+    bank = principal.bank
     if payload.url is None:
         bank.handoff_webhook_url = None
         bank.handoff_webhook_secret = None
-        _audit(db, bank, "handoff_webhook_disconnected", "bank", bank.id, {})
+        _audit(db, bank, "handoff_webhook_disconnected", "bank", bank.id, {},
+               actor=principal.audit_actor)
         db.commit()
         return {"connected": False}
 
@@ -724,7 +877,8 @@ def set_handoff_webhook(
     bank.handoff_webhook_secret = secret
     # The URL is audited; the secret never is. An audit log is read by more
     # people than the response to this call ever will be.
-    _audit(db, bank, "handoff_webhook_connected", "bank", bank.id, {"url": payload.url})
+    _audit(db, bank, "handoff_webhook_connected", "bank", bank.id, {"url": payload.url},
+           actor=principal.audit_actor)
     db.commit()
     return {
         "connected": True,
@@ -744,8 +898,9 @@ def set_handoff_webhook(
 
 @app.get("/admin/api/{slug}/documents")
 def list_documents(
-    bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+    principal: Principal = NeedsDocumentsRead, db: Session = Depends(get_db)
 ) -> list[dict[str, Any]]:
+    bank = principal.bank
     docs = db.execute(
         select(Document).where(Document.bank_id == bank.id).order_by(Document.updated_at.desc())
     ).scalars().all()
@@ -761,8 +916,9 @@ def list_documents(
 
 @app.post("/admin/api/{slug}/documents", status_code=201)
 def create_document(
-    payload: DocumentIn, bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+    payload: DocumentIn, principal: Principal = NeedsDocumentsWrite, db: Session = Depends(get_db)
 ) -> dict[str, Any]:
+    bank = principal.bank
     doc = Document(
         bank_id=bank.id, title=payload.title, content=payload.content,
         category=payload.category, language=payload.language,
@@ -770,19 +926,23 @@ def create_document(
     db.add(doc)
     db.flush()
     n_chunks = reindex_document(db, doc)
-    _audit(db, bank, "document_created", "document", doc.id, {"chunks": n_chunks})
+    _audit(db, bank, "document_created", "document", doc.id, {"chunks": n_chunks},
+           actor=principal.audit_actor)
     db.commit()
     return {"id": doc.id, "chunks": n_chunks}
 
 
 @app.post("/admin/api/{slug}/documents/bulk", status_code=201)
 def bulk_create_documents(
-    payload: DocumentBulkIn, bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+    payload: DocumentBulkIn,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     # All-or-nothing: reject the whole batch on any bad language code rather than
     # importing a partial knowledge base and leaving the admin to spot which rows
     # silently failed. This is the onboarding path for a bank's real KB, where a
     # dozens-of-documents batch getting half-imported is worse than getting none.
+    bank = principal.bank
     bad = [
         {"index": i, "title": d.title, "language": d.language}
         for i, d in enumerate(payload.documents)
@@ -807,6 +967,7 @@ def bulk_create_documents(
     _audit(
         db, bank, "documents_bulk_imported", "document", "bulk",
         {"count": len(created), "chunks": total_chunks},
+        actor=principal.audit_actor,
     )
     db.commit()
     return {"created": len(created), "ids": [d.id for d in created]}
@@ -815,27 +976,31 @@ def bulk_create_documents(
 @app.put("/admin/api/{slug}/documents/{document_id}")
 def update_document(
     document_id: str, payload: DocumentIn,
-    bank: Bank = Depends(require_admin), db: Session = Depends(get_db),
+    principal: Principal = NeedsDocumentsWrite, db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    bank = principal.bank
     doc = db.get(Document, document_id)
     if doc is None or doc.bank_id != bank.id:
         raise HTTPException(status_code=404, detail="Unknown document")
     doc.title, doc.content = payload.title, payload.content
     doc.category, doc.language = payload.category, payload.language
     n_chunks = reindex_document(db, doc)
-    _audit(db, bank, "document_updated", "document", doc.id, {"chunks": n_chunks})
+    _audit(db, bank, "document_updated", "document", doc.id, {"chunks": n_chunks},
+           actor=principal.audit_actor)
     db.commit()
     return {"id": doc.id, "chunks": n_chunks}
 
 
 @app.delete("/admin/api/{slug}/documents/{document_id}", status_code=204)
 def delete_document(
-    document_id: str, bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+    document_id: str, principal: Principal = NeedsDocumentsWrite, db: Session = Depends(get_db)
 ) -> None:
+    bank = principal.bank
     doc = db.get(Document, document_id)
     if doc is None or doc.bank_id != bank.id:
         raise HTTPException(status_code=404, detail="Unknown document")
-    _audit(db, bank, "document_deleted", "document", doc.id, {"title": doc.title})
+    _audit(db, bank, "document_deleted", "document", doc.id, {"title": doc.title},
+           actor=principal.audit_actor)
     db.delete(doc)
     db.commit()
 
@@ -845,8 +1010,9 @@ def delete_document(
 
 @app.get("/admin/api/{slug}/conversations")
 def list_conversations(
-    bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+    principal: Principal = NeedsConversationsRead, db: Session = Depends(get_db)
 ) -> list[dict[str, Any]]:
+    bank = principal.bank
     convos = db.execute(
         select(Conversation).where(Conversation.bank_id == bank.id)
         .order_by(Conversation.created_at.desc()).limit(100)
@@ -862,8 +1028,11 @@ def list_conversations(
 
 @app.get("/admin/api/{slug}/conversations/{conversation_id}/messages")
 def list_messages(
-    conversation_id: str, bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+    conversation_id: str,
+    principal: Principal = NeedsConversationsRead,
+    db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
+    bank = principal.bank
     convo = db.get(Conversation, conversation_id)
     if convo is None or convo.bank_id != bank.id:
         raise HTTPException(status_code=404, detail="Unknown conversation")
@@ -882,7 +1051,7 @@ def list_messages(
 @app.get("/admin/api/{slug}/handoffs")
 def list_handoffs(
     status: str = "open",
-    bank: Bank = Depends(require_admin),
+    principal: Principal = NeedsHandoffsRead,
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """The work queue. Defaults to open, oldest first.
@@ -892,6 +1061,7 @@ def list_handoffs(
     old default buried them at the bottom of 200 rows. Closed handoffs keep
     newest-first, because that view is history rather than a queue.
     """
+    bank = principal.bank
     if status not in {"open", "closed", "all"}:
         raise HTTPException(status_code=400, detail="status must be open, closed or all")
 
@@ -918,7 +1088,7 @@ def list_handoffs(
 
 @app.get("/admin/api/{slug}/content-gaps")
 def content_gaps(
-    bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+    principal: Principal = NeedsGapsRead, db: Session = Depends(get_db)
 ) -> list[dict[str, Any]]:
     """What customers ask that this bank has no content for, ranked.
 
@@ -933,6 +1103,7 @@ def content_gaps(
     universal banking guidance — the bank may want to own that answer in its
     own words, with its own limits and fees.
     """
+    bank = principal.bank
     rows = db.execute(
         select(Handoff)
         .where(Handoff.bank_id == bank.id)
@@ -984,7 +1155,7 @@ MAX_TOP_TOPICS = 15
 @app.get("/admin/api/{slug}/analytics")
 def analytics(
     days: int = DEFAULT_ANALYTICS_DAYS,
-    bank: Bank = Depends(require_admin),
+    principal: Principal = NeedsAnalyticsRead,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """What this assistant did, in the terms a bank decides renewal on.
@@ -998,6 +1169,7 @@ def analytics(
     rate whose denominator is zero is returned as null rather than 0. A fresh
     tenant showing "0% deflection" would be a lie told by a division.
     """
+    bank = principal.bank
     days = max(0, min(days, 365))
     since = datetime.now(UTC) - timedelta(days=days) if days else None
 
@@ -1147,7 +1319,7 @@ def _get_handoff(db: Session, bank: Bank, handoff_id: str) -> Handoff:
 def close_handoff(
     handoff_id: str,
     body: HandoffCloseIn | None = None,
-    bank: Bank = Depends(require_admin),
+    principal: Principal = NeedsHandoffsResolve,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Close a handoff, optionally recording what was done about it.
@@ -1156,9 +1328,14 @@ def close_handoff(
     operator clearing an obvious duplicate should not be forced to write
     prose, and requiring it would only produce a queue full of "done".
     """
+    bank = principal.bank
     handoff = _get_handoff(db, bank, handoff_id)
     handoff.status = "closed"
     handoff.resolved_at = datetime.now(UTC)
+    # Who closed it, when there is a who. Left null for the break-glass token
+    # rather than filled with a placeholder: "we do not know" is a true
+    # statement and "admin" would not be.
+    handoff.resolved_by = principal.user.id if principal.user is not None else None
     if body is not None and body.resolution:
         handoff.resolution = body.resolution.strip() or None
     # The note may quote the customer, so it is audited as a fact rather than
@@ -1166,6 +1343,7 @@ def close_handoff(
     _audit(
         db, bank, "handoff_closed", "handoff", handoff.id,
         {"had_resolution": bool(handoff.resolution)},
+        actor=principal.audit_actor,
     )
     db.commit()
     return {"status": "closed", "resolution": handoff.resolution}
@@ -1173,7 +1351,7 @@ def close_handoff(
 
 @app.post("/admin/api/{slug}/handoffs/{handoff_id}/reopen")
 def reopen_handoff(
-    handoff_id: str, bank: Bank = Depends(require_admin), db: Session = Depends(get_db)
+    handoff_id: str, principal: Principal = NeedsHandoffsResolve, db: Session = Depends(get_db)
 ) -> dict[str, str]:
     """Put a handoff back in the queue.
 
@@ -1181,9 +1359,11 @@ def reopen_handoff(
     realistic case is mundane: nobody picked up. The previous resolution is
     left in place — it is the record of the attempt that did not work.
     """
+    bank = principal.bank
     handoff = _get_handoff(db, bank, handoff_id)
     handoff.status = "open"
     handoff.resolved_at = None
-    _audit(db, bank, "handoff_reopened", "handoff", handoff.id, None)
+    _audit(db, bank, "handoff_reopened", "handoff", handoff.id, None,
+           actor=principal.audit_actor)
     db.commit()
     return {"status": "open"}

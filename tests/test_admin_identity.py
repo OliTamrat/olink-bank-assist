@@ -356,13 +356,21 @@ def test_the_existing_routes_still_take_the_shared_token(
     assert resp.status_code == 200
 
 
-def test_a_session_does_not_yet_open_the_existing_routes(
+def test_a_session_now_opens_the_existing_routes(
     client: TestClient, demo_bank: Any
 ) -> None:
-    """Documents the boundary honestly: signing in is not yet enough."""
+    """The inverse of what this asserted one change ago, on purpose.
+
+    #62 landed the identity core with every existing route still on the shared
+    token, and a test pinned that boundary so the half-finished state could not
+    be mistaken for the finished one. Wiring `require()` through the routes is
+    the change that makes signing in sufficient, so the assertion flips rather
+    than being deleted — the boundary moved, and the suite should say where it
+    is now.
+    """
     _make_user(client, demo_bank, role="admin")
     _login(client)
-    assert client.get("/admin/api/demo/handoffs").status_code == 401
+    assert client.get("/admin/api/demo/handoffs").status_code == 200
 
 
 def test_the_cookie_is_secure_by_default(monkeypatch: Any) -> None:

@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from .db import get_engine, init_db
 from .models import Bank, Document
 from .retrieval import reindex_document
+from .roles import ensure_builtin_roles
 
 
 def prospect_disclaimer(short_name: str, full_name: str) -> str:
@@ -49,10 +50,19 @@ def seed_prospect_bank(
     with factory() as db:
         existing = db.execute(select(Bank).where(Bank.slug == slug)).scalar_one_or_none()
         if existing is not None:
+            # Seeded even for a tenant that already exists, and deliberately so.
+            # This runs on every deploy, so a bank that somehow has no roles —
+            # created before they existed, or restored from a partial backup —
+            # heals on the next one instead of being a tenant where nobody can
+            # sign in. Idempotent: a bank that has customised its own roles
+            # keeps them untouched.
+            ensure_builtin_roles(db, existing.id)
+            db.commit()
             return existing, False
         bank = Bank(slug=slug, name=name, primary_color=primary_color, disclaimer=disclaimer)
         db.add(bank)
         db.flush()
+        ensure_builtin_roles(db, bank.id)
         for spec in docs:
             doc = Document(bank_id=bank.id, **spec)
             db.add(doc)

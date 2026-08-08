@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from .db import get_engine, init_db
 from .models import Bank, Document
 from .retrieval import reindex_document
+from .roles import ensure_builtin_roles
 from .seed_common import print_seed_summary
 
 DEMO_SLUG = "demo"
@@ -261,10 +262,14 @@ def seed() -> tuple[Bank, bool]:
     with factory() as db:
         existing = db.execute(select(Bank).where(Bank.slug == DEMO_SLUG)).scalar_one_or_none()
         if existing is not None:
+            # See seed_common.ensure_bank — self-healing, and idempotent.
+            ensure_builtin_roles(db, existing.id)
+            db.commit()
             return existing, False
         bank = Bank(slug=DEMO_SLUG, name="Demo Bank Ethiopia", primary_color="#0f766e")
         db.add(bank)
         db.flush()
+        ensure_builtin_roles(db, bank.id)
         for spec in _DOCS:
             doc = Document(bank_id=bank.id, **spec)
             db.add(doc)
