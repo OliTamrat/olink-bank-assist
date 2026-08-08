@@ -49,6 +49,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db()
     app.state.ip_limiter = SlidingWindowLimiter(settings.chat_rate_per_ip)
     app.state.conversation_limiter = SlidingWindowLimiter(settings.chat_rate_per_conversation)
+    # Counts FAILED admin auth attempts only — see require_admin.
+    app.state.admin_auth_limiter = SlidingWindowLimiter(settings.admin_auth_failures_per_ip)
     yield
 
 
@@ -91,12 +93,60 @@ def _get_bank(db: Session, slug: str) -> Bank:
 
 def require_admin(
     slug: str,
+    request: Request,
     x_admin_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ) -> Bank:
-    bank = _get_bank(db, slug)
+    """Authenticate a tenant admin, and make a failed attempt visible.
+
+    Two things were missing and both are the same problem: nothing recorded a
+    rejected attempt, and nothing slowed one down. A credential-stuffing run
+    against this endpoint left no trace at all — the token itself is 192 bits
+    so guessing it is not the realistic threat, but *not knowing anyone tried*
+    is, and a bank's security review asks about detection before strength.
+
+    The limiter counts FAILURES ONLY, never successful calls. Throttling a
+    legitimate operator working a busy handoff queue would be a denial of
+    service dressed up as a security control, and it is exactly the kind of
+    protection that gets switched off in month two.
+
+    An unknown slug is deliberately answered with the same 401 as a wrong
+    token, and counted the same way, so a probe cannot tell a typo from a
+    wrong credential. This is defence in depth rather than a secret kept:
+    /chat/{slug} still 404s, and a live tenant's slug is public anyway — it
+    sits in the widget URL on the bank's own website. What it does protect is
+    a tenant that has been created but not yet launched, and it keeps the
+    failure accounting uniform, which is what makes the log usable.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    limiter: SlidingWindowLimiter = request.app.state.admin_auth_limiter
+    key = f"admin:{slug}:{client_ip}"
+
+    def _reject(reason: str) -> HTTPException:
+        # The attempted token is never logged. It may be a real credential
+        # for another tenant — someone pasting the wrong one — and logs are
+        # the easiest place for a secret to end up somewhere unaudited.
+        allowed = limiter.allow(key)
+        log_event(
+            logger,
+            "admin_auth_failed",
+            bank=slug,
+            client_ip=client_ip,
+            reason=reason,
+            token_present=bool(x_admin_token),
+            rate_limited=not allowed,
+        )
+        if not allowed:
+            return HTTPException(
+                status_code=429, detail="Too many failed attempts, please slow down"
+            )
+        return HTTPException(status_code=401, detail="Invalid admin token")
+
+    bank = db.execute(select(Bank).where(Bank.slug == slug)).scalar_one_or_none()
+    if bank is None:
+        raise _reject("unknown_bank")
     if not x_admin_token or not hmac.compare_digest(x_admin_token, bank.admin_token):
-        raise HTTPException(status_code=401, detail="Invalid admin token")
+        raise _reject("bad_token")
     return bank
 
 
