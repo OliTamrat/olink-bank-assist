@@ -131,15 +131,55 @@ Resend, following the pattern `olink-dispatch` already runs. Delivery failure
 must never block the action it reports — the same rule the handoff webhook
 follows.
 
-### MFA
+#### A sending domain is a hard prerequisite
 
-TOTP, on the password path. No email or SMS dependency, recovery codes issued
-once and stored hashed. Under SSO the identity provider owns MFA, so this
-matters for the local-credential path — which is the fallback a small MFI will
-actually use.
+**This product has no custom domain at all today.** `APP_BASE_URL` points at
+the raw Cloud Run URL, so the admin panel, the widget and any link in an email
+all live at `bankassist-…run.app`.
 
-INSA certification is a documented Phase 3 requirement and Onekof is already
-certified P1–P6. An access-control review will ask.
+That blocks step 1, and not for cosmetic reasons. The recipients of these
+emails are bank staff — the population most trained to distrust an unexpected
+link. An invitation whose sender domain and link domain disagree is
+indistinguishable from phishing, and its entire job is *"click here to set
+your password"*. The sending domain and the product domain must therefore
+agree, which also rules out the cheap option of borrowing `olinkgo.us`: a bank
+that looks that up finds a US trucking dispatch company.
+
+Needed before step 1 ships:
+
+1. A registered domain (decided: a new dedicated one; name pending).
+2. A Cloud Run domain mapping, so `APP_BASE_URL` stops being a `run.app` URL.
+3. Resend domain verification — DKIM, SPF, and a DMARC record.
+4. A real deliverability test into an Ethiopian corporate mailbox, *before* a
+   pilot rather than during one.
+
+**Naming carries a regulatory question worth checking first.** The National
+Bank of Ethiopia licenses banks, and "bank" in a trading name is commonly
+restricted to licensed institutions. "Olink Bank Assist" as a product name is
+very likely fine — it plainly describes software sold *to* banks — but a
+domain like `olinkbank.com` reads as a claim rather than a description. Worth
+one question to counsel before registering, because a domain is cheap to
+choose well and expensive to change once it is printed on a proposal, baked
+into every widget embed, and verified as a sending identity.
+
+### MFA — deferred to its own change
+
+TOTP on the local-credential path: no email or SMS dependency, recovery codes
+issued once and stored hashed. Under SSO the identity provider owns MFA, so
+this only ever matters for the password path — which is the fallback a small
+MFI will actually use.
+
+**Deliberately not in the first pass.** It slots in cleanly afterwards
+*because* the architecture above is right: credentials are already a separate
+table keyed by `kind`, so a TOTP secret is another row rather than a schema
+change. Deferring it costs nothing structural, which is the only reason
+deferring it is acceptable.
+
+What it does cost is an answer. INSA certification is a documented Phase 3
+requirement and Onekof is already certified P1–P6; an access-control review
+will ask about MFA, and until this lands the honest answer is "designed for,
+not yet built". That is a fine answer before a pilot and a poor one during
+procurement, so it should not drift far behind step 3.
 
 ## The shared token survives, narrowed
 
@@ -163,6 +203,8 @@ than the one being fixed.
 Each step is independently deployable, and the shared-token path stays alive
 throughout so a mistake cannot lock a bank out of its own dashboard.
 
+0. **Domain.** Register, map to Cloud Run, verify in Resend. Not code, and it
+   gates step 1 — see above.
 1. **Email service.** Resend client, templates, failure-swallowing. No user
    surface yet.
 2. **Identity core.** Migration, password hashing, sessions, login/logout,
@@ -170,10 +212,11 @@ throughout so a mistake cannot lock a bank out of its own dashboard.
 3. **Authorization.** Permission registry, role bundles, applied to all 14
    routes. `audit_log.actor` becomes the person; `handoffs.resolved_by`
    populated.
-4. **TOTP.** Enrolment, verification, recovery codes.
-5. **Admin UI.** Login screen, session cookie, logout, Users tab — and the
+4. **Admin UI.** Login screen, session cookie, logout, Users tab — and the
    UI/UX rework the current dashboard needs, which this is the natural moment
    for rather than bolting a form onto the existing page.
+5. **TOTP.** Enrolment, verification, recovery codes. Deferred out of the
+   first pass, but it should not drift far behind step 3 — see above.
 
 Step 3 is the one that can break existing access, so it lands after identity
 is proven and before the UI depends on it.
