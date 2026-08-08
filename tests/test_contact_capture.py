@@ -470,3 +470,41 @@ def test_the_captured_name_is_used_when_acknowledging(
     )
     assert t(data["language"], "contact_saved_named",
              name="Oli Oli", contact="0911234567") in data["reply"]
+
+
+# ------------------------------------- saying how the callback will happen
+
+
+def test_a_known_number_is_confirmed_rather_than_silently_assumed(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Reported from the live CBE demo.
+
+    Told "I've passed you to our customer service team" with no mention of
+    how, the customer asked "How did a manager contact me if you do not have
+    my information?" — a fair question, and one the assistant could already
+    answer. Not re-asking for a number we hold is right; saying nothing about
+    it looks identical to not holding one.
+    """
+    first = _ask(client, "demo", UNANSWERABLE)
+    convo = first["conversation_id"]
+    _ask(client, "demo", "Oli 0911234567", convo)
+
+    again = _ask(client, "demo", "I need to speak to a manager", convo)
+    assert again["awaiting_contact"] is False, "must not ask twice"
+    assert "0911234567" in again["reply"], "but must say how they'll be reached"
+    assert t(again["language"], "ask_contact") not in again["reply"]
+
+
+def test_the_number_is_only_confirmed_on_a_callback_turn(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """An answered question is not a promise of a callback, so it has no
+    business echoing the customer's phone number back at them."""
+    first = _ask(client, "demo", UNANSWERABLE)
+    convo = first["conversation_id"]
+    _ask(client, "demo", "Oli 0911234567", convo)
+
+    answered = _ask(client, "demo", "How do I open a savings account?", convo)
+    assert answered["sources"], "setup: this should be answered from content"
+    assert "0911234567" not in answered["reply"]

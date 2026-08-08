@@ -47,6 +47,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "So a person from our team can get back to you, may I have your name "
             "and the best phone number to reach you on?"
         ),
+        # Said instead of asking again, once a number is already on file.
+        # Saying nothing looked identical to holding nothing: a customer asked
+        # "How did a manager contact me if you do not have my information?"
+        "contact_on_file": "They will reach you on {contact}.",
         "contact_saved": (
             "Thank you — I've passed your details to our customer service team. "
             "They will contact you on {contact}."
@@ -110,6 +114,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ከቡድናችን አንድ ሰው እንዲያገኝዎት፣ ስምዎን እና የሚደረስብዎትን የስልክ ቁጥር "
             "ሊነግሩኝ ይችላሉ?"
         ),
+        "contact_on_file": "በ{contact} ያገኙዎታል።",
         "contact_saved": (
             "አመሰግናለሁ — መረጃዎን ለደንበኞች አገልግሎት ቡድናችን አስተላልፌያለሁ። "
             "በ{contact} ያገኙዎታል።"
@@ -172,6 +177,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Namni garee keenyaa akka isin qunnamuuf, maqaa keessanii fi "
             "lakkoofsa bilbilaa ittiin isin argannu naaf kennuu dandeessuu?"
         ),
+        "contact_on_file": "Lakkoofsa {contact} irratti isin qunnamu.",
         "contact_saved": (
             "Galatoomaa — odeeffannoo keessan gara garee tajaajila maamiltootaa "
             "keenyaatti dabarseera. Lakkoofsa {contact} irratti isin qunnamu."
@@ -233,6 +239,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ሓደ ኣባል ጋንታና ክረኽበኩም ምእንቲ፡ ስምኩምን እትርከቡሉ ቁጽሪ ተሌፎንን "
             "ክትህቡኒ ትኽእሉ ዶ?"
         ),
+        "contact_on_file": "ብ{contact} ክረኽቡኹም እዮም።",
         "contact_saved": (
             "የቐንየለይ — ሓበሬታኹም ናብ ጋንታ ኣገልግሎት ዓማዊልና ኣመሓላሊፈዮ ኣለኹ። "
             "ብ{contact} ክረኽቡኹም እዮም።"
@@ -296,6 +303,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Si qof ka mid ah kooxdayadu ay kuula soo xiriiraan, ma i siin "
             "kartaa magacaaga iyo lambarka telefoonka ee lagugu heli karo?"
         ),
+        "contact_on_file": "Waxay kugu soo xiriiri doonaan {contact}.",
         "contact_saved": (
             "Mahadsanid — macluumaadkaaga waxaan u gudbiyay kooxda adeegga "
             "macaamiisha. Waxay kugula soo xiriiri doonaan {contact}."

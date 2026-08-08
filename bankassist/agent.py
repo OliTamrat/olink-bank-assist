@@ -156,11 +156,18 @@ def _create_handoff(
 def _request_contact(
     db: Session, bank: Bank, conversation: Conversation, language: str, reply: str
 ) -> str:
-    """Append the contact request, unless asking again would be nagging.
+    """Promise the callback and say how it will happen.
 
-    Skipped once we can already reach them — being asked for your number twice
-    reads as nobody being on the other end, which is the opposite of the
-    reassurance a handoff is meant to give.
+    Asking again once we can already reach them reads as nobody being on the
+    other end, so a known number is never re-requested. But saying nothing at
+    all was worse: a customer told "I've passed you to our customer service
+    team" with no mention of how, replied "How did a manager contact me if you
+    do not have my information?" — a completely fair question, and one the
+    assistant could already answer. Silence about the number we hold looks
+    exactly like not holding one.
+
+    So the number is confirmed back instead. It is the customer's own contact
+    detail, echoed only on a turn that just promised them a callback.
 
     Also capped. Each handoff is a separate promise of a callback, so a second
     unanswered question does earn a second ask; a customer who has ignored two
@@ -169,7 +176,7 @@ def _request_contact(
     with them.
     """
     if conversation.contact_phone:
-        return reply
+        return f"{reply} {t(language, 'contact_on_file', contact=conversation.contact_phone)}"
     asks = db.execute(
         select(func.count())
         .select_from(Handoff)
