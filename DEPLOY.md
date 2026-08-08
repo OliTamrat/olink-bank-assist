@@ -119,12 +119,36 @@ curl https://bankassist-430565798339.us-east1.run.app/health
 
 The seed scripts no longer print tokens under CI — they used to land in the
 GitHub Actions log on every deploy, readable by anyone with repo access and
-retained by GitHub. Retrieve one from a machine that can reach the database:
+retained by GitHub. The token now lives only in the database, so retrieving one
+means reaching the database.
+
+**Fastest route — the Supabase SQL editor.** Nothing to install, which matters
+more than it sounds: the CLI below needs the repo cloned, its dependencies
+installed, and a supported Python, and that combination has already sent
+someone round in circles once. Open the bank-assist Supabase project (its own
+project, not olink-dispatch's) → SQL Editor:
+
+```sql
+select slug, admin_token from banks order by slug;
+```
+
+**Or the CLI**, from a machine that can reach the database. Run it from inside
+the repo — `python -m` resolves the package from the working directory, so
+running it from a home directory fails with `No module named 'bankassist'`:
 
 ```bash
+cd /path/to/olink-bank-assist
 python -m bankassist.show_token cbe
 python -m bankassist.show_token cbe --rotate   # if a token has been exposed
 ```
+
+The project targets Python 3.11/3.12. On a newer interpreter the install may
+fail before you ever reach the token, because psycopg2 and pydantic-core lag
+new releases by months — on Windows, `py -3.12 -m ...` picks the right one.
+
+The connection string in Secret Manager is the **pooled** one (port 6543).
+That is fine here: this reads a single row. Alembic is the thing that needs the
+direct port.
 
 ## Runtime identity — known tradeoff
 
