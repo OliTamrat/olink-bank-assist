@@ -435,3 +435,75 @@ def test_content_gaps_carry_the_language_they_were_asked_in(
     gaps = admin.get("/admin/api/demo/content-gaps").json()
     assert gaps, "expected at least one gap"
     assert any(g["languages"].get("am") for g in gaps)
+
+
+def test_the_audit_log_keeps_what_the_dashboard_feed_drops(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The two views answer different questions and must not be merged.
+
+    The dashboard feed drops sign-ins so a busy morning does not crowd out
+    every content change. An access review that silently omitted them would be
+    hiding the category most likely to be asked about first.
+    """
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    admin.post("/admin/api/demo/documents",
+               json={"title": "T", "content": "C", "language": "en"})
+
+    feed = {r["action"] for r in admin.get("/admin/api/demo/activity").json()}
+    audit = {e["action"] for e in admin.get("/admin/api/demo/audit").json()["entries"]}
+    assert "admin_login" not in feed
+    assert "admin_login" in audit
+    assert "document_created" in audit
+
+
+def test_the_audit_log_reports_the_total_not_just_the_page(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """"50 entries" and "50 of 4,300" are different answers."""
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    for i in range(6):
+        admin.post("/admin/api/demo/documents",
+                   json={"title": f"T{i}", "content": "C", "language": "en"})
+    page = admin.get("/admin/api/demo/audit?limit=2").json()
+    assert len(page["entries"]) == 2
+    assert page["total"] > 2
+    # And paging actually moves.
+    second = admin.get("/admin/api/demo/audit?limit=2&offset=2").json()
+    assert [e["id"] for e in second["entries"]] != [e["id"] for e in page["entries"]]
+
+
+def test_the_audit_log_can_be_filtered_to_one_person_by_id(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """By id, not by display name — two colleagues can share a name."""
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    admin.post("/admin/api/demo/documents",
+               json={"title": "T", "content": "C", "language": "en"})
+    # The break-glass token acting, so there are two distinct actors present.
+    client.post("/admin/api/demo/documents", headers=_headers(demo_bank),
+                json={"title": "T2", "content": "C", "language": "en"})
+
+    me = db_session.execute(select(User).where(User.email == "boss@bank.et")).scalar_one()
+    mine = admin.get(f"/admin/api/demo/audit?actor={me.id}").json()
+    assert mine["entries"]
+    assert {e["actor_id"] for e in mine["entries"]} == {me.id}
+    assert all(e["actor"]["by_token"] is False for e in mine["entries"])
+
+    by_token = admin.get("/admin/api/demo/audit?actor=admin-token").json()
+    assert by_token["entries"]
+    assert all(e["actor"]["by_token"] is True for e in by_token["entries"])
+
+
+def test_an_operator_cannot_read_the_audit_log(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Reviewing colleagues' actions is a management function.
+
+    An operator who can see that a manager disabled someone's account on
+    Tuesday has been handed something nobody decided to give them.
+    """
+    ops = _signed_in(client, demo_bank, "ops@bank.et", "operator")
+    assert ops.get("/admin/api/demo/audit").status_code == 403
+    # ...and the dashboard feed stays open to them, which is the distinction.
+    assert ops.get("/admin/api/demo/activity").status_code == 200

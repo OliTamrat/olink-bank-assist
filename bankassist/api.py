@@ -317,6 +317,7 @@ NeedsGapsRead = Depends(require(permissions.Perm.GAPS_READ))
 NeedsDocumentsRead = Depends(require(permissions.Perm.DOCUMENTS_READ))
 NeedsDocumentsWrite = Depends(require(permissions.Perm.DOCUMENTS_WRITE))
 NeedsIntegrationsManage = Depends(require(permissions.Perm.INTEGRATIONS_MANAGE))
+NeedsAuditRead = Depends(require(permissions.Perm.AUDIT_READ))
 NeedsUsersManage = Depends(require(permissions.Perm.USERS_MANAGE))
 
 
@@ -1408,6 +1409,99 @@ def recent_activity(
         }
         for r in rows
     ]
+
+
+@app.get("/admin/api/{slug}/audit")
+def audit_log(
+    limit: int = 50,
+    offset: int = 0,
+    action: str | None = None,
+    actor: str | None = None,
+    principal: Principal = NeedsAuditRead,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The full record of who did what, for an access review.
+
+    Distinct from `/activity`, which is the dashboard's feed. That one drops
+    sign-ins and caps at a dozen because it answers "what changed lately"; this
+    one answers "show me everything this person did" and drops nothing. A
+    review that silently omits a category of event is not a review, and sign-ins
+    are usually the first thing asked about.
+
+    Paged rather than capped, and the total is returned alongside, because "50
+    entries" and "50 of 4,300 entries" are different answers and only one of
+    them is honest about what is being looked at.
+    """
+    bank = principal.bank
+    where = [AuditLog.bank_id == bank.id]
+    if action:
+        where.append(AuditLog.action == action)
+    if actor:
+        where.append(AuditLog.actor == actor)
+
+    total = db.execute(
+        select(func.count()).select_from(AuditLog).where(*where)
+    ).scalar_one()
+    rows = db.execute(
+        select(AuditLog)
+        .where(*where)
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(max(1, min(limit, 500)))
+        .offset(max(0, offset))
+    ).scalars().all()
+
+    # Resolved here rather than in the browser, and only for the ids on this
+    # page — a review of a busy tenant should not pull every user row to label
+    # fifty lines.
+    ids = {r.actor for r in rows if r.actor != TOKEN_ACTOR}
+    people = {
+        u.id: {"name": u.display_name or u.email, "email": u.email}
+        for u in db.execute(select(User).where(User.id.in_(ids))).scalars()
+    } if ids else {}
+
+    def _who(actor_id: str) -> dict[str, Any]:
+        if actor_id == TOKEN_ACTOR:
+            return {"name": "Admin token", "email": None, "by_token": True}
+        # An id that no longer resolves is shown as itself. An audit trail that
+        # hides the entries it cannot pretty-print is not an audit trail.
+        person = people.get(actor_id)
+        return {
+            "name": person["name"] if person else actor_id,
+            "email": person["email"] if person else None,
+            "by_token": False,
+        }
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        # Every distinct action present for this tenant, so the filter offers
+        # what exists rather than a hardcoded list that drifts from it.
+        "actions": sorted(
+            a for (a,) in db.execute(
+                select(AuditLog.action)
+                .where(AuditLog.bank_id == bank.id)
+                .group_by(AuditLog.action)
+            ).all()
+        ),
+        "entries": [
+            {
+                "id": r.id,
+                "at": r.created_at.isoformat(),
+                "action": r.action,
+                "entity_type": r.entity_type,
+                "entity_id": r.entity_id,
+                "actor": _who(r.actor),
+                # The raw id as well as the label, so "show only this person"
+                # filters on identity. Two colleagues can share a display name
+                # and an audit filter that merged them would be worse than no
+                # filter at all.
+                "actor_id": r.actor,
+                "metadata": r.log_metadata or {},
+            }
+            for r in rows
+        ],
+    }
 
 
 @app.get("/admin/api/{slug}/content-gaps")

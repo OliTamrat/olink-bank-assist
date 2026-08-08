@@ -456,6 +456,12 @@ td.title { color: var(--ink); font-weight: 550; }
 .gapnote strong { color: var(--ink); }
 .gapnote div { color: var(--body); margin-top: 5px; }
 
+.whobtn {
+  background: none; border: none; padding: 0; cursor: pointer; font-size: 13.5px;
+  font-weight: 550; color: var(--ink); text-align: left; font-family: inherit;
+}
+.whobtn:hover { color: var(--brand); text-decoration: underline; }
+
 .perm { display: inline-block; font-size: 11px; font-family: ui-monospace, monospace;
   background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
   padding: 2px 7px; margin: 0 5px 5px 0; color: var(--body); }
@@ -594,6 +600,7 @@ var PAGES = [
   { id: "convos",    label: "Conversations", perm: "conversations.read", load: loadConvos },
   { id: "docs",      label: "Knowledge Base",perm: "documents.read",     load: loadDocs },
   { id: "gaps",      label: "Content Gaps",  perm: "gaps.read",          load: loadGaps },
+  { id: "audit",     label: "Audit log",     perm: "audit.read",         load: loadAudit },
   { id: "team",      label: "Team",          perm: "users.manage",       load: loadTeam },
   { id: "settings",  label: "Settings",      perm: "integrations.manage",load: loadSettings }
 ];
@@ -604,6 +611,7 @@ var ICONS = {
   convos:    '<path d="M8 10h8M8 14h5M21 12a9 9 0 1 1-3.2-6.9"/><circle cx="19" cy="5" r="2"/>',
   docs:      '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5M8 13h8M8 17h5"/>',
   gaps:      '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M11 8v3M11 14h.01"/>',
+  audit:     '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/><path d="M8 12l2.5 2.5L16 9"/>',
   team:      '<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M17 11.2A3.2 3.2 0 1 0 17 5M18 20h3.5a5.5 5.5 0 0 0-3-4.9"/>',
   settings:  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.500 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>',
   edit:      '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/>',
@@ -1646,6 +1654,127 @@ function loadGaps() {
       go("docs");
     });
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+}
+
+/* ------------------------------------------------------------ audit log
+ *
+ * The record an access review asks for. Distinct from the dashboard's activity
+ * feed, which drops sign-ins and shows a dozen rows: that answers "what
+ * changed lately", this answers "show me everything this person did" and drops
+ * nothing.
+ */
+var AUDIT_PAGE = 50;
+
+function loadAudit(page) {
+  state.auditPage = page || 0;
+  var q = "?limit=" + AUDIT_PAGE + "&offset=" + (state.auditPage * AUDIT_PAGE) +
+    (state.auditAction ? "&action=" + encodeURIComponent(state.auditAction) : "") +
+    (state.auditActor ? "&actor=" + encodeURIComponent(state.auditActor) : "");
+  api("/audit" + q).then(function (d) {
+    state.audit = d;
+    var from = d.offset + 1, to = Math.min(d.offset + d.entries.length, d.total);
+
+    var h = '<div class="tools">' +
+      '<select id="a-action" style="width:auto"><option value="">All actions</option>' +
+      d.actions.map(function (a) {
+        return '<option value="' + esc(a) + '"' +
+          (state.auditAction === a ? " selected" : "") + ">" +
+          esc(ACTION_LABEL[a] || a.replace(/_/g, " ")) + "</option>";
+      }).join("") + "</select>" +
+      (state.auditActor
+        ? '<span class="pill">one person</span><button class="linky" id="a-clear">Show everyone</button>'
+        : "") +
+      '<div style="flex:1"></div>' +
+      // The total, not just the page. "50 entries" and "50 of 4,300" are
+      // different answers and only one of them is honest.
+      '<span class="meta">' + (d.total ? from + "–" + to + " of " + num(d.total) : "0") +
+      " entries</span>" +
+      '<button class="btn ghost sm" id="a-csv">Export CSV</button></div>';
+
+    h += '<div class="panel">' + (d.entries.length
+      ? "<table><thead><tr><th>When</th><th>Who</th><th>Action</th>" +
+        "<th>On</th><th>Details</th></tr></thead><tbody>" +
+        d.entries.map(function (e) {
+          return "<tr><td class='meta' style='white-space:nowrap'>" +
+            esc(new Date(e.at).toLocaleString()) + "</td>" +
+            "<td>" + (e.actor.by_token
+              ? '<span class="pill off">Admin token</span>'
+              // The name IS the filter. A separate "only this person" link under
+              // every row was thirty-one links down one column — an affordance
+              // repeated until it becomes noise, which is how a table stops
+              // being readable.
+              : '<button class="whobtn" data-only="' + esc(e.id) + '" ' +
+                'title="Show only this person">' + esc(e.actor.name) + "</button>" +
+                (e.actor.email && e.actor.email !== e.actor.name
+                  ? '<div class="meta">' + esc(e.actor.email) + "</div>" : "")) +
+            "</td>" +
+            "<td>" + esc(ACTION_LABEL[e.action] || e.action.replace(/_/g, " ")) + "</td>" +
+            "<td class='meta'>" + esc(e.entity_type) + "</td>" +
+            "<td class='meta'>" + esc(describeMeta(e.metadata)) + "</td></tr>";
+        }).join("") + "</tbody></table>"
+      : '<div class="empty">No entries match.</div>') + "</div>";
+
+    var pages = Math.ceil(d.total / AUDIT_PAGE);
+    if (pages > 1) {
+      h += '<div class="tools" style="justify-content:center">' +
+        '<button class="btn ghost sm" id="a-prev"' + (state.auditPage ? "" : " disabled") +
+        ">Previous</button>" +
+        '<span class="meta">Page ' + (state.auditPage + 1) + " of " + pages + "</span>" +
+        '<button class="btn ghost sm" id="a-next"' +
+        (state.auditPage + 1 < pages ? "" : " disabled") + ">Next</button></div>";
+    }
+
+    $("main").innerHTML = h;
+    $("a-action").onchange = function () {
+      state.auditAction = $("a-action").value || null;
+      loadAudit(0);
+    };
+    if ($("a-clear")) {
+      $("a-clear").onclick = function () { state.auditActor = null; loadAudit(0); };
+    }
+    if ($("a-prev")) $("a-prev").onclick = function () { loadAudit(state.auditPage - 1); };
+    if ($("a-next")) $("a-next").onclick = function () { loadAudit(state.auditPage + 1); };
+    $("a-csv").onclick = exportAudit;
+    wire("[data-only]", "only", function (id) {
+      var row = state.audit.entries.filter(function (e) { return String(e.id) === id; })[0];
+      if (!row) return;
+      // Filtered by the stored actor id, not the display name — two colleagues
+      // can share a name and an audit filter must not merge them.
+      state.auditActor = row.actor_id;
+      loadAudit(0);
+    });
+  }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+}
+
+/* Metadata rendered as facts rather than as raw JSON. A reviewer reading
+   {"sessions_revoked": 1} has to decode it; "1 session ended" they can read. */
+function describeMeta(m) {
+  var bits = [];
+  if (m.email) bits.push(m.email);
+  if (m.role) bits.push("role: " + m.role);
+  if (m.title) bits.push(m.title);
+  if (m.url) bits.push(m.url);
+  if (m.chunks != null) bits.push(m.chunks + " chunks");
+  if (m.count != null) bits.push(m.count + " documents");
+  if (m.sessions_revoked) bits.push(m.sessions_revoked + " session(s) ended");
+  if (m.primary_color) bits.push(m.primary_color);
+  if (m.short_name) bits.push("brand: " + m.short_name);
+  if (m.had_resolution != null) bits.push(m.had_resolution ? "with a note" : "no note");
+  return bits.join(" · ");
+}
+
+function exportAudit() {
+  var d = state.audit;
+  if (!d) return;
+  var lines = [["When", "Who", "Email", "Action", "Entity", "Entity id", "Details"].join(",")];
+  d.entries.forEach(function (e) {
+    lines.push([e.at, e.actor.name, e.actor.email || "", e.action,
+                e.entity_type, e.entity_id, describeMeta(e.metadata)].map(csvCell).join(","));
+  });
+  // Names the page, because an export of page 2 of 87 that looks like the whole
+  // log is how a reviewer reaches a wrong conclusion.
+  download("audit-log-page-" + (state.auditPage + 1) + ".csv",
+           "\ufeff" + lines.join("\r\n"), "text/csv;charset=utf-8");
 }
 
 /* ------------------------------------------------------------ team */
