@@ -678,6 +678,10 @@ def analytics(
     reachable = sum(1 for h in open_handoffs if h.contact_phone)
 
     return {
+        # The bank's own name, not its slug. This report is printed and put in
+        # front of people who have never seen the slug, and a page headed "cbe"
+        # reads like an internal debug screen rather than their report.
+        "bank_name": bank.name,
         "window_days": days,
         "since": since.isoformat() if since else None,
         "conversations": conversations,

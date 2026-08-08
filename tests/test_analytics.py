@@ -231,3 +231,15 @@ def test_analytics_requires_the_admin_token(client: TestClient, demo_bank: Any) 
         ).status_code
         == 401
     )
+
+
+def test_the_report_carries_the_banks_own_name(
+    client: TestClient, cbe_bank: Any
+) -> None:
+    """This report gets printed and put in front of people who have never seen
+    the slug. A page headed "cbe" reads as an internal debug screen."""
+    data = client.get(
+        "/admin/api/cbe/analytics", headers={"X-Admin-Token": cbe_bank.admin_token}
+    ).json()
+    assert data["bank_name"] == cbe_bank.name
+    assert data["bank_name"] != "cbe"
