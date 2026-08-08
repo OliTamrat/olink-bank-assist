@@ -24,8 +24,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from . import admin_auth, handoff_webhook, passwords, telegram
 from . import agent as agent_module
-from . import handoff_webhook, telegram
 from .agent import handle_message
 from .classifier import redact_contact
 from .config import get_settings
@@ -33,7 +33,17 @@ from .db import get_db, get_engine, init_db
 from .i18n import LANGUAGE_NAMES, SUPPORTED_LANGUAGES
 from .llm import active_backend, credentials_ready
 from .logging_config import configure_logging, log_event
-from .models import AuditLog, Bank, Conversation, Document, Handoff, Message, new_token
+from .models import (
+    AuditLog,
+    Bank,
+    Conversation,
+    Document,
+    Handoff,
+    Message,
+    User,
+    UserCredential,
+    new_token,
+)
 from .ratelimit import SlidingWindowLimiter
 from .retrieval import content_signature, reindex_document
 
@@ -416,6 +426,265 @@ def telegram_connect(
     _audit(db, bank, "telegram_connected", "bank", bank.id, {"webhook_url": webhook_url})
     db.commit()
     return {"webhook_url": webhook_url, "telegram_response": response}
+
+
+# ---------------------------------------------------------------- admin identity
+#
+# Nothing below is wired into the existing admin routes yet. They all still
+# authenticate with banks.admin_token, deliberately: switching them over is a
+# separate change, so a mistake here cannot lock a bank out of its dashboard.
+
+
+class LoginIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class CreateUserIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=passwords.MIN_LENGTH, max_length=1024)
+    display_name: str | None = Field(default=None, max_length=120)
+    role: str = Field(default="operator")
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=passwords.MIN_LENGTH, max_length=1024)
+
+
+ROLES = ("operator", "admin")
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    """httpOnly, Secure, SameSite=Strict, scoped to /admin.
+
+    httpOnly because the token this replaces lives in localStorage, where any
+    script on the page can read it. Strict rather than Lax because an admin
+    panel has no cross-site navigation worth preserving, and Strict is what
+    makes cross-site request forgery a non-issue without a separate token.
+    Path=/admin so the cookie is never attached to /chat, which is public and
+    cross-origin.
+    """
+    response.set_cookie(
+        admin_auth.COOKIE_NAME,
+        token,
+        max_age=int(admin_auth.SESSION_LIFETIME.total_seconds()),
+        httponly=True,
+        secure=get_settings().admin_cookie_secure,
+        samesite="strict",
+        path="/admin",
+    )
+
+
+def current_user(
+    request: Request, db: Session = Depends(get_db)
+) -> User | None:
+    """The signed-in person, or None. Does not reject — see require_user."""
+    return admin_auth.resolve(db, request.cookies.get(admin_auth.COOKIE_NAME))
+
+
+def require_user(user: User | None = Depends(current_user)) -> User:
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    return user
+
+
+@app.post("/admin/api/{slug}/login")
+def login(
+    slug: str,
+    payload: LoginIn,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Sign in. One failure message for every cause.
+
+    Unknown email, wrong password, disabled account and unknown tenant all
+    return the same 401. Distinguishing them turns this into an oracle for
+    "does this person have an account at this bank", which is worth more to an
+    attacker than it is to a user who mistyped.
+
+    Rate limited BEFORE the hash is computed. Argon2 is deliberately expensive
+    — that is the point of it — which makes an unauthenticated endpoint that
+    hashes on demand a denial-of-service amplifier unless something upstream
+    caps the rate.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    limiter: SlidingWindowLimiter = request.app.state.admin_auth_limiter
+    key = f"login:{slug}:{client_ip}"
+
+    def _fail(reason: str) -> HTTPException:
+        allowed = limiter.allow(key)
+        log_event(
+            logger, "admin_login_failed",
+            bank=slug, client_ip=client_ip, reason=reason, rate_limited=not allowed,
+        )
+        if not allowed:
+            return HTTPException(
+                status_code=429, detail="Too many failed attempts, please slow down"
+            )
+        return HTTPException(status_code=401, detail="Invalid email or password")
+
+    bank = db.execute(select(Bank).where(Bank.slug == slug)).scalar_one_or_none()
+    if bank is None:
+        # Still spend the hash. Returning early here would make an unknown
+        # tenant measurably faster than a wrong password.
+        passwords.verify_password(None, payload.password)
+        raise _fail("unknown_bank")
+
+    email = payload.email.strip().lower()
+    user = db.execute(
+        select(User).where(User.bank_id == bank.id, User.email == email)
+    ).scalar_one_or_none()
+    credential = (
+        db.execute(
+            select(UserCredential).where(
+                UserCredential.user_id == user.id, UserCredential.kind == "password"
+            )
+        ).scalar_one_or_none()
+        if user is not None
+        else None
+    )
+
+    # verify_password burns the same work when the hash is None, so an unknown
+    # email costs what a wrong password costs.
+    if not passwords.verify_password(
+        credential.secret_hash if credential else None, payload.password
+    ):
+        raise _fail("bad_credentials" if user is not None else "unknown_user")
+    if user is None or not user.is_active:
+        raise _fail("disabled")
+
+    # Upgrade the stored hash if the cost parameters have been raised since it
+    # was written. A successful login is the only moment the plaintext exists
+    # to do it, so without this a parameter increase would protect new
+    # accounts and leave every existing one at the old strength forever.
+    if credential is not None and passwords.needs_rehash(credential.secret_hash):
+        credential.secret_hash = passwords.hash_password(payload.password)
+
+    token, _session = admin_auth.issue(
+        db, user, ip=client_ip, user_agent=request.headers.get("user-agent")
+    )
+    user.last_login_at = datetime.now(UTC)
+    _audit(db, bank, "admin_login", "user", user.id, {"email": user.email})
+    db.commit()
+
+    _set_session_cookie(response, token)
+    log_event(logger, "admin_login", bank=slug, user=user.email, client_ip=client_ip)
+    return {"email": user.email, "display_name": user.display_name, "role": user.role}
+
+
+@app.post("/admin/api/{slug}/logout")
+def logout(
+    request: Request, response: Response, db: Session = Depends(get_db)
+) -> dict[str, bool]:
+    token = request.cookies.get(admin_auth.COOKIE_NAME)
+    if token:
+        admin_auth.revoke(db, token)
+        db.commit()
+    response.delete_cookie(admin_auth.COOKIE_NAME, path="/admin")
+    return {"signed_out": True}
+
+
+@app.get("/admin/api/{slug}/me")
+def me(user: User = Depends(require_user)) -> dict[str, Any]:
+    return {
+        "email": user.email,
+        "display_name": user.display_name,
+        "role": user.role,
+        "bank_id": user.bank_id,
+    }
+
+
+@app.post("/admin/api/{slug}/users", status_code=201)
+def create_user(
+    slug: str,
+    payload: CreateUserIn,
+    bank: Bank = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Create a user. Authenticated by the SHARED TOKEN, on purpose.
+
+    This is the bootstrap path: a tenant with no users yet has no person who
+    could authorise creating the first one. The shared token is what breaks
+    that circle, and it is why it survives rather than being deleted.
+
+    Setting a password directly here is acceptable *for bootstrap* and is not
+    the intended way to onboard a team — that is an emailed invitation, which
+    lands with the email service. Until then this is the only path, and it has
+    the weakness the scope document names: the initial secret passes through
+    whoever runs this call.
+    """
+    if payload.role not in ROLES:
+        raise HTTPException(status_code=422, detail=f"role must be one of {ROLES}")
+
+    email = payload.email.strip().lower()
+    existing = db.execute(
+        select(User).where(User.bank_id == bank.id, User.email == email)
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="A user with that email exists")
+
+    user = User(
+        bank_id=bank.id, email=email,
+        display_name=payload.display_name, role=payload.role,
+    )
+    db.add(user)
+    db.flush()
+    db.add(
+        UserCredential(
+            user_id=user.id, kind="password",
+            secret_hash=passwords.hash_password(payload.password),
+        )
+    )
+    # The password is never audited, logged or echoed back.
+    _audit(db, bank, "user_created", "user", user.id,
+           {"email": email, "role": payload.role})
+    db.commit()
+    return {"id": user.id, "email": user.email, "role": user.role}
+
+
+@app.post("/admin/api/{slug}/me/password")
+def change_own_password(
+    slug: str,
+    payload: ChangePasswordIn,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """Change your own password, proving you know the current one.
+
+    Every other session is revoked and this browser is issued a fresh one. A
+    password change that left old sessions alive would leave whoever knew the
+    old password still signed in — the opposite of what changing it is for,
+    and the exact case where someone changes it *because* they think they were
+    compromised.
+    """
+    credential = db.execute(
+        select(UserCredential).where(
+            UserCredential.user_id == user.id, UserCredential.kind == "password"
+        )
+    ).scalar_one_or_none()
+    if not passwords.verify_password(
+        credential.secret_hash if credential else None, payload.current_password
+    ):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    assert credential is not None  # verify_password(None, ...) is always False
+
+    credential.secret_hash = passwords.hash_password(payload.new_password)
+    admin_auth.revoke_all_for_user(db, user.id)
+    token, _ = admin_auth.issue(
+        db, user,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    bank = db.get(Bank, user.bank_id)
+    if bank is not None:
+        _audit(db, bank, "password_changed", "user", user.id, {"email": user.email})
+    db.commit()
+    _set_session_cookie(response, token)
+    return {"changed": True}
 
 
 class HandoffWebhookIn(BaseModel):

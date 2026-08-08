@@ -16,6 +16,13 @@ dependencies = [
     # defaults to psycopg2 specifically — this is that driver, binary wheel so
     # no build toolchain/libpq-dev needed in the Docker image.
     "psycopg2-binary>=2.9",
+    # Argon2id for admin passwords. Chosen over bcrypt because it is
+    # memory-hard: a GPU or ASIC attacking a stolen hash gains far less than it
+    # does against bcrypt's CPU-bound work. Parameters follow the OWASP
+    # minimum (19 MiB, t=2, p=1) rather than the library defaults, which ask
+    # for 64 MiB — enough that a burst of concurrent logins on a 512 MiB
+    # Cloud Run instance would start competing for memory with the app.
+    "argon2-cffi>=23.1",
     # Vertex AI is called over plain REST, but its auth is not: Application
     # Default Credentials resolves the Cloud Run runtime service account via
     # the metadata server (and a key file or gcloud creds locally), which

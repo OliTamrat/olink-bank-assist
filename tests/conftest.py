@@ -12,6 +12,12 @@ from sqlalchemy.orm import Session, sessionmaker
 def client(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("BANKASSIST_DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    # TestClient speaks http, and a Secure cookie is never sent over http — so
+    # without this every session test fails at the second request with a 401
+    # that looks like an auth bug rather than a transport one. Production
+    # defaults to Secure; this is the explicit opt-out, and it lives here so a
+    # test can never quietly disable it for the real app.
+    monkeypatch.setenv("BANKASSIST_ADMIN_COOKIE_INSECURE", "1")
 
     from bankassist import config, db
 

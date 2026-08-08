@@ -5,7 +5,16 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -184,4 +193,87 @@ class AuditLog(Base):
     entity_type: Mapped[str] = mapped_column(String(64))
     entity_id: Mapped[str] = mapped_column(String(64))  # TEXT on purpose — always str(uuid)
     log_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+# --------------------------------------------------------------- admin identity
+#
+# Who someone is (User) is kept apart from how they prove it (UserCredential).
+# That split is what lets SSO arrive later as another credential row rather
+# than a rewrite of everything touching a user, and what lets one person hold
+# a password and a TOTP secret without a nullable column per method.
+
+
+class User(Base):
+    """A person with access to one tenant's admin panel."""
+
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("bank_id", "email", name="uq_users_bank_email"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    bank_id: Mapped[str] = mapped_column(ForeignKey("banks.id"), index=True)
+    email: Mapped[str] = mapped_column(String(320))
+    display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # operator | admin. The permission bundle each name maps to lives in code
+    # for now; it becomes data when a bank wants a role of its own.
+    role: Mapped[str] = mapped_column(String(32), default="operator")
+    # Disabled rather than deleted, so an audit entry naming this id still
+    # resolves after the person has left the bank.
+    disabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    @property
+    def is_active(self) -> bool:
+        return self.disabled_at is None
+
+
+class UserCredential(Base):
+    """How a user proves who they are. One row per method."""
+
+    __tablename__ = "user_credentials"
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", name="uq_credentials_user_kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    # password | totp | oidc — a string rather than an enum, so adding a
+    # method later is not a migration in every environment.
+    kind: Mapped[str] = mapped_column(String(16))
+    secret_hash: Mapped[str] = mapped_column(Text)
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AdminSession(Base):
+    """A logged-in browser. Server-side so it can be revoked.
+
+    Named AdminSession rather than Session because this module is read
+    alongside sqlalchemy.orm.Session everywhere, and one of those two being
+    silently the wrong one is a bug nobody would enjoy finding.
+    """
+
+    __tablename__ = "admin_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    # The hash, never the token itself — a database read must not yield a
+    # working credential, the same rule the password column follows.
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Recorded so a person can be shown their own sessions and recognise one
+    # they did not start. Not used for authorization: both are client-supplied
+    # and trivially forged.
+    created_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
