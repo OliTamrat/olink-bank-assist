@@ -24,6 +24,11 @@ class Settings:
     log_level: str
     chat_rate_per_ip: int  # messages/minute per client IP; <=0 disables
     chat_rate_per_conversation: int  # messages/minute per conversation; <=0 disables
+    # FAILED admin auth attempts per minute, per (tenant, client IP). Counts
+    # failures only, never successful calls: an operator working a busy handoff
+    # queue must never be throttled, and throttling them would be a denial of
+    # service dressed up as a security control. <=0 disables.
+    admin_auth_failures_per_ip: int
 
 
 @lru_cache
@@ -47,6 +52,9 @@ def get_settings() -> Settings:
         chat_rate_per_ip=int(os.environ.get("BANKASSIST_CHAT_RATE_PER_IP", "60")),
         chat_rate_per_conversation=int(
             os.environ.get("BANKASSIST_CHAT_RATE_PER_CONVERSATION", "20")
+        ),
+        admin_auth_failures_per_ip=int(
+            os.environ.get("BANKASSIST_ADMIN_AUTH_FAILURES_PER_IP", "10")
         ),
     )
 
