@@ -221,6 +221,44 @@ def test_a_session_for_one_bank_cannot_act_on_another(
     assert c.get("/admin/api/other/documents").status_code == 403
 
 
+def test_an_explicit_token_beats_a_session_for_a_different_bank(
+    client: TestClient, demo_bank: Any, second_bank: Any
+) -> None:
+    """The realistic multi-tenant case, and it is not a security question.
+
+    Whoever runs this product administers several tenants from one browser.
+    The session cookie is ambient — the browser attaches it to anything under
+    /admin without being asked — while the token is deliberate, entered for
+    this call. If the ambient credential vetoed the deliberate one, holding the
+    correct token for a bank and still being refused would look like a bug in
+    permissions and be debugged as one.
+
+    The token still has to be the right one. Only precedence changes.
+    """
+    c = _signed_in(client, demo_bank, "admin")
+    assert (
+        c.get(
+            "/admin/api/other/documents",
+            headers={"X-Admin-Token": second_bank.admin_token},
+        ).status_code
+        == 200
+    )
+
+
+def test_a_wrong_token_does_not_rescue_a_foreign_session(
+    client: TestClient, demo_bank: Any, second_bank: Any
+) -> None:
+    """The other half of that rule — without it, it would be a hole."""
+    c = _signed_in(client, demo_bank, "admin")
+    assert (
+        c.get(
+            "/admin/api/other/documents",
+            headers={"X-Admin-Token": demo_bank.admin_token},
+        ).status_code
+        == 403
+    )
+
+
 def test_a_disabled_user_loses_access_they_already_hold(
     client: TestClient, demo_bank: Any, db_session: Session
 ) -> None:

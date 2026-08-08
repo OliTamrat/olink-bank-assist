@@ -248,6 +248,23 @@ def require(permission: str) -> Callable[..., Principal]:
         if user is not None:
             bank = _get_bank(db, slug)
             if user.bank_id != bank.id:
+                # A session for another tenant does not refuse the request
+                # outright — it steps aside for an explicitly supplied token.
+                #
+                # The cookie is ambient: the browser attaches it to anything
+                # under /admin without being asked. The token is deliberate,
+                # typed in for this call. Letting the ambient credential veto
+                # the deliberate one is how someone administering several
+                # tenants ends up staring at a 403 on a bank whose token they
+                # hold and just entered. Explicit beats ambient.
+                #
+                # Nothing is loosened: the token still has to be the right one
+                # for this bank. All that changes is which credential is
+                # consulted when they disagree about who is asking.
+                if x_admin_token and hmac.compare_digest(
+                    x_admin_token, bank.admin_token
+                ):
+                    return Principal(bank=bank, user=None)
                 # Deliberately 403 and not 404. Hiding the tenant's existence
                 # from someone already authenticated elsewhere buys nothing —
                 # slugs are public, they sit in the widget URL on the bank's
