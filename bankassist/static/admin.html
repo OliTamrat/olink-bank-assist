@@ -884,7 +884,18 @@ function loadDashboard() {
         '%"></span></span><span class="n">' + a.handoffs.open + "</span></div>" +
       '<div class="bar"><span>Closed</span><span class="track"><span class="fill" style="width:' +
         (a.handoffs.open + a.handoffs.closed ? (a.handoffs.closed / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
-        '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div></div>" +
+        '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div>" +
+      /* Restored after the rebuild dropped it. Of the people still waiting on
+         a callback, how many can actually be called — an open handoff with no
+         number on it is a dead letter, and that is the one fact about the
+         queue that changes what someone does next. */
+      (a.handoffs.open
+        ? '<div class="note">' + num(a.handoffs.open_reachable) + " reachable" +
+          (a.handoffs.open_unreachable
+            ? " · " + num(a.handoffs.open_unreachable) + " with no contact details"
+            : "") + "</div>"
+        : "") +
+      "</div>" +
       '<div class="panel"><h3>Languages</h3>' +
       bars(a.languages, langTotal, function (r) { return [r.name || r.language, ""]; }) + "</div>" +
       '<div class="panel"><h3>Channels</h3>' +
