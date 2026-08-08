@@ -231,7 +231,10 @@ main { padding: 20px 24px 40px; }
 .kpi { background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 15px 16px; }
 .kpi { display: flex; gap: 12px; align-items: flex-start; }
-.kpi .txt { flex: 1; min-width: 0; }
+/* The delta sits on the card's bottom edge rather than under whatever height
+   the text above happened to take, so the four read as one row of cards. */
+.kpi .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100%; }
+.kpi .delta { margin-top: auto; padding-top: 8px; }
 /* The circular tinted icon from the reference. Purely decorative, so it is
    aria-hidden — a screen reader announcing "chart icon" before every number
    would be noise. */
@@ -274,11 +277,44 @@ main { padding: 20px 24px 40px; }
 .panel > h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em;
   color: var(--muted); margin-bottom: 12px; }
 .grid2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; align-items: start; }
+
+/* Explicit rows, not two independent columns.
+ *
+ * The first version stacked panels in a 1.6fr / 1fr split and let each column
+ * end wherever its contents ran out. Measured, that produced eight panels
+ * between 118px and 466px tall whose edges never lined up across the gutter —
+ * which is exactly what "unarranged" looks like, and no amount of adjusting
+ * individual card padding would have fixed it.
+ *
+ * Rows fix it structurally: grid stretches every cell in a row to the tallest,
+ * so each row has one top edge and one bottom edge. Panels are then PAIRED BY
+ * WEIGHT rather than by topic — the two short ones share a column beside the
+ * chart, the two mid-sized ones sit together — so the stretching is a few
+ * pixels rather than a card of mostly empty space.
+ */
+.row { display: grid; gap: 14px; margin-bottom: 14px; align-items: stretch; }
+.row-main { grid-template-columns: 2fr 1fr; }
+.row-half { grid-template-columns: 1fr 1fr; }
+.row > .panel, .stack > .panel { margin-bottom: 0; }
+.stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* The last panel in a stack absorbs any slack, so the column ends flush with
+   its neighbour instead of leaving a gap under the final card. */
+.stack > .panel:last-child { flex: 1; }
+.row > .panel { min-width: 0; display: flex; flex-direction: column; }
+/* A bar group takes the slack in a stretched card and centres in it, so the
+   card looks sized rather than merely tall. */
+.barwrap { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.topicwrap { flex: 1; }
+.chartwrap { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+@media (max-width: 1100px) {
+  .row-main, .row-half { grid-template-columns: 1fr; }
+}
 @media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } .shell { grid-template-columns: 1fr; }
   .side { position: static; height: auto; } }
 
 /* ---------------------------------------------------------------- chart */
-.chart { width: 100%; height: 190px; display: block; }
+.chart { width: 100%; display: block; }
 .chart .line { fill: none; stroke: var(--brand); stroke-width: 2; }
 .chart .area { fill: url(#brandfade); }
 .chart .gl { stroke: var(--line); stroke-width: 1; }
@@ -301,7 +337,7 @@ main { padding: 20px 24px 40px; }
 /* Capped and scrolled rather than allowed to run. A feed is unbounded by
    nature, so left alone it sets the height of the whole right-hand column and
    drags the layout out of balance with whatever is beside it. */
-.feedscroll { max-height: 268px; overflow-y: auto; }
+.feedscroll { max-height: 208px; overflow-y: auto; }
 .feedscroll::-webkit-scrollbar { width: 8px; }
 .feedscroll::-webkit-scrollbar-thumb {
   background: var(--line); border-radius: 99px;
@@ -322,7 +358,7 @@ main { padding: 20px 24px 40px; }
 .preview { padding: 0; overflow: hidden; }
 .preview h3 { padding: 16px 16px 0; }
 .preview .frame {
-  width: 100%; height: 380px; border: none; display: block;
+  width: 100%; height: 360px; border: none; display: block;
   border-top: 1px solid var(--line); margin-top: 12px; background: var(--surface);
 }
 .preview .cap { padding: 10px 16px; font-size: 11.5px; color: var(--faint);
@@ -602,6 +638,9 @@ function applyBrand(slug) {
       }
     });
     $("side-name").textContent = b.name || slug;
+    // Long names ellipsize in a 236px rail — "Commercial Bank ..." — so the
+    // full one stays reachable on hover rather than simply being lost.
+    $("side-name").title = b.name || slug;
     $("gate-title").textContent = "Sign in";
     $("gate-sub").textContent = b.name ? b.name + " — assistant administration" : "Olink Bank Assist";
     return b;
@@ -812,7 +851,10 @@ function kpi(label, value, sub, isNone, iconName, deltaHtml, drill) {
 
 function bars(rows, total, labeller) {
   if (!rows.length) return '<div class="empty">Nothing yet.</div>';
-  return rows.map(function (r) {
+  // Wrapped so the group can centre itself in a card the row has stretched.
+  // Left flush to the top, a short list in a tall card reads as an unfinished
+  // panel rather than a deliberate one.
+  return '<div class="barwrap">' + rows.map(function (r) {
     var pair = labeller(r);
     var share = total ? r.count / total : 0;
     // pair[2] is a destination. Rows with nothing behind them — a language
@@ -824,14 +866,14 @@ function bars(rows, total, labeller) {
       '<span class="track"><span class="fill' + (pair[1] ? " " + pair[1] : "") +
       '" style="width:' + (share * 100).toFixed(1) + '%"></span></span>' +
       '<span class="n">' + r.count + "</span></div>";
-  }).join("");
+  }).join("") + "</div>";
 }
 
 /* A real series from the analytics endpoint, with empty days present as zero.
    Drawn as inline SVG: no chart library, no CDN, and it prints. */
 function sparkArea(daily) {
   if (!daily || daily.length < 2) return '<div class="empty">Not enough days yet to draw a trend.</div>';
-  var w = 640, h = 190, padL = 34, padB = 22, padT = 10;
+  var w = 640, h = 224, padL = 34, padB = 22, padT = 10;
   var max = Math.max.apply(null, daily.map(function (d) { return d.conversations; }));
   var top = Math.max(max, 1);
   var iw = w - padL - 8, ih = h - padB - padT;
@@ -865,11 +907,13 @@ function sparkArea(daily) {
   // also stretches the glyphs and the stroke, which looks like a rendering
   // fault rather than a design. Scaling uniformly costs a few pixels of side
   // margin at unusual widths and keeps the type honest.
-  return '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" role="img" aria-label="Conversations per day">' +
+  return '<div class="chartwrap"><svg class="chart" viewBox="0 0 ' + w + " " + h +
+    '" role="img" aria-label="Conversations per day">' +
     '<defs><linearGradient id="brandfade" x1="0" x2="0" y1="0" y2="1">' +
     '<stop offset="0%" stop-color="var(--brand)" stop-opacity="0.22"/>' +
     '<stop offset="100%" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>' +
-    ticks + '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>' + labels + "</svg>";
+    ticks + '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>' +
+    labels + "</svg></div>";
 }
 
 function loadDashboard() {
@@ -931,8 +975,39 @@ function loadDashboard() {
           can("gaps.read") && "gaps") +
       "</div>";
 
-    h += '<div class="grid2"><div>' +
+    /* Row 1 — the trend, beside the two smallest panels stacked. Paired by
+       weight: queue + channels together come out within a few pixels of the
+       chart, so nothing stretches into empty space. */
+    h += '<div class="row row-main">' +
       '<div class="panel"><h3>Conversations per day</h3>' + sparkArea(a.daily) + "</div>" +
+      '<div class="stack">' +
+      '<div class="panel"><h3>Escalation queue</h3>' +
+      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
+        (can("handoffs.read") ? ' data-drill="handoffs:open" role="button" tabindex="0"' : "") +
+        '><span>Open</span><span class="track"><span class="fill warn" style="width:' +
+        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.open / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
+        '%"></span></span><span class="n">' + a.handoffs.open + "</span></div>" +
+      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
+        (can("handoffs.read") ? ' data-drill="handoffs:closed" role="button" tabindex="0"' : "") +
+        '><span>Closed</span><span class="track"><span class="fill" style="width:' +
+        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.closed / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
+        '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div>" +
+      (a.handoffs.open
+        ? '<div class="note">' + num(a.handoffs.open_reachable) + " reachable" +
+          (a.handoffs.open_unreachable
+            ? " · " + num(a.handoffs.open_unreachable) + " with no contact details"
+            : "") + "</div>"
+        : "") +
+      "</div>" +
+      '<div class="panel"><h3>Channels</h3>' +
+      bars(a.channels, a.conversations, function (r) {
+        return [r.channel, "", can("conversations.read") && "convos:channel=" + r.channel];
+      }) + "</div>" +
+      "</div></div>";
+
+    /* Row 2 — the two mid-weight lists, which measured within 12px of each
+       other, so this row needs almost no stretching at all. */
+    h += '<div class="row row-half">' +
       '<div class="panel"><h3>What happened to each question</h3>' +
       bars(qRows, a.substantive_questions, function (r) {
         var cls = r.outcome === "unanswered" ? "bad"
@@ -959,41 +1034,18 @@ function loadDashboard() {
           }).join("")
         : '<div class="empty">Nothing asked yet in this window.</div>') +
       '<div class="note">Grouped by wording. Phone numbers and names are removed before grouping.</div></div>' +
-      "</div><div>" +
-      '<div class="panel"><h3>Escalation queue</h3>' +
-      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
-        (can("handoffs.read") ? ' data-drill="handoffs:open" role="button" tabindex="0"' : "") +
-        '><span>Open</span><span class="track"><span class="fill warn" style="width:' +
-        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.open / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
-        '%"></span></span><span class="n">' + a.handoffs.open + "</span></div>" +
-      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
-        (can("handoffs.read") ? ' data-drill="handoffs:closed" role="button" tabindex="0"' : "") +
-        '><span>Closed</span><span class="track"><span class="fill" style="width:' +
-        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.closed / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
-        '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div>" +
-      /* Restored after the rebuild dropped it. Of the people still waiting on
-         a callback, how many can actually be called — an open handoff with no
-         number on it is a dead letter, and that is the one fact about the
-         queue that changes what someone does next. */
-      (a.handoffs.open
-        ? '<div class="note">' + num(a.handoffs.open_reachable) + " reachable" +
-          (a.handoffs.open_unreachable
-            ? " · " + num(a.handoffs.open_unreachable) + " with no contact details"
-            : "") + "</div>"
-        : "") +
-      "</div>" +
+      "</div>";
+
+    /* Row 3 — coverage beside who did what. */
+    h += '<div class="row row-half">' +
       '<div class="panel"><h3>Languages</h3>' +
       bars(a.languages, langTotal, function (r) {
         return [r.name || r.language, "",
                 can("conversations.read") && "convos:language=" + r.language];
       }) + "</div>" +
-      '<div class="panel"><h3>Channels</h3>' +
-      bars(a.channels, a.conversations, function (r) {
-        return [r.channel, "", can("conversations.read") && "convos:channel=" + r.channel];
-      }) + "</div>" +
       '<div class="panel noprint" id="activity"><h3>Recent activity</h3>' +
       '<div class="empty">Loading…</div></div>' +
-      "</div></div>";
+      "</div>";
 
     /* What a bank most wants to see in a demo: the assistant as its own
        customers meet it, on the same page as the numbers it produces. The
@@ -1044,10 +1096,10 @@ function greeting() {
 function wireChartTip(daily) {
   var svg = document.querySelector(".chart");
   if (!svg || !daily || daily.length < 2) return;
-  var wrap = svg.parentNode;
+  var wrap = svg.parentNode;   // the .chartwrap the chart renders inside
   var tip = document.createElement("div");
   tip.className = "tip";
-  wrap.classList.add("chartwrap");
+  wrap.style.position = "relative";
   wrap.appendChild(tip);
 
   svg.addEventListener("mousemove", function (ev) {
