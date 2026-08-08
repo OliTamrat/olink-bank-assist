@@ -125,3 +125,45 @@ def test_it_survives_being_asked_while_awaiting_contact(
     assert data["intent"] == "human_request"
     reasons = db_session.execute(select(Handoff.reason)).scalars().all()
     assert "human_requested" in reasons, "the escalation was swallowed by contact capture"
+
+
+# --------------------------------------------- escalation beyond English
+
+
+@pytest.mark.parametrize("message", [
+    # Reported verbatim from the live CBE demo. Matched none of the first
+    # pass: አለቃ (boss) and አመራር (management) were absent, and only ማነጋገር was
+    # listed, not the equally common መነጋገር.
+    "ከ አለቃ ወይም አመራር ጋር መነጋገር እፈልጋለው",
+    "ከአለቃው ጋር መነጋገር እፈልጋለሁ",
+    "ሰው መነጋገር እፈልጋለሁ",
+    "ተቆጣጣሪውን ማነጋገር እችላለሁ?",
+    "ኃላፊውን ማነጋገር እፈልጋለሁ",
+    # Oromo: the reported sentence matched on itti gaafatamaa alone, so the
+    # other two nouns in it were carrying no weight of their own.
+    "Bulchaa wajjiin haasa'uu barbaada",
+    "Hoogganaa wajjiin dubbachuu barbaada",
+])
+def test_escalation_is_recognised_in_amharic_and_oromo(
+    client: TestClient, demo_bank: Any, message: str
+) -> None:
+    assert _ask(client, message)["intent"] == "human_request", message
+
+
+@pytest.mark.parametrize("message", [
+    # ኃላፊነት is "liability" — ኃላፊ ("head") sits inside it, so a bare match
+    # turns a question about the bank's obligations into a demand for a
+    # manager. This is why that alternative carries (?!ነት).
+    "የባንኩ ኃላፊነት ምንድን ነው?",
+    # የገንዘብ አመራር is "money management" — a budgeting question, which is why
+    # አመራር only counts alongside a talk verb.
+    "የገንዘብ አመራር ምክር ይስጡኝ",
+    "የቁጠባ ሂሳብ እንዴት እከፍታለሁ?",
+    "የብድር ወለድ ስንት ነው?",
+])
+def test_ordinary_amharic_questions_are_not_escalation(
+    client: TestClient, demo_bank: Any, message: str
+) -> None:
+    """Over-refusal is the failure mode you cannot see from inside: a customer
+    asking a real question gets routed to a queue and nothing logs it wrong."""
+    assert _ask(client, message)["intent"] != "human_request", message
