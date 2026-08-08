@@ -391,7 +391,12 @@ def health(response: Response) -> HealthOut:
 def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     bank = _get_bank(db, slug)
     return {
-        "name": bank.name,
+        # What to put on screen. The widget's header and the admin's rail both
+        # read this, and both want what the bank is called rather than what it
+        # is registered as.
+        "name": bank.display_name,
+        # The registered name, for anywhere precision beats familiarity.
+        "legal_name": bank.name,
         "slug": bank.slug,
         "primary_color": bank.primary_color,
         "logo_url": bank.logo_url,
@@ -1259,12 +1264,16 @@ def integration_settings(
         "branding": {
             "primary_color": bank.primary_color,
             "logo_url": bank.logo_url,
-            "name": bank.name,
+            "short_name": bank.short_name,
+            "legal_name": bank.name,
+            "display_name": bank.display_name,
         },
     }
 
 
 class BrandingIn(BaseModel):
+    # Blank clears it and falls back to the registered name.
+    short_name: str | None = Field(default=None, max_length=64)
     # #rgb or #rrggbb. Validated because it is interpolated straight into a CSS
     # custom property in both the panel and the customer-facing widget, and an
     # unchecked string there is a stylesheet injection on a bank's own site.
@@ -1296,11 +1305,18 @@ def set_branding(
 
     bank.primary_color = payload.primary_color
     bank.logo_url = logo
+    bank.short_name = (payload.short_name or "").strip() or None
     _audit(db, bank, "branding_updated", "bank", bank.id,
-           {"primary_color": payload.primary_color, "logo_url": logo},
+           {"primary_color": payload.primary_color, "logo_url": logo,
+            "short_name": bank.short_name},
            actor=principal.audit_actor)
     db.commit()
-    return {"primary_color": bank.primary_color, "logo_url": bank.logo_url}
+    return {
+        "primary_color": bank.primary_color,
+        "logo_url": bank.logo_url,
+        "short_name": bank.short_name,
+        "display_name": bank.display_name,
+    }
 
 
 @app.get("/admin/api/{slug}/activity")
@@ -1626,7 +1642,8 @@ def analytics(
         # The bank's own name, not its slug. This report is printed and put in
         # front of people who have never seen the slug, and a page headed "cbe"
         # reads like an internal debug screen rather than their report.
-        "bank_name": bank.name,
+        "bank_name": bank.display_name,
+        "bank_legal_name": bank.name,
         "window_days": days,
         "since": since.isoformat() if since else None,
         "conversations": conversations,

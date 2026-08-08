@@ -237,9 +237,18 @@ def test_the_report_carries_the_banks_own_name(
     client: TestClient, cbe_bank: Any
 ) -> None:
     """This report gets printed and put in front of people who have never seen
-    the slug. A page headed "cbe" reads as an internal debug screen."""
+    the slug. A page headed "cbe" reads as an internal debug screen.
+
+    It now carries both names, and the distinction is the point: the heading is
+    what the bank is called, so it is recognisable at a glance, and the
+    registered name sits under it so the document is exact on inspection. A
+    board pack wants both, and picking one would have lost the other.
+    """
     data = client.get(
         "/admin/api/cbe/analytics", headers={"X-Admin-Token": cbe_bank.admin_token}
     ).json()
-    assert data["bank_name"] == cbe_bank.name
+    assert data["bank_name"] == "CBE"
+    assert data["bank_legal_name"] == cbe_bank.name
+    # Neither is the slug, which is the failure this test was written for.
     assert data["bank_name"] != "cbe"
+    assert data["bank_legal_name"] != "cbe"

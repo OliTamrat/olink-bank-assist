@@ -624,8 +624,11 @@ function applyBrand(slug) {
   }).then(function (b) {
     if (!b) return null;
     if (b.primary_color) document.documentElement.style.setProperty("--brand", b.primary_color);
-    var initials = (b.name || slug).replace(/[^A-Za-zሀ-፿ ]/g, "")
-      .split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase();
+    var clean = (b.name || slug).replace(/[^A-Za-zሀ-፿ ]/g, "").trim();
+    // "CBE" is already a mark — first-letter-of-each-word would show "C".
+    var initials = /^[A-Z]{2,4}$/.test(clean) ? clean
+      : clean.split(/\s+/).filter(Boolean).slice(0, 2)
+          .map(function (w) { return w[0]; }).join("").toUpperCase();
     [$("gate-mark"), $("side-mark")].forEach(function (el) {
       if (b.logo_url) {
         // Rendered rather than described: a bank's mark is the first thing it
@@ -923,7 +926,11 @@ function loadDashboard() {
     var qRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) > -1; });
     var otherRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) < 0; });
 
+    // Brand in the heading so the page is recognisable across a table; the
+    // registered name beneath it so the document is exact when read closely.
     var h = '<div class="printonly stamp"><h1>' + esc(a.bank_name) + " — assistant report</h1>" +
+      (a.bank_legal_name && a.bank_legal_name !== a.bank_name
+        ? "<div>" + esc(a.bank_legal_name) + "</div>" : "") +
       "<div>" + (a.window_days ? "Last " + a.window_days + " days" : "All time") +
       " · generated " + new Date().toLocaleString() + "</div></div>";
 
@@ -1599,6 +1606,13 @@ function renderSettings(cfg) {
     '<div class="panel"><h3>Branding</h3>' +
     '<div class="meta" style="margin-bottom:12px">Your colour and logo, used in this panel ' +
     'and in the chat widget on your website. Saved values apply immediately — no deploy.</div>' +
+    '<div class="field"><label>Brand name</label>' +
+    '<input id="br-short" value="' + esc(br.short_name || "") + '" placeholder="' +
+      esc(br.legal_name || "") + '"></div>' +
+    '<div class="meta" style="margin-bottom:12px">What people call you — "CBE". Shown in ' +
+    "the chat header, this panel and greetings to customers. Leave blank to use your " +
+    "registered name, " + esc(br.legal_name || "") + ", which is kept either way for " +
+    "printed reports.</div>" +
     '<div class="grid2"><div class="field"><label>Brand colour</label>' +
     '<div style="display:flex;gap:8px;align-items:center">' +
     '<input type="color" id="br-color" value="' + esc(br.primary_color || "#0f766e") +
@@ -1659,7 +1673,8 @@ function renderSettings(cfg) {
     api("/branding", { method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         primary_color: $("br-hex").value.trim() || $("br-color").value,
-        logo_url: $("br-logo").value.trim() || null
+        logo_url: $("br-logo").value.trim() || null,
+        short_name: $("br-short").value.trim() || null
       }) })
       .then(function () { setStatus("Branding saved"); applyBrand(state.slug); loadSettings(); })
       .catch(function (e) { setStatus(e.message); });

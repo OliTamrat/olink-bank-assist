@@ -38,6 +38,9 @@ def seed_prospect_bank(
     slug: str,
     name: str,
     primary_color: str,
+    # What the bank is actually called, when that differs from its registered
+    # name. Left unset for a bank whose full name is what people say.
+    short_name: str | None = None,
     disclaimer: str,
     docs: list[dict[str, str]],
 ) -> tuple[Bank, bool]:
@@ -59,7 +62,8 @@ def seed_prospect_bank(
             ensure_builtin_roles(db, existing.id)
             db.commit()
             return existing, False
-        bank = Bank(slug=slug, name=name, primary_color=primary_color, disclaimer=disclaimer)
+        bank = Bank(slug=slug, name=name, short_name=short_name,
+                    primary_color=primary_color, disclaimer=disclaimer)
         db.add(bank)
         db.flush()
         ensure_builtin_roles(db, bank.id)

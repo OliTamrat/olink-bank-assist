@@ -289,3 +289,62 @@ def test_an_operator_cannot_restyle_the_banks_widget(
     assert ops.put(
         "/admin/api/demo/branding", json={"primary_color": "#000000"}
     ).status_code == 403
+
+
+def test_the_brand_name_is_shown_and_the_registered_name_is_kept(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """Both names, used in different places, because both are needed.
+
+    A straight rename would have been wrong in both directions: the registered
+    name does not fit a chat header and is not what anybody calls the bank,
+    while the short name on a printed report or inside the model's prompt
+    throws away precision exactly where it is wanted.
+    """
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    resp = admin.put(
+        "/admin/api/demo/branding",
+        json={"primary_color": "#722282", "short_name": "CBE"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["display_name"] == "CBE"
+
+    # The widget and the panel read this, and both want the brand.
+    pub = client.get("/banks/demo/public").json()
+    assert pub["name"] == "CBE"
+    assert pub["legal_name"] == demo_bank.name
+
+    # The printed report leads with the brand and keeps the registered name.
+    a = admin.get("/admin/api/demo/analytics?days=30").json()
+    assert a["bank_name"] == "CBE"
+    assert a["bank_legal_name"] == demo_bank.name
+
+
+def test_clearing_the_brand_name_falls_back_to_the_registered_one(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """A bank whose full name is what people say needs nothing set."""
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    admin.put("/admin/api/demo/branding",
+              json={"primary_color": "#722282", "short_name": "CBE"})
+    admin.put("/admin/api/demo/branding",
+              json={"primary_color": "#722282", "short_name": "   "})
+    assert client.get("/banks/demo/public").json()["name"] == demo_bank.name
+
+
+def test_the_assistant_recognises_both_names_as_this_bank(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """A customer types "CBE"; a comparison question spells it out in full.
+
+    Recognising only one of them means the other reads as a rival bank being
+    asked about, which routes the turn down the comparison path.
+    """
+    from bankassist.agent import _bank_aliases
+
+    demo_bank.short_name = "CBE"
+    db_session.commit()
+    aliases = _bank_aliases(demo_bank)
+    assert "CBE" in aliases
+    assert demo_bank.name in aliases
+    assert demo_bank.slug in aliases
