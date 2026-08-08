@@ -39,8 +39,25 @@ class Bank(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # The registered name, e.g. "Commercial Bank of Ethiopia". Kept separate
+    # from what the bank is actually called because both are needed and they
+    # are needed in different places.
     name: Mapped[str] = mapped_column(String(200))
+    # What customers and staff call it — "CBE". Nullable; the full name is the
+    # fallback, so a bank with no distinct short form needs nothing set.
+    #
+    # This exists because a straight rename would have been wrong in both
+    # directions. "Commercial Bank of Ethiopia" in a chat header and a sidebar
+    # is nobody's name for it and does not fit either. "CBE" on a printed
+    # report in a board pack, or inside the model prompt, loses the registered
+    # name at exactly the moment precision matters.
+    short_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     primary_color: Mapped[str] = mapped_column(String(16), default="#0f766e")
+
+    @property
+    def display_name(self) -> str:
+        """What to put in front of a person. Brand first, registered name if none."""
+        return self.short_name or self.name
     # Optional tenant logo, rendered in the widget header in place of the
     # name's initials. A brand colour alone leaves tenants looking like the
     # same product with a different tint — the logo is what makes a bank

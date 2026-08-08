@@ -391,7 +391,12 @@ def health(response: Response) -> HealthOut:
 def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     bank = _get_bank(db, slug)
     return {
-        "name": bank.name,
+        # What to put on screen. The widget's header and the admin's rail both
+        # read this, and both want what the bank is called rather than what it
+        # is registered as.
+        "name": bank.display_name,
+        # The registered name, for anywhere precision beats familiarity.
+        "legal_name": bank.name,
         "slug": bank.slug,
         "primary_color": bank.primary_color,
         "logo_url": bank.logo_url,
@@ -1140,11 +1145,25 @@ def delete_document(
 
 @app.get("/admin/api/{slug}/conversations")
 def list_conversations(
-    principal: Principal = NeedsConversationsRead, db: Session = Depends(get_db)
+    language: str | None = None,
+    channel: str | None = None,
+    principal: Principal = NeedsConversationsRead,
+    db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
+    """Recent conversations, optionally narrowed.
+
+    The filters exist so the dashboard's language and channel rows can be
+    clicked through to the conversations they count. A figure you cannot open
+    is a figure you have to take on trust.
+    """
     bank = principal.bank
+    where = [Conversation.bank_id == bank.id]
+    if language:
+        where.append(Conversation.language == language)
+    if channel:
+        where.append(Conversation.channel == channel)
     convos = db.execute(
-        select(Conversation).where(Conversation.bank_id == bank.id)
+        select(Conversation).where(*where)
         .order_by(Conversation.created_at.desc()).limit(100)
     ).scalars().all()
     return [
@@ -1214,6 +1233,90 @@ def list_handoffs(
         }
         for h in rows
     ]
+
+
+@app.get("/admin/api/{slug}/integrations")
+def integration_settings(
+    principal: Principal = NeedsIntegrationsManage, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """What is currently wired up. Never the secrets.
+
+    The settings screen shipped with empty fields whether or not anything was
+    connected, which is worse than merely unhelpful here: the one control on
+    that page decides where customers' names and phone numbers are delivered,
+    and someone who cannot see the current value can disconnect it by saving a
+    field they believed was already blank.
+
+    The webhook URL is returned; its signing secret is not, and neither is the
+    Telegram bot token. Both are shown once when set and never readable
+    afterwards — a value the API will re-display is a value that ends up in a
+    screenshot.
+    """
+    bank = principal.bank
+    return {
+        "handoff_webhook": {
+            "connected": bool(bank.handoff_webhook_url),
+            "url": bank.handoff_webhook_url,
+            # So the screen can say the secret exists without revealing it.
+            "has_secret": bool(bank.handoff_webhook_secret),
+        },
+        "telegram": {"connected": bool(bank.telegram_bot_token)},
+        "branding": {
+            "primary_color": bank.primary_color,
+            "logo_url": bank.logo_url,
+            "short_name": bank.short_name,
+            "legal_name": bank.name,
+            "display_name": bank.display_name,
+        },
+    }
+
+
+class BrandingIn(BaseModel):
+    # Blank clears it and falls back to the registered name.
+    short_name: str | None = Field(default=None, max_length=64)
+    # #rgb or #rrggbb. Validated because it is interpolated straight into a CSS
+    # custom property in both the panel and the customer-facing widget, and an
+    # unchecked string there is a stylesheet injection on a bank's own site.
+    primary_color: str = Field(pattern=r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+    logo_url: str | None = Field(default=None, max_length=500)
+
+
+@app.put("/admin/api/{slug}/branding")
+def set_branding(
+    payload: BrandingIn,
+    principal: Principal = NeedsIntegrationsManage,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The bank's own colour and logo, editable without a deploy.
+
+    Seeded values are our reading of a bank's public site, which is a guess
+    however carefully it is made — the shade sampled from a screenshot is not
+    the one in the brand book. Rather than have every correction be a code
+    change, the tenant sets it here and both the admin panel and the widget
+    follow immediately.
+
+    https only for the logo: the widget is embedded on the bank's own pages,
+    and an http image there turns their padlock into a mixed-content warning.
+    """
+    bank = principal.bank
+    logo = (payload.logo_url or "").strip() or None
+    if logo is not None and not logo.startswith("https://"):
+        raise HTTPException(status_code=422, detail="Logo URL must be https")
+
+    bank.primary_color = payload.primary_color
+    bank.logo_url = logo
+    bank.short_name = (payload.short_name or "").strip() or None
+    _audit(db, bank, "branding_updated", "bank", bank.id,
+           {"primary_color": payload.primary_color, "logo_url": logo,
+            "short_name": bank.short_name},
+           actor=principal.audit_actor)
+    db.commit()
+    return {
+        "primary_color": bank.primary_color,
+        "logo_url": bank.logo_url,
+        "short_name": bank.short_name,
+        "display_name": bank.display_name,
+    }
 
 
 @app.get("/admin/api/{slug}/activity")
@@ -1441,6 +1544,18 @@ def analytics(
             .group_by(Conversation.language)
         ).all()
     ]
+    # Every language the assistant supports, including those nobody has used
+    # yet. A panel that lists only what has been spoken answers "what came in";
+    # a bank looking at it is usually asking the other question — "are we
+    # covered" — and Tigrinya missing from the list reads as unsupported
+    # rather than as unused. Zero here is a real count, not a rate with no
+    # denominator, so showing it states a fact rather than implying a failure.
+    seen = {row["language"] for row in languages}
+    for code in SUPPORTED_LANGUAGES:
+        if code not in seen:
+            languages.append(
+                {"language": code, "name": LANGUAGE_NAMES[code], "count": 0}
+            )
     languages.sort(key=lambda row: (-int(row["count"]), str(row["language"])))
 
     channels = [
@@ -1527,7 +1642,8 @@ def analytics(
         # The bank's own name, not its slug. This report is printed and put in
         # front of people who have never seen the slug, and a page headed "cbe"
         # reads like an internal debug screen rather than their report.
-        "bank_name": bank.name,
+        "bank_name": bank.display_name,
+        "bank_legal_name": bank.name,
         "window_days": days,
         "since": since.isoformat() if since else None,
         "conversations": conversations,

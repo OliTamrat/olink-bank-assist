@@ -411,7 +411,16 @@ def seed() -> tuple[Bank, bool]:
     return seed_prospect_bank(
         slug=CBE_SLUG,
         name=CBE_NAME,
-        primary_color="#7a1f2b",
+        # Nobody says "Commercial Bank of Ethiopia". The registered name stays
+        # on the printed report and in the model prompt; this is what goes in
+        # front of a customer and on the panel.
+        short_name="CBE",
+        # CBE's own purple, read off combanketh.et — the maroon here before was
+        # simply wrong. Read off a screenshot rather than from a brand book, so
+        # treat it as a good default and not as authoritative: the Branding
+        # panel in Settings lets CBE correct it without a deploy, which is why
+        # a guess is acceptable here at all.
+        primary_color="#722282",
         disclaimer=prospect_disclaimer("CBE", CBE_NAME),
         docs=_DOCS,
     )

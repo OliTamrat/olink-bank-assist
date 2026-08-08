@@ -117,12 +117,37 @@ textarea { min-height: 170px; resize: vertical; }
 .hidden { display: none !important; }
 
 /* ---------------------------------------------------------------- shell */
-.shell { display: grid; grid-template-columns: 236px 1fr; min-height: 100vh;
+.shell { display: grid; grid-template-columns: var(--rail) 1fr; min-height: 100vh;
+  transition: grid-template-columns .16s ease;
   /* The rail is sticky and one viewport tall, so on a long page the grid
      column beneath it showed the page background — a dark bar that stopped
      halfway down. Painting the stripe on the container keeps it whole at any
      scroll position without making the rail itself scroll. */
-  background: linear-gradient(to right, var(--side) 0 236px, var(--bg) 236px); }
+  background: linear-gradient(to right, var(--side) 0 var(--rail), var(--bg) var(--rail)); }
+/* Collapsed keeps the icons and the queue badge — a rail that hides how many
+   escalations are waiting has given up the reason it is always on screen. */
+:root { --rail: 236px; }
+:root[data-rail="mini"] { --rail: 62px; }
+[data-rail="mini"] .side-name, [data-rail="mini"] .side-sub,
+[data-rail="mini"] .navitem .label, [data-rail="mini"] .who .n,
+[data-rail="mini"] .who .r { display: none; }
+[data-rail="mini"] .side { padding: 16px 8px; align-items: center; }
+[data-rail="mini"] .side-brand { padding: 4px 0 18px; justify-content: center; }
+[data-rail="mini"] .navitem { justify-content: center; padding: 10px 0; }
+[data-rail="mini"] .who { justify-content: center; padding: 4px 0 10px; }
+[data-rail="mini"] .badge {
+  position: absolute; transform: translate(12px, -12px);
+  padding: 0 5px; min-width: 17px; font-size: 10px;
+}
+[data-rail="mini"] .navitem { position: relative; }
+.railtoggle {
+  background: none; border: none; color: var(--side-text); cursor: pointer;
+  padding: 7px 10px; border-radius: 9px; width: 100%; text-align: left;
+  display: flex; align-items: center; gap: 10px; font-size: 13.5px;
+}
+.railtoggle:hover { background: var(--side-2); color: #fff; }
+[data-rail="mini"] .railtoggle { justify-content: center; padding: 10px 0; }
+[data-rail="mini"] .railtoggle .label { display: none; }
 .side {
   background: var(--side); color: var(--side-text);
   display: flex; flex-direction: column; padding: 16px 12px;
@@ -132,8 +157,13 @@ textarea { min-height: 170px; resize: vertical; }
 .side-mark {
   width: 32px; height: 32px; border-radius: 9px; background: var(--brand);
   display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px;
-  flex: none;
+  flex: none; overflow: hidden;
 }
+/* When a bank supplies a logo it replaces the initials tile rather than
+   sitting beside it. White behind it because most bank logos are drawn for
+   paper — CBE's is gold line-work, which disappears on a dark tile. */
+.side-mark.haslogo, .gate-mark.haslogo { background: #fff; }
+.side-mark img, .gate-mark img { width: 100%; height: 100%; object-fit: contain; }
 .side-name { font-size: 13.5px; font-weight: 600; color: #fff; line-height: 1.25;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-sub { font-size: 11px; color: #6f7b93; }
@@ -201,7 +231,10 @@ main { padding: 20px 24px 40px; }
 .kpi { background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 15px 16px; }
 .kpi { display: flex; gap: 12px; align-items: flex-start; }
-.kpi .txt { flex: 1; min-width: 0; }
+/* The delta sits on the card's bottom edge rather than under whatever height
+   the text above happened to take, so the four read as one row of cards. */
+.kpi .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100%; }
+.kpi .delta { margin-top: auto; padding-top: 8px; }
 /* The circular tinted icon from the reference. Purely decorative, so it is
    aria-hidden — a screen reader announcing "chart icon" before every number
    would be noise. */
@@ -216,6 +249,15 @@ main { padding: 20px 24px 40px; }
    content" wraps and drops its value below the other three, which reads as a
    misalignment rather than as a longer label. */
 .kpi .k { font-size: 12.5px; color: var(--muted); line-height: 1.35; height: 2.7em; }
+/* Anything that opens the rows behind it says so on hover. Only figures with
+   a genuine destination are made clickable — a card that looks interactive
+   and goes nowhere is worse than one that plainly does not. */
+.drill { cursor: pointer; transition: border-color .12s, transform .12s; }
+.drill:hover { border-color: color-mix(in srgb, var(--brand) 55%, var(--line)); }
+.kpi.drill:hover { transform: translateY(-1px); }
+.drill .k::after, .bar.drill span:first-child::after,
+.topic.drill span:last-child::after { content: " ›"; color: var(--faint); }
+.bar.drill:hover span:first-child, .topic.drill:hover span:last-child { color: var(--brand); }
 /* A delta is only drawn when there is a named previous window to compare
    with. An arrow with no stated baseline is decoration that reads as
    evidence. */
@@ -235,11 +277,44 @@ main { padding: 20px 24px 40px; }
 .panel > h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em;
   color: var(--muted); margin-bottom: 12px; }
 .grid2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; align-items: start; }
+
+/* Explicit rows, not two independent columns.
+ *
+ * The first version stacked panels in a 1.6fr / 1fr split and let each column
+ * end wherever its contents ran out. Measured, that produced eight panels
+ * between 118px and 466px tall whose edges never lined up across the gutter —
+ * which is exactly what "unarranged" looks like, and no amount of adjusting
+ * individual card padding would have fixed it.
+ *
+ * Rows fix it structurally: grid stretches every cell in a row to the tallest,
+ * so each row has one top edge and one bottom edge. Panels are then PAIRED BY
+ * WEIGHT rather than by topic — the two short ones share a column beside the
+ * chart, the two mid-sized ones sit together — so the stretching is a few
+ * pixels rather than a card of mostly empty space.
+ */
+.row { display: grid; gap: 14px; margin-bottom: 14px; align-items: stretch; }
+.row-main { grid-template-columns: 2fr 1fr; }
+.row-half { grid-template-columns: 1fr 1fr; }
+.row > .panel, .stack > .panel { margin-bottom: 0; }
+.stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* The last panel in a stack absorbs any slack, so the column ends flush with
+   its neighbour instead of leaving a gap under the final card. */
+.stack > .panel:last-child { flex: 1; }
+.row > .panel { min-width: 0; display: flex; flex-direction: column; }
+/* A bar group takes the slack in a stretched card and centres in it, so the
+   card looks sized rather than merely tall. */
+.barwrap { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.topicwrap { flex: 1; }
+.chartwrap { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+@media (max-width: 1100px) {
+  .row-main, .row-half { grid-template-columns: 1fr; }
+}
 @media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } .shell { grid-template-columns: 1fr; }
   .side { position: static; height: auto; } }
 
 /* ---------------------------------------------------------------- chart */
-.chart { width: 100%; height: 190px; display: block; }
+.chart { width: 100%; display: block; }
 .chart .line { fill: none; stroke: var(--brand); stroke-width: 2; }
 .chart .area { fill: url(#brandfade); }
 .chart .gl { stroke: var(--line); stroke-width: 1; }
@@ -259,6 +334,15 @@ main { padding: 20px 24px 40px; }
 .tip.on { opacity: 1; }
 
 /* --------------------------------------------------------- activity feed */
+/* Capped and scrolled rather than allowed to run. A feed is unbounded by
+   nature, so left alone it sets the height of the whole right-hand column and
+   drags the layout out of balance with whatever is beside it. */
+.feedscroll { max-height: 208px; overflow-y: auto; }
+.feedscroll::-webkit-scrollbar { width: 8px; }
+.feedscroll::-webkit-scrollbar-thumb {
+  background: var(--line); border-radius: 99px;
+}
+.feedscroll::-webkit-scrollbar-track { background: transparent; }
 .feed { display: flex; gap: 11px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .feed:last-child { border-bottom: none; }
 .feed .tile {
@@ -274,7 +358,7 @@ main { padding: 20px 24px 40px; }
 .preview { padding: 0; overflow: hidden; }
 .preview h3 { padding: 16px 16px 0; }
 .preview .frame {
-  width: 100%; height: 380px; border: none; display: block;
+  width: 100%; height: 360px; border: none; display: block;
   border-top: 1px solid var(--line); margin-top: 12px; background: var(--surface);
 }
 .preview .cap { padding: 10px 16px; font-size: 11.5px; color: var(--faint);
@@ -438,6 +522,9 @@ td.title { color: var(--ink); font-weight: 550; }
     </div>
     <nav id="nav"></nav>
     <div class="side-foot">
+      <button class="railtoggle" id="rail-toggle" title="Collapse or expand the sidebar">
+        <span id="rail-glyph">‹‹</span><span class="label">Collapse</span>
+      </button>
       <div class="who">
         <div class="avatar" id="who-avatar">?</div>
         <div style="min-width:0">
@@ -537,11 +624,26 @@ function applyBrand(slug) {
   }).then(function (b) {
     if (!b) return null;
     if (b.primary_color) document.documentElement.style.setProperty("--brand", b.primary_color);
-    var initials = (b.name || slug).replace(/[^A-Za-zሀ-፿ ]/g, "")
-      .split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase();
-    $("gate-mark").textContent = initials || "BA";
-    $("side-mark").textContent = initials || "BA";
+    var clean = (b.name || slug).replace(/[^A-Za-zሀ-፿ ]/g, "").trim();
+    // "CBE" is already a mark — first-letter-of-each-word would show "C".
+    var initials = /^[A-Z]{2,4}$/.test(clean) ? clean
+      : clean.split(/\s+/).filter(Boolean).slice(0, 2)
+          .map(function (w) { return w[0]; }).join("").toUpperCase();
+    [$("gate-mark"), $("side-mark")].forEach(function (el) {
+      if (b.logo_url) {
+        // Rendered rather than described: a bank's mark is the first thing it
+        // looks for, and initials on a coloured tile read as a placeholder.
+        el.innerHTML = '<img src="' + esc(b.logo_url) + '" alt="' + esc(b.name || slug) + '">';
+        el.classList.add("haslogo");
+      } else {
+        el.textContent = initials || "BA";
+        el.classList.remove("haslogo");
+      }
+    });
     $("side-name").textContent = b.name || slug;
+    // Long names ellipsize in a 236px rail — "Commercial Bank ..." — so the
+    // full one stays reachable on hover rather than simply being lost.
+    $("side-name").title = b.name || slug;
     $("gate-title").textContent = "Sign in";
     $("gate-sub").textContent = b.name ? b.name + " — assistant administration" : "Olink Bank Assist";
     return b;
@@ -739,8 +841,9 @@ function delta(now, then, asRate) {
     (chg > 0 ? "▲ " : "▼ ") + Math.abs(chg) + "% vs previous period</span>";
 }
 
-function kpi(label, value, sub, isNone, iconName, deltaHtml) {
-  return '<div class="kpi">' +
+function kpi(label, value, sub, isNone, iconName, deltaHtml, drill) {
+  return '<div class="kpi' + (drill ? " drill" : "") + '"' +
+    (drill ? ' data-drill="' + drill + '" role="button" tabindex="0"' : "") + ">" +
     '<div class="txt"><div class="k">' + esc(label) + "</div>" +
     '<div class="v' + (isNone ? " none" : "") + '">' + value + "</div>" +
     (sub ? '<div class="sub">' + esc(sub) + "</div>" : "") +
@@ -751,21 +854,29 @@ function kpi(label, value, sub, isNone, iconName, deltaHtml) {
 
 function bars(rows, total, labeller) {
   if (!rows.length) return '<div class="empty">Nothing yet.</div>';
-  return rows.map(function (r) {
+  // Wrapped so the group can centre itself in a card the row has stretched.
+  // Left flush to the top, a short list in a tall card reads as an unfinished
+  // panel rather than a deliberate one.
+  return '<div class="barwrap">' + rows.map(function (r) {
     var pair = labeller(r);
     var share = total ? r.count / total : 0;
-    return '<div class="bar"><span>' + esc(pair[0]) + "</span>" +
+    // pair[2] is a destination. Rows with nothing behind them — a language
+    // nobody has used — stay inert rather than opening an empty list.
+    var drill = pair[2] && r.count ? pair[2] : null;
+    return '<div class="bar' + (drill ? " drill" : "") + '"' +
+      (drill ? ' data-drill="' + drill + '" role="button" tabindex="0"' : "") + ">" +
+      "<span>" + esc(pair[0]) + "</span>" +
       '<span class="track"><span class="fill' + (pair[1] ? " " + pair[1] : "") +
       '" style="width:' + (share * 100).toFixed(1) + '%"></span></span>' +
       '<span class="n">' + r.count + "</span></div>";
-  }).join("");
+  }).join("") + "</div>";
 }
 
 /* A real series from the analytics endpoint, with empty days present as zero.
    Drawn as inline SVG: no chart library, no CDN, and it prints. */
 function sparkArea(daily) {
   if (!daily || daily.length < 2) return '<div class="empty">Not enough days yet to draw a trend.</div>';
-  var w = 640, h = 190, padL = 34, padB = 22, padT = 10;
+  var w = 640, h = 224, padL = 34, padB = 22, padT = 10;
   var max = Math.max.apply(null, daily.map(function (d) { return d.conversations; }));
   var top = Math.max(max, 1);
   var iw = w - padL - 8, ih = h - padB - padT;
@@ -799,11 +910,13 @@ function sparkArea(daily) {
   // also stretches the glyphs and the stroke, which looks like a rendering
   // fault rather than a design. Scaling uniformly costs a few pixels of side
   // margin at unusual widths and keeps the type honest.
-  return '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" role="img" aria-label="Conversations per day">' +
+  return '<div class="chartwrap"><svg class="chart" viewBox="0 0 ' + w + " " + h +
+    '" role="img" aria-label="Conversations per day">' +
     '<defs><linearGradient id="brandfade" x1="0" x2="0" y1="0" y2="1">' +
     '<stop offset="0%" stop-color="var(--brand)" stop-opacity="0.22"/>' +
     '<stop offset="100%" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>' +
-    ticks + '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>' + labels + "</svg>";
+    ticks + '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>' +
+    labels + "</svg></div>";
 }
 
 function loadDashboard() {
@@ -813,7 +926,11 @@ function loadDashboard() {
     var qRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) > -1; });
     var otherRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) < 0; });
 
+    // Brand in the heading so the page is recognisable across a table; the
+    // registered name beneath it so the document is exact when read closely.
     var h = '<div class="printonly stamp"><h1>' + esc(a.bank_name) + " — assistant report</h1>" +
+      (a.bank_legal_name && a.bank_legal_name !== a.bank_name
+        ? "<div>" + esc(a.bank_legal_name) + "</div>" : "") +
       "<div>" + (a.window_days ? "Last " + a.window_days + " days" : "All time") +
       " · generated " + new Date().toLocaleString() + "</div></div>";
 
@@ -843,27 +960,71 @@ function loadDashboard() {
     h += '<div class="kpis">' +
       kpi("Conversations", num(a.conversations),
           a.window_days ? "last " + a.window_days + " days" : "all time", false, "convos",
-          prev && delta(a.conversations, prev.conversations)) +
+          prev && delta(a.conversations, prev.conversations),
+          can("conversations.read") && "convos") +
       kpi("Questions asked", num(a.substantive_questions),
           "greetings and thanks excluded", false, "gaps",
-          prev && delta(a.substantive_questions, prev.substantive_questions)) +
+          prev && delta(a.substantive_questions, prev.substantive_questions),
+          can("conversations.read") && "convos") +
+      /* The rate itself has no page behind it, but the failures it is short of
+         do: what did not get resolved went to the queue. */
       kpi("Resolved without a person", pct(a.deflection_rate),
           a.substantive_questions ? num(a.resolved_without_a_person) + " of " + num(a.substantive_questions) : "no questions yet",
           a.deflection_rate == null, "handoffs",
-          prev && delta(a.deflection_rate, prev.deflection_rate, true)) +
+          prev && delta(a.deflection_rate, prev.deflection_rate, true),
+          can("handoffs.read") && "handoffs") +
+      /* Short of 100% means questions your published content did not cover,
+         which is precisely what Content Gaps lists. */
       kpi("Answered from your own content", pct(a.own_content_rate),
           a.substantive_questions ? num(a.answered_from_own_content) + " of " + num(a.substantive_questions) : "no questions yet",
           a.own_content_rate == null, "docs",
-          prev && delta(a.own_content_rate, prev.own_content_rate, true)) +
+          prev && delta(a.own_content_rate, prev.own_content_rate, true),
+          can("gaps.read") && "gaps") +
       "</div>";
 
-    h += '<div class="grid2"><div>' +
+    /* Row 1 — the trend, beside the two smallest panels stacked. Paired by
+       weight: queue + channels together come out within a few pixels of the
+       chart, so nothing stretches into empty space. */
+    h += '<div class="row row-main">' +
       '<div class="panel"><h3>Conversations per day</h3>' + sparkArea(a.daily) + "</div>" +
+      '<div class="stack">' +
+      '<div class="panel"><h3>Escalation queue</h3>' +
+      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
+        (can("handoffs.read") ? ' data-drill="handoffs:open" role="button" tabindex="0"' : "") +
+        '><span>Open</span><span class="track"><span class="fill warn" style="width:' +
+        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.open / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
+        '%"></span></span><span class="n">' + a.handoffs.open + "</span></div>" +
+      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
+        (can("handoffs.read") ? ' data-drill="handoffs:closed" role="button" tabindex="0"' : "") +
+        '><span>Closed</span><span class="track"><span class="fill" style="width:' +
+        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.closed / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
+        '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div>" +
+      (a.handoffs.open
+        ? '<div class="note">' + num(a.handoffs.open_reachable) + " reachable" +
+          (a.handoffs.open_unreachable
+            ? " · " + num(a.handoffs.open_unreachable) + " with no contact details"
+            : "") + "</div>"
+        : "") +
+      "</div>" +
+      '<div class="panel"><h3>Channels</h3>' +
+      bars(a.channels, a.conversations, function (r) {
+        return [r.channel, "", can("conversations.read") && "convos:channel=" + r.channel];
+      }) + "</div>" +
+      "</div></div>";
+
+    /* Row 2 — the two mid-weight lists, which measured within 12px of each
+       other, so this row needs almost no stretching at all. */
+    h += '<div class="row row-half">' +
       '<div class="panel"><h3>What happened to each question</h3>' +
       bars(qRows, a.substantive_questions, function (r) {
         var cls = r.outcome === "unanswered" ? "bad"
           : (["human_request", "complaint", "account_blocked"].indexOf(r.outcome) > -1 ? "warn" : "");
-        return [OUTCOME_LABEL[r.outcome] || r.outcome, cls];
+        // Two of these have somewhere to go and the rest do not. "Answered
+        // from your content" has no page listing exactly those turns, and
+        // inventing one that filtered nothing would be a link that lies.
+        var to = r.outcome === "unanswered" ? (can("gaps.read") && "gaps")
+          : (r.outcome === "human_request" ? (can("handoffs.read") && "handoffs") : null);
+        return [OUTCOME_LABEL[r.outcome] || r.outcome, cls, to];
       }) +
       (otherRows.length ? '<div class="note">Also recorded: ' + otherRows.map(function (r) {
         return esc((OUTCOME_LABEL[r.outcome] || r.outcome) + " (" + r.count + ")"); }).join(", ") + "</div>" : "") +
@@ -872,37 +1033,26 @@ function loadDashboard() {
       "</div>" +
       '<div class="panel"><h3>Most asked</h3>' + (a.top_topics.length
         ? a.top_topics.map(function (t) {
-            return '<div class="topic"><span class="n">' + t.count + "</span><span>" +
+            var d = can("gaps.read");
+            return '<div class="topic' + (d ? " drill" : "") + '"' +
+              (d ? ' data-drill="gaps" role="button" tabindex="0"' : "") + ">" +
+              '<span class="n">' + t.count + "</span><span>" +
               esc(t.example) + "</span></div>";
           }).join("")
         : '<div class="empty">Nothing asked yet in this window.</div>') +
       '<div class="note">Grouped by wording. Phone numbers and names are removed before grouping.</div></div>' +
-      "</div><div>" +
-      '<div class="panel"><h3>Escalation queue</h3>' +
-      '<div class="bar"><span>Open</span><span class="track"><span class="fill warn" style="width:' +
-        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.open / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
-        '%"></span></span><span class="n">' + a.handoffs.open + "</span></div>" +
-      '<div class="bar"><span>Closed</span><span class="track"><span class="fill" style="width:' +
-        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.closed / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
-        '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div>" +
-      /* Restored after the rebuild dropped it. Of the people still waiting on
-         a callback, how many can actually be called — an open handoff with no
-         number on it is a dead letter, and that is the one fact about the
-         queue that changes what someone does next. */
-      (a.handoffs.open
-        ? '<div class="note">' + num(a.handoffs.open_reachable) + " reachable" +
-          (a.handoffs.open_unreachable
-            ? " · " + num(a.handoffs.open_unreachable) + " with no contact details"
-            : "") + "</div>"
-        : "") +
-      "</div>" +
+      "</div>";
+
+    /* Row 3 — coverage beside who did what. */
+    h += '<div class="row row-half">' +
       '<div class="panel"><h3>Languages</h3>' +
-      bars(a.languages, langTotal, function (r) { return [r.name || r.language, ""]; }) + "</div>" +
-      '<div class="panel"><h3>Channels</h3>' +
-      bars(a.channels, a.conversations, function (r) { return [r.channel, ""]; }) + "</div>" +
+      bars(a.languages, langTotal, function (r) {
+        return [r.name || r.language, "",
+                can("conversations.read") && "convos:language=" + r.language];
+      }) + "</div>" +
       '<div class="panel noprint" id="activity"><h3>Recent activity</h3>' +
       '<div class="empty">Loading…</div></div>' +
-      "</div></div>";
+      "</div>";
 
     /* What a bank most wants to see in a demo: the assistant as its own
        customers meet it, on the same page as the numbers it produces. The
@@ -921,6 +1071,7 @@ function loadDashboard() {
     $("dl-csv").onclick = exportAnalytics;
     $("do-print").onclick = function () { window.print(); };
     wireChartTip(a.daily);
+    wireDrills();
     loadActivity();
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
@@ -952,10 +1103,10 @@ function greeting() {
 function wireChartTip(daily) {
   var svg = document.querySelector(".chart");
   if (!svg || !daily || daily.length < 2) return;
-  var wrap = svg.parentNode;
+  var wrap = svg.parentNode;   // the .chartwrap the chart renders inside
   var tip = document.createElement("div");
   tip.className = "tip";
-  wrap.classList.add("chartwrap");
+  wrap.style.position = "relative";
   wrap.appendChild(tip);
 
   svg.addEventListener("mousemove", function (ev) {
@@ -1007,14 +1158,14 @@ function ago(iso) {
 function loadActivity() {
   var box = $("activity");
   if (!box) return;
-  api("/activity").then(function (rows) {
+  api("/activity?limit=30").then(function (rows) {
     box.innerHTML = "<h3>Recent activity</h3>" + (rows.length
-      ? rows.map(function (r) {
+      ? '<div class="feedscroll">' + rows.map(function (r) {
           return '<div class="feed"><div class="tile' + (r.by_token ? " token" : "") + '">' +
             icon(r.by_token ? "settings" : "team", 15) + "</div><div>" +
             '<div class="what">' + esc(ACTION_LABEL[r.action] || r.action.replace(/_/g, " ")) + "</div>" +
             '<div class="who">' + esc(r.actor) + " · " + esc(ago(r.at)) + "</div></div></div>";
-        }).join("")
+        }).join("") + "</div>"
       : '<div class="empty">Nothing yet.</div>');
   }).catch(function () {
     box.innerHTML = "<h3>Recent activity</h3><div class=\"empty\">Unavailable.</div>";
@@ -1127,6 +1278,38 @@ function loadHandoffs() {
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
+/* One handler for every drilled figure.
+ *
+ * A destination is "page" or "page:key=value". The filter is applied to the
+ * page's own state before it loads, so the list that opens is the one the
+ * number counted rather than the page's default view — clicking "telegram: 8"
+ * and landing on all channels would be a link that technically worked and
+ * answered a different question.
+ */
+function wireDrills() {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-drill]"), function (el) {
+    function go_() { drillTo(el.getAttribute("data-drill")); }
+    el.onclick = go_;
+    el.onkeydown = function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go_(); }
+    };
+  });
+}
+
+function drillTo(dest) {
+  var parts = dest.split(":");
+  var page = parts[0];
+  state.convoFilter = null;
+  if (parts[1]) {
+    var kv = parts[1].split("=");
+    if (page === "handoffs") state.hstatus = parts[1];
+    else if (page === "convos") state.convoFilter = { key: kv[0], value: kv[1] };
+  } else if (page === "handoffs") {
+    state.hstatus = "open";
+  }
+  go(page);
+}
+
 function wire(sel, attr, fn) {
   Array.prototype.forEach.call(document.querySelectorAll(sel), function (el) {
     el.onclick = function () { fn(el.getAttribute("data-" + attr), el); };
@@ -1171,8 +1354,18 @@ function exportHandoffs() {
 
 /* --------------------------------------------------------- conversations */
 function loadConvos() {
-  api("/conversations").then(function (rows) {
-    $("main").innerHTML = rows.length ? rows.map(function (c) {
+  var f = state.convoFilter;
+  api("/conversations" + (f ? "?" + f.key + "=" + encodeURIComponent(f.value) : ""))
+    .then(function (rows) {
+    // The filter is stated and removable. A list silently showing a subset is
+    // how someone concludes there were only eight conversations all month.
+    var head = f
+      ? '<div class="tools"><span class="pill">' + esc(f.key) + ": " + esc(f.value) +
+        '</span><button class="linky" id="clear-filter">Show all</button>' +
+        '<div style="flex:1"></div><span class="meta">' + rows.length +
+        " shown</span></div>"
+      : "";
+    $("main").innerHTML = head + (rows.length ? rows.map(function (c) {
       return '<div class="panel"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
         '<span class="pill">' + esc(c.channel) + "</span>" +
         '<span class="meta">' + new Date(c.created_at).toLocaleString() + "</span>" +
@@ -1180,8 +1373,11 @@ function loadConvos() {
         '<div style="flex:1"></div>' +
         '<button class="btn ghost sm" data-msgs="' + esc(c.id) + '">View messages</button></div>' +
         '<div id="m-' + esc(c.id) + '"></div></div>';
-    }).join("") : '<div class="empty">No conversations yet.</div>';
+    }).join("") : '<div class="empty">No conversations match.</div>');
     wire("[data-msgs]", "msgs", loadMsgs);
+    if ($("clear-filter")) {
+      $("clear-filter").onclick = function () { state.convoFilter = null; loadConvos(); };
+    }
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
@@ -1400,16 +1596,51 @@ function setUserActive(id, active) {
 
 /* ------------------------------------------------------------ settings */
 function loadSettings() {
+  renderSettings({ handoff_webhook: {}, telegram: {} });
+  api("/integrations").then(renderSettings).catch(function () {});
+}
+
+function renderSettings(cfg) {
+  var hw = cfg.handoff_webhook || {}, tg = cfg.telegram || {}, br = cfg.branding || {};
   $("main").innerHTML =
+    '<div class="panel"><h3>Branding</h3>' +
+    '<div class="meta" style="margin-bottom:12px">Your colour and logo, used in this panel ' +
+    'and in the chat widget on your website. Saved values apply immediately — no deploy.</div>' +
+    '<div class="field"><label>Brand name</label>' +
+    '<input id="br-short" value="' + esc(br.short_name || "") + '" placeholder="' +
+      esc(br.legal_name || "") + '"></div>' +
+    '<div class="meta" style="margin-bottom:12px">What people call you — "CBE". Shown in ' +
+    "the chat header, this panel and greetings to customers. Leave blank to use your " +
+    "registered name, " + esc(br.legal_name || "") + ", which is kept either way for " +
+    "printed reports.</div>" +
+    '<div class="grid2"><div class="field"><label>Brand colour</label>' +
+    '<div style="display:flex;gap:8px;align-items:center">' +
+    '<input type="color" id="br-color" value="' + esc(br.primary_color || "#0f766e") +
+      '" style="width:52px;padding:3px;flex:none">' +
+    '<input id="br-hex" value="' + esc(br.primary_color || "") + '" placeholder="#722282"></div></div>' +
+    '<div class="field"><label>Logo URL (https)</label>' +
+    '<input id="br-logo" value="' + esc(br.logo_url || "") + '" placeholder="https://your-bank.et/logo.png"></div>' +
+    "</div>" +
+    '<div class="meta" style="margin-bottom:12px">Seeded colours are our reading of your ' +
+    "public site, not your brand book. If it is wrong, this is where to fix it.</div>" +
+    '<button class="btn sm" id="br-save">Save branding</button></div>' +
     '<div class="panel"><h3>Escalation webhook</h3>' +
+    '<div style="margin-bottom:10px"><span class="pill ' + (hw.connected ? "on" : "off") + '">' +
+      (hw.connected ? "Connected" : "Not connected") + "</span></div>" +
     '<div class="meta" style="margin-bottom:12px">Where escalations are delivered in your contact-centre tool. ' +
-    'Requests are signed, so the receiving system can verify they came from us. Leave empty to disconnect.</div>' +
-    '<div class="field"><input id="hw-url" placeholder="https://your-system.example/hooks/olink"></div>' +
+    'Requests are signed, so the receiving system can verify they came from us. Clear the field to disconnect.</div>' +
+    '<div class="field"><input id="hw-url" placeholder="https://your-system.example/hooks/olink" value="' +
+      esc(hw.url || "") + '"></div>' +
+    (hw.has_secret ? '<div class="meta" style="margin-bottom:10px">A signing secret is set. It cannot be shown ' +
+      "again — saving a URL here issues a new one and the old one stops working.</div>" : "") +
     '<button class="btn sm" id="hw-save">Save</button></div>' +
     '<div class="panel"><h3>Telegram</h3>' +
-    '<div class="meta" style="margin-bottom:12px">Connect a bot so customers can reach the assistant on Telegram.</div>' +
+    '<div style="margin-bottom:10px"><span class="pill ' + (tg.connected ? "on" : "off") + '">' +
+      (tg.connected ? "Connected" : "Not connected") + "</span></div>" +
+    '<div class="meta" style="margin-bottom:12px">Connect a bot so customers can reach the assistant on Telegram.' +
+      (tg.connected ? " Entering a new token replaces the current bot." : "") + "</div>" +
     '<div class="field"><input id="tg-token" placeholder="Bot token from @BotFather" type="password"></div>' +
-    '<button class="btn sm" id="tg-save">Connect</button></div>' +
+    '<button class="btn sm" id="tg-save">' + (tg.connected ? "Replace bot" : "Connect") + "</button></div>" +
     (state.me ? '<div class="panel"><h3>Your password</h3>' +
       '<div class="grid2"><div class="field"><label>Current</label><input id="pw-old" type="password"></div>' +
       '<div class="field"><label>New (12+ characters)</label><input id="pw-new" type="password"></div></div>' +
@@ -1419,13 +1650,33 @@ function loadSettings() {
   $("hw-save").onclick = function () {
     api("/handoff-webhook", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: $("hw-url").value.trim() || null }) })
-      .then(function (r) { setStatus(r.url ? "Webhook connected" : "Webhook disconnected"); })
+      .then(function (r) {
+        setStatus(r.connected ? "Webhook connected" : "Webhook disconnected");
+        loadSettings();
+      })
       .catch(function (e) { setStatus(e.message); });
   };
   $("tg-save").onclick = function () {
     api("/telegram/connect", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bot_token: $("tg-token").value.trim() }) })
-      .then(function () { setStatus("Telegram connected"); })
+      .then(function () { setStatus("Telegram connected"); loadSettings(); })
+      .catch(function (e) { setStatus(e.message); });
+  };
+  // Keep the swatch and the hex box showing the same value, whichever is used.
+  $("br-color").oninput = function () { $("br-hex").value = $("br-color").value; };
+  $("br-hex").oninput = function () {
+    if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test($("br-hex").value)) {
+      $("br-color").value = $("br-hex").value;
+    }
+  };
+  $("br-save").onclick = function () {
+    api("/branding", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        primary_color: $("br-hex").value.trim() || $("br-color").value,
+        logo_url: $("br-logo").value.trim() || null,
+        short_name: $("br-short").value.trim() || null
+      }) })
+      .then(function () { setStatus("Branding saved"); applyBrand(state.slug); loadSettings(); })
       .catch(function (e) { setStatus(e.message); });
   };
   if ($("pw-save")) {
@@ -1450,8 +1701,20 @@ function applyTheme(name) {
   if (g) g.textContent = name === "light" ? "☀" : "☾";
 }
 
+function applyRail(mode) {
+  if (mode === "mini") document.documentElement.setAttribute("data-rail", "mini");
+  else document.documentElement.removeAttribute("data-rail");
+  localStorage.setItem("ba_rail", mode);
+  var g = $("rail-glyph");
+  if (g) g.textContent = mode === "mini" ? "››" : "‹‹";
+}
+
 /* ------------------------------------------------------------ boot */
 applyTheme(localStorage.getItem("ba_theme") || "dark");
+applyRail(localStorage.getItem("ba_rail") || "full");
+$("rail-toggle").onclick = function () {
+  applyRail(localStorage.getItem("ba_rail") === "mini" ? "full" : "mini");
+};
 $("theme-toggle").onclick = function () {
   applyTheme(localStorage.getItem("ba_theme") === "light" ? "dark" : "light");
 };

@@ -402,8 +402,11 @@
   function scroll() { chat.scrollTop = chat.scrollHeight; }
 
   function initials(name) {
-    return String(name).replace(/[^A-Za-zሀ-፿ ]/g, "").split(/\s+/)
-      .filter(Boolean).slice(0, 2)
+    var clean = String(name).replace(/[^A-Za-zሀ-፿ ]/g, "").trim();
+    // A name that is already a mark is its own initials. Reducing "CBE" to the
+    // first letter of its only word renders the country's largest bank as "C".
+    if (/^[A-Z]{2,4}$/.test(clean)) return clean;
+    return clean.split(/\s+/).filter(Boolean).slice(0, 2)
       .map(function (w) { return w[0]; }).join("").toUpperCase() || "AI";
   }
 

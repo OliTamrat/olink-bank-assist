@@ -96,7 +96,12 @@ RESOLVED = (ANSWERED, GENERAL_GUIDANCE, ACCOUNT_BLOCKED, COMPARISON)
 
 
 def _bank_aliases(bank: Bank) -> tuple[str, ...]:
-    return tuple({alias for alias in (bank.slug, bank.name) if alias})
+    # Both names, and the slug. A customer types "CBE"; a comparison question
+    # might spell out "Commercial Bank of Ethiopia". Recognising only one of
+    # them means the other reads as a rival bank being asked about.
+    return tuple(
+        {alias for alias in (bank.slug, bank.name, bank.short_name) if alias}
+    )
 
 
 @dataclass
@@ -129,7 +134,7 @@ class ChatResult:
 
 
 def _extractive_answer(bank: Bank, chunks: list[RetrievedChunk], language: str) -> str:
-    intro = t(language, "fallback_intro", bank=bank.name)
+    intro = t(language, "fallback_intro", bank=bank.display_name)
     body = "\n\n".join(c.text for c in chunks[:MAX_FALLBACK_CHUNKS])
     return f"{intro}\n\n{body}"
 
@@ -369,9 +374,9 @@ def handle_message(
         )
     elif intent == classifier.GREETING:
         greeting = (
-            t(language, "greeting_named", bank=bank.name, name=name)
+            t(language, "greeting_named", bank=bank.display_name, name=name)
             if name
-            else t(language, "greeting", bank=bank.name)
+            else t(language, "greeting", bank=bank.display_name)
         )
         result = ChatResult(greeting, intent, language, outcome=GREETING)
     elif intent == classifier.ACCOUNT_SPECIFIC:
@@ -419,10 +424,11 @@ def handle_message(
             )
         ).scalars().first()
         if why_choose is None:
-            reply = t(language, "comparison_fallback", bank=bank.name)
+            reply = t(language, "comparison_fallback", bank=bank.display_name)
             result = ChatResult(reply, intent, language, outcome=COMPARISON)
         else:
-            reply = f"{t(language, 'comparison_intro', bank=bank.name)}\n\n{why_choose.content}"
+            intro = t(language, "comparison_intro", bank=bank.display_name)
+            reply = f"{intro}\n\n{why_choose.content}"
             sources = [{"document_id": why_choose.id, "title": why_choose.title}]
             result = ChatResult(reply, intent, language, sources=sources, outcome=COMPARISON)
     else:
@@ -495,7 +501,7 @@ def handle_message(
                 db, bank, conversation, REASON_GENERAL_KNOWLEDGE,
                 text[:2000], handoffs,
             )
-            reply = f"{general}\n\n{t(language, 'general_guidance', bank=bank.name)}"
+            reply = f"{general}\n\n{t(language, 'general_guidance', bank=bank.display_name)}"
             result = ChatResult(
                 reply,
                 intent,
