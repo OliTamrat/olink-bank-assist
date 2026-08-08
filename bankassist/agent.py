@@ -176,7 +176,12 @@ def _request_contact(
     with them.
     """
     if conversation.contact_phone:
-        return f"{reply} {t(language, 'contact_on_file', contact=conversation.contact_phone)}"
+        # Its own paragraph, never a trailing sentence. Joined with a space it
+        # read fine after a one-line acknowledgement and was reported from the
+        # live demo glued onto the last bullet of a topic list:
+        # "• Personal and Consumer Loans They will reach you on 0911122334."
+        # ask_contact has always used a blank line; this must match it.
+        return f"{reply}\n\n{t(language, 'contact_on_file', contact=conversation.contact_phone)}"
     asks = db.execute(
         select(func.count())
         .select_from(Handoff)

@@ -337,8 +337,28 @@ _HUMAN_REQUEST_RE = re.compile(
     r"\b(i (want|need) (to reach )?)?(a|an) (human|real person|actual person)\b|"
     r"\bhuman (agent|being|support)\b|"
     r"\bcall me back\b|"
-    r"ሰው ማነጋገር|ሰው አነጋግሩኝ|ከሰው ጋር|ኃላፊውን|ሥራ አስኪያጅ|ስራ አስኪያጅ|ወኪል ጋር|"
+    # Amharic. "ከ አለቃ ወይም አመራር ጋር መነጋገር እፈልጋለው" was reported from the live
+    # demo and matched none of the first pass: አለቃ (boss) and አመራር
+    # (management) were missing entirely, and only ማነጋገር was listed, not the
+    # equally common መነጋገር.
+    #
+    # አለቃ, ሥራ አስኪያጅ, ተቆጣጣሪ and ማኔጀር stand alone — none is a banking product
+    # term. Two do NOT:
+    #   ኃላፊ needs (?!ነት), or ኃላፊነት ("liability") turns "የባንኩ ኃላፊነት ምንድን ነው?"
+    #     into an escalation request.
+    #   አመራር needs a talk context, because የገንዘብ አመራር is "money management" —
+    #     a legitimate question about budgeting, not a request for a manager.
+    r"አለቃ|ተቆጣጣሪ|ማኔጀር|ሥራ አስኪያጅ|ስራ አስኪያጅ|"
+    r"ኃላፊ(?!ነት)|ሃላፊ(?!ነት)|ኀላፊ(?!ነት)|"
+    r"አመራር\s*(ጋር|ጋራ)|አመራር.{0,15}(ማነጋገር|መነጋገር|ማውራት)|"
+    r"ሰው\s*(ማነጋገር|መነጋገር|ማውራት|ማግኘት)|ሰው አነጋግሩኝ|ከሰው ጋር|"
+    r"ወኪል ጋር|ወኪል ማነጋገር|ደንበኞች አገልግሎት\s*(ማነጋገር|መነጋገር)|"
+    # Oromo. "Itti gaafatamaa yookiin bulchaa wajjiin haasa'uu barbaada"
+    # matched on itti gaafatamaa alone — bulchaa (administrator) and hoogganaa
+    # (leader) were carrying no weight, so the same sentence without the first
+    # noun would have missed.
     r"nama waliin|nama dubbisuu|itti gaafatamaa|hoji gaggeessaa|"
+    r"\bbulchaa\b|\bhoogganaa\b|\bhogganaa\b|"
     r"qaama namaa|bakka bu'aa|"
     r"qof la hadal|maamule|maareeye",
     re.IGNORECASE,

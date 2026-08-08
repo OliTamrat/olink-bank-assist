@@ -538,3 +538,25 @@ def test_every_turn_carries_an_outcome(client: TestClient, demo_bank: Any) -> No
     ):
         data = _ask(client, "demo", message)
         assert data["outcome"], message
+
+
+def test_the_number_confirmation_is_its_own_paragraph(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Reported from the live demo, glued onto the end of a topic list:
+
+        • Personal and Consumer Loans They will reach you on 0911122334.
+
+    Joined with a space it read fine after a one-line acknowledgement, which
+    is the only shape it was checked in. A reply that ends in a bullet list is
+    the shape that breaks, and it is the commonest one on the miss path.
+    """
+    first = _ask(client, "demo", UNANSWERABLE)
+    convo = first["conversation_id"]
+    _ask(client, "demo", "Oli 0911234567", convo)
+
+    again = _ask(client, "demo", SECOND_UNANSWERABLE, convo)
+    assert again["suggestions"], "setup: this miss should end with a topic list"
+    line = t(again["language"], "contact_on_file", contact="0911234567")
+    assert again["reply"].endswith(line)
+    assert f"\n\n{line}" in again["reply"], "must not continue the last bullet"
