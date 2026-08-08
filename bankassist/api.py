@@ -25,7 +25,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import admin_auth, handoff_webhook, passwords, permissions, roles, telegram
+from . import (
+    admin_auth,
+    channels,
+    handoff_webhook,
+    passwords,
+    permissions,
+    roles,
+    telegram,
+)
 from . import agent as agent_module
 from .agent import handle_message
 from .classifier import redact_contact
@@ -498,6 +506,22 @@ def chat(
 # tiny documents served on a cold open; revalidating costs nothing next to
 # demoing a stale UI to a prospect.
 _NO_STORE = {"Cache-Control": "no-store, must-revalidate"}
+
+
+@app.get("/embed.js")
+def embed_script() -> FileResponse:
+    """The loader a bank pastes onto its own site.
+
+    Cached, unlike the pages: this is fetched by every visitor to the bank's
+    website rather than by the handful of people who open the admin panel, and
+    a no-store script would be a request on every page view of a bank's site
+    for a file that changes a few times a year.
+    """
+    return FileResponse(
+        _STATIC / "embed.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/widget")
@@ -1261,6 +1285,20 @@ def integration_settings(
             "has_secret": bool(bank.handoff_webhook_secret),
         },
         "telegram": {"connected": bool(bank.telegram_bot_token)},
+        # Every channel, with what each actually requires. Served rather than
+        # written into the page so the answer to "can you do WhatsApp" is one
+        # list, kept next to the code that would implement it.
+        "channels": channels.catalogue(
+            telegram_connected=bool(bank.telegram_bot_token)
+        ),
+        # The snippet to paste on the bank's own site. It was never shown
+        # anywhere, so the one channel that is live by default had no
+        # instructions attached to it.
+        "embed": (
+            f'<script src="{get_settings().app_base_url}/embed.js" '
+            f'data-bank="{bank.slug}" data-color="{bank.primary_color}" '
+            f"defer></script>"
+        ),
         "branding": {
             "primary_color": bank.primary_color,
             "logo_url": bank.logo_url,
@@ -1390,16 +1428,20 @@ def content_gaps(
     own words, with its own limits and fees.
     """
     bank = principal.bank
+    # Joined to the conversation for its language. Which language a gap was
+    # asked in decides which language the article has to be written in, and
+    # without it the page can rank the work but not assign it.
     rows = db.execute(
-        select(Handoff)
+        select(Handoff, Conversation.language)
+        .join(Conversation, Conversation.id == Handoff.conversation_id, isouter=True)
         .where(Handoff.bank_id == bank.id)
         .where(Handoff.reason.in_(["unanswered_question", "answered_from_general_knowledge"]))
         .order_by(Handoff.created_at.desc())
         .limit(1000)
-    ).scalars().all()
+    ).all()
 
     grouped: dict[str, dict[str, Any]] = {}
-    for h in rows:
+    for h, language in rows:
         # Same scrubbing as the analytics report, and for the same reason:
         # this is an aggregate view that gets exported. The handoff row itself
         # still carries the exact words and the contact fields, which is what
@@ -1415,11 +1457,14 @@ def content_gaps(
                 "count": 0,
                 "open_count": 0,
                 "reasons": {},
+                "languages": {},
                 "examples": [],
                 "last_asked": h.created_at.isoformat(),
             },
         )
         gap["count"] += 1
+        if language:
+            gap["languages"][language] = gap["languages"].get(language, 0) + 1
         if h.status == "open":
             gap["open_count"] += 1
         gap["reasons"][h.reason] = gap["reasons"].get(h.reason, 0) + 1

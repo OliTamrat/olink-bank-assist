@@ -348,3 +348,90 @@ def test_the_assistant_recognises_both_names_as_this_bank(
     assert "CBE" in aliases
     assert demo_bank.name in aliases
     assert demo_bank.slug in aliases
+
+
+def test_the_embed_snippet_points_at_a_script_that_exists(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The snippet is copy-pasted onto a bank's production site.
+
+    It was first generated pointing at /embed.js before that route existed, so
+    the one channel that is live by default shipped with an install
+    instruction that 404s. Nothing in the type system or the render would have
+    caught it — the string was perfectly well-formed.
+    """
+    import re
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    snippet = admin.get("/admin/api/demo/integrations").json()["embed"]
+    src = re.search(r'src="([^"]+)"', snippet)
+    assert src, snippet
+    path = src.group(1).split("/", 3)[-1]
+    served = client.get("/" + path)
+    assert served.status_code == 200, f"{path} is not served"
+    assert "javascript" in served.headers["content-type"]
+    # And it carries this tenant, or it would load someone else's assistant.
+    assert f'data-bank="{demo_bank.slug}"' in snippet
+
+
+def test_the_channel_list_does_not_promise_what_is_not_built(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """WhatsApp is not built, and the page must not imply otherwise.
+
+    "Coming soon" beside a platform logo is a promise made on the bank's
+    behalf to someone deciding whether to buy. Every entry states its status
+    and what it would require, and the requirements are what make the claim
+    checkable rather than reassuring.
+    """
+    from bankassist import channels
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    rows = {c["key"]: c for c in admin.get("/admin/api/demo/integrations").json()["channels"]}
+
+    assert rows["web"]["status"] == channels.LIVE
+    assert rows["telegram"]["status"] == channels.AVAILABLE  # no token set yet
+    for key in ("whatsapp", "messenger", "instagram", "viber", "sms"):
+        assert rows[key]["status"] == channels.PLANNED, key
+        assert rows[key]["needs"], f"{key} claims to be planned but lists no prerequisite"
+
+
+def test_connecting_telegram_moves_it_to_live(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    from bankassist import channels
+    from bankassist.models import Bank
+
+    bank = db_session.get(Bank, demo_bank.id)
+    bank.telegram_bot_token = "123:fake-token-for-this-test"  # noqa: S105
+    db_session.commit()
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    rows = {c["key"]: c for c in admin.get("/admin/api/demo/integrations").json()["channels"]}
+    assert rows["telegram"]["status"] == channels.LIVE
+
+
+def test_content_gaps_carry_the_language_they_were_asked_in(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """Which language a gap was asked in decides which language to write in.
+
+    Without it the page can rank the work but cannot assign it — and the
+    column that used to be there read a field the endpoint never returned, so
+    it rendered blank for every row.
+    """
+    from bankassist.models import Conversation, Handoff
+
+    convo = Conversation(bank_id=demo_bank.id, channel="widget", language="am")
+    db_session.add(convo)
+    db_session.flush()
+    db_session.add(
+        Handoff(bank_id=demo_bank.id, conversation_id=convo.id,
+                reason="unanswered_question", detail="የመኪና ብድር አለ?")
+    )
+    db_session.commit()
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    gaps = admin.get("/admin/api/demo/content-gaps").json()
+    assert gaps, "expected at least one gap"
+    assert any(g["languages"].get("am") for g in gaps)

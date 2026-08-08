@@ -24,32 +24,32 @@
   --surface-2: #171a25;
   --side: #06070d;
   --side-2: #171a25;
-  --line: #202433;
+  --line: #2c3242;
   --ink: #f3f5f9;
-  --body: #c7cddc;
-  --muted: #8b94a8;
-  --faint: #646d80;
-  --side-text: #98a1b5;
+  --body: #dee4f0;
+  --muted: #a6b0c4;
+  --faint: #8590a6;
+  --side-text: #aab4c8;
   --ok: #4ade80;
   --warn: #fbbf24;
   --bad: #f87171;
   --ok-bg: #10281a;
   --warn-bg: #2b2110;
   --bad-bg: #2c1618;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .5);
+  --shadow: 0 1px 3px rgba(0, 0, 0, .55);
   --radius: 14px;
 }
 :root[data-theme="light"] {
-  --bg: #f6f7fb;
+  --bg: #e8ecf4;
   --surface: #ffffff;
   --surface-2: #f9fafc;
   --side: #131a2b;
   --side-2: #1c2439;
-  --line: #e4e7ee;
+  --line: #ccd4e2;
   --ink: #0f1729;
-  --body: #35415a;
-  --muted: #6b7689;
-  --faint: #8f99ab;
+  --body: #293346;
+  --muted: #57627a;
+  --faint: #6f7a90;
   --side-text: #aeb7c9;
   --ok: #15803d;
   --warn: #b45309;
@@ -57,7 +57,7 @@
   --ok-bg: #eafaf0;
   --warn-bg: #fdf5e6;
   --bad-bg: #fdeeee;
-  --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+  --shadow: 0 1px 3px rgba(16, 24, 40, .09), 0 1px 2px rgba(16, 24, 40, .05);
 }
 * { box-sizing: border-box; margin: 0; }
 body {
@@ -229,7 +229,7 @@ main { padding: 20px 24px 40px; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(198px, 1fr));
   gap: 14px; margin-bottom: 18px; }
 .kpi { background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 15px 16px; }
+  border-radius: var(--radius); padding: 15px 16px; box-shadow: var(--shadow); }
 .kpi { display: flex; gap: 12px; align-items: flex-start; }
 /* The delta sits on the card's bottom edge rather than under whatever height
    the text above happened to take, so the four read as one row of cards. */
@@ -273,7 +273,8 @@ main { padding: 20px 24px 40px; }
 .kpi .v.none { color: var(--faint); font-weight: 400; font-size: 22px; }
 .kpi .sub { font-size: 11.5px; color: var(--faint); margin-top: 5px; }
 .panel { background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+  border-radius: var(--radius); padding: 16px; margin-bottom: 14px;
+  box-shadow: var(--shadow); }
 .panel > h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em;
   color: var(--muted); margin-bottom: 12px; }
 .grid2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; align-items: start; }
@@ -391,6 +392,14 @@ td.title { color: var(--ink); font-weight: 550; }
 .rowacts { display: flex; gap: 6px; justify-content: flex-end; }
 .iconbtn { background: none; border: 1px solid var(--line); color: var(--muted);
   border-radius: 7px; padding: 5px 7px; cursor: pointer; line-height: 0; }
+/* The theme switch was a muted glyph inside a near-invisible outline, on a
+   near-black bar — findable only if you knew it was there. It now reads as a
+   control: a filled surface, a visible edge, and a full-contrast glyph. */
+#theme-toggle {
+  background: var(--surface-2); border-color: var(--line); color: var(--ink);
+  line-height: 1; font-size: 15px; padding: 6px 11px; border-radius: 9px;
+}
+#theme-toggle:hover { border-color: var(--brand); color: var(--brand); }
 .iconbtn:hover { border-color: var(--brand); color: var(--brand); }
 .iconbtn.danger:hover { border-color: var(--bad); color: var(--bad); }
 
@@ -426,6 +435,27 @@ td.title { color: var(--ink); font-weight: 550; }
 .resolution .when { color: var(--faint); font-size: 11.5px; }
 .noteform { display: flex; gap: 8px; margin-top: 10px; }
 .noteform input { flex: 1; }
+/* ------------------------------------------------------------- gaps */
+.gap { padding: 14px 16px; }
+.gaphead { display: flex; gap: 14px; align-items: flex-start; }
+.gap .rank {
+  font-size: 15px; font-weight: 700; color: var(--brand); flex: none;
+  min-width: 42px; padding-top: 1px; font-variant-numeric: tabular-nums;
+}
+.gapq { font-size: 14.5px; color: var(--ink); font-weight: 550; }
+.gapmeta { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; margin-top: 7px; }
+.alsoasked {
+  margin: 10px 0 0 56px; padding-left: 12px; border-left: 2px solid var(--line);
+  font-size: 13px; color: var(--muted);
+}
+.gapnote {
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--line));
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px;
+}
+.gapnote strong { color: var(--ink); }
+.gapnote div { color: var(--body); margin-top: 5px; }
+
 .perm { display: inline-block; font-size: 11px; font-family: ui-monospace, monospace;
   background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
   padding: 2px 7px; margin: 0 5px 5px 0; color: var(--body); }
@@ -633,8 +663,21 @@ function applyBrand(slug) {
       if (b.logo_url) {
         // Rendered rather than described: a bank's mark is the first thing it
         // looks for, and initials on a coloured tile read as a placeholder.
-        el.innerHTML = '<img src="' + esc(b.logo_url) + '" alt="' + esc(b.name || slug) + '">';
+        //
+        // With a fallback, because this is a remote image on someone else's
+        // host. If it 404s, moves, or is blocked, a broken-image icon in the
+        // brand slot looks like the product is broken; the initials do not.
+        // The widget already did this and the panel did not.
+        el.innerHTML = "";
         el.classList.add("haslogo");
+        var img = document.createElement("img");
+        img.alt = b.name || slug;
+        img.onerror = function () {
+          el.classList.remove("haslogo");
+          el.textContent = initials || "BA";
+        };
+        img.src = b.logo_url;
+        el.appendChild(img);
       } else {
         el.textContent = initials || "BA";
         el.classList.remove("haslogo");
@@ -1394,6 +1437,9 @@ function loadMsgs(id) {
 /* -------------------------------------------------------- knowledge base */
 var CATEGORIES = ["general", "products", "how-to", "financial-education", "fees"];
 var LANGS = ["en", "am", "om", "ti", "so"];
+var LANG_NAME = {
+  en: "English", am: "አማርኛ", om: "Afaan Oromoo", ti: "ትግርኛ", so: "Soomaali"
+};
 
 function loadDocs() {
   api("/documents").then(function (docs) {
@@ -1423,6 +1469,14 @@ function loadDocs() {
     state.docs = docs;
     if (writable) {
       $("new-doc").onclick = function () { docForm(null); };
+      // Arrived from Content Gaps: open the editor already pointed at the
+      // question, so the loop from "nobody could answer this" to "now we can"
+      // is one click rather than a copy-paste between two screens.
+      if (state.draftFromGap) {
+        var gap = state.draftFromGap;
+        state.draftFromGap = null;
+        docForm({ title: gap.title, language: gap.language }, gap);
+      }
       $("bulk-doc").onclick = bulkForm;
       wire("[data-edit]", "edit", function (id) {
         docForm(state.docs.filter(function (d) { return d.id === id; })[0]);
@@ -1432,10 +1486,18 @@ function loadDocs() {
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
-function docForm(doc) {
+function docForm(doc, gap) {
   doc = doc || {};
   $("doc-form").innerHTML = '<div class="panel">' +
     "<h3>" + (doc.id ? "Edit article" : "New article") + "</h3>" +
+    /* The customers' own wordings, shown beside the editor and deliberately
+       NOT poured into the content field. Prefilled scaffolding is the kind of
+       text that gets saved by accident, and this article is what the assistant
+       will read out to the next customer who asks. */
+    (gap ? '<div class="gapnote"><strong>Asked ' + gap.count + " time" +
+      (gap.count === 1 ? "" : "s") + ", in these words:</strong>" +
+      gap.examples.map(function (e) { return "<div>" + esc(e) + "</div>"; }).join("") +
+      "</div>" : "") +
     '<div class="field"><label>Title</label><input id="d-title" value="' + esc(doc.title || "") + '"></div>' +
     '<div class="grid2"><div class="field"><label>Category</label><select id="d-cat">' +
     CATEGORIES.map(function (c) {
@@ -1498,17 +1560,91 @@ function bulkForm() {
   };
 }
 
-/* ------------------------------------------------------------ gaps */
+/* ------------------------------------------------------------ gaps
+ *
+ * The page exists to answer one question — "what should we write next?" — and
+ * to make acting on the answer a single click.
+ *
+ * A gap is a question a customer asked that this bank's published content did
+ * not answer. Two kinds, kept apart because they need different work: nothing
+ * was found at all, or the assistant fell back to general banking knowledge,
+ * which is an answer the bank may well want to own in its own words with its
+ * own fees and limits. The second kind is easy to overlook precisely because
+ * the customer did get a reply.
+ *
+ * Ranked by how often it was asked, because writing one article that answers
+ * twenty people beats writing twenty that answer one.
+ */
+var GAP_REASON = {
+  unanswered_question: "No answer found",
+  answered_from_general_knowledge: "Answered generically"
+};
+
 function loadGaps() {
   api("/content-gaps").then(function (rows) {
-    $("main").innerHTML = '<div class="panel">' +
-      '<div class="meta" style="margin-bottom:12px">Questions customers asked that your published content did not answer.</div>' +
-      (rows.length ? "<table><thead><tr><th>Asked</th><th>Example question</th><th>Languages</th></tr></thead><tbody>" +
-        rows.map(function (g) {
-          return "<tr><td>" + g.count + "</td><td class='title'>" + esc(g.example) + "</td>" +
-            "<td>" + esc((g.languages || []).join(", ")) + "</td></tr>";
-        }).join("") + "</tbody></table>"
-        : '<div class="empty">No gaps recorded. Every question so far was answerable.</div>') + "</div>";
+    var writable = can("documents.write");
+    var h = '<div class="panel"><h3>What this page is for</h3>' +
+      '<div class="meta">Every row is a question a customer asked that your published ' +
+      "content did not answer, grouped by what was asked and ranked by how often. " +
+      "Writing one article that answers twenty people beats writing twenty that answer " +
+      "one, so work down from the top." +
+      (writable ? " <strong>Write an article</strong> opens the editor with the question " +
+        "already in the title." : "") + "</div></div>";
+
+    if (!rows.length) {
+      h += '<div class="panel"><div class="empty">Nothing here — every question so far ' +
+        "was answerable from your own content.<br>This page fills itself as customers " +
+        "ask things you have not published yet.</div></div>";
+      $("main").innerHTML = h;
+      return;
+    }
+
+    h += rows.map(function (g, i) {
+      var langs = Object.keys(g.languages || {}).sort(function (a, b) {
+        return g.languages[b] - g.languages[a];
+      });
+      var reasons = Object.keys(g.reasons || {});
+      return '<div class="panel gap">' +
+        '<div class="gaphead">' +
+        '<div class="rank">' + g.count + "&times;</div>" +
+        '<div style="flex:1;min-width:0">' +
+        '<div class="gapq">' + esc(g.examples[0] || "(no wording recorded)") + "</div>" +
+        '<div class="gapmeta">' +
+          reasons.map(function (r) {
+            return '<span class="pill ' + (r === "unanswered_question" ? "off" : "") + '">' +
+              esc(GAP_REASON[r] || r) + " " + g.reasons[r] + "</span>";
+          }).join("") +
+          langs.map(function (l) {
+            return '<span class="pill">' + esc(LANG_NAME[l] || l) + " " + g.languages[l] + "</span>";
+          }).join("") +
+          (g.open_count ? '<span class="pill open">' + g.open_count + " still open</span>" : "") +
+          '<span class="meta">last asked ' + esc(ago(g.last_asked)) + "</span>" +
+        "</div></div>" +
+        (writable ? '<button class="btn sm" data-write="' + i + '">Write an article</button>' : "") +
+        "</div>" +
+        // The other wordings matter: they are how the same question gets asked,
+        // and an article that only matches one phrasing answers one of them.
+        (g.examples.length > 1
+          ? '<div class="alsoasked"><span class="meta">Also asked as</span>' +
+            g.examples.slice(1).map(function (e) {
+              return "<div>" + esc(e) + "</div>";
+            }).join("") + "</div>"
+          : "") +
+        "</div>";
+    }).join("");
+
+    $("main").innerHTML = h;
+    state.gaps = rows;
+    wire("[data-write]", "write", function (i) {
+      var g = state.gaps[parseInt(i, 10)];
+      state.draftFromGap = {
+        title: g.examples[0] || "",
+        examples: g.examples,
+        count: g.count,
+        language: Object.keys(g.languages || {})[0] || "en"
+      };
+      go("docs");
+    });
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
@@ -1602,7 +1738,39 @@ function loadSettings() {
 
 function renderSettings(cfg) {
   var hw = cfg.handoff_webhook || {}, tg = cfg.telegram || {}, br = cfg.branding || {};
+  var chans = cfg.channels || [];
   $("main").innerHTML =
+    /* Where customers can reach the assistant, stated honestly. Greyed-out
+       logos with "coming soon" would be a promise made on the bank's behalf,
+       and the person reading this page is deciding whether to buy. */
+    '<div class="panel"><h3>Channels</h3>' +
+    '<div class="meta" style="margin-bottom:14px">The assistant does not care where a ' +
+    "message comes from, so a new channel is a small adapter rather than a rebuild — " +
+    "Telegram is 41 lines. What takes time is the account each platform requires, " +
+    "which is why that is listed rather than hidden.</div>" +
+    (chans.length ? '<table><thead><tr><th>Channel</th><th>Status</th>' +
+      "<th>What it needs</th></tr></thead><tbody>" +
+      chans.map(function (c) {
+        var cls = c.status === "live" ? "on" : (c.status === "available" ? "" : "off");
+        var label = c.status === "live" ? "Live"
+          : (c.status === "available" ? "Ready to connect" : "Not built yet");
+        return "<tr><td class='title'>" + esc(c.name) +
+          '<div class="meta">' + esc(c.blurb) + "</div></td>" +
+          '<td><span class="pill ' + cls + '">' + label + "</span></td>" +
+          "<td>" + (c.needs.length
+            ? '<ul style="margin:0;padding-left:16px">' + c.needs.map(function (n) {
+                return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
+            : '<span class="meta">Nothing</span>') + "</td></tr>";
+      }).join("") + "</tbody></table>" : "") +
+    "</div>" +
+    (cfg.embed ? '<div class="panel"><h3>Put the widget on your website</h3>' +
+      '<div class="meta" style="margin-bottom:10px">Paste this once, before the closing ' +
+      "&lt;/body&gt; tag. It adds a chat button in your own colour and loads nothing " +
+      "until a visitor opens it.</div>" +
+      '<div class="field"><textarea id="embed-snip" readonly ' +
+      'style="min-height:64px;font-family:ui-monospace,monospace;font-size:12.5px">' +
+      esc(cfg.embed) + "</textarea></div>" +
+      '<button class="btn ghost sm" id="copy-embed">Copy</button></div>' : "") +
     '<div class="panel"><h3>Branding</h3>' +
     '<div class="meta" style="margin-bottom:12px">Your colour and logo, used in this panel ' +
     'and in the chat widget on your website. Saved values apply immediately — no deploy.</div>' +
@@ -1662,6 +1830,18 @@ function renderSettings(cfg) {
       .then(function () { setStatus("Telegram connected"); loadSettings(); })
       .catch(function (e) { setStatus(e.message); });
   };
+  if ($("copy-embed")) {
+    $("copy-embed").onclick = function () {
+      var box = $("embed-snip");
+      box.select();
+      // execCommand rather than the clipboard API: this panel is served over
+      // plain http in local development, where navigator.clipboard does not
+      // exist, and a copy button that silently does nothing is worse than none.
+      try { document.execCommand("copy"); setStatus("Embed code copied"); }
+      catch (e) { setStatus("Select the text and copy it manually."); }
+    };
+  }
+
   // Keep the swatch and the hex box showing the same value, whichever is used.
   $("br-color").oninput = function () { $("br-hex").value = $("br-color").value; };
   $("br-hex").oninput = function () {
