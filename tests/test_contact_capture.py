@@ -419,3 +419,54 @@ def test_the_ask_closes_the_turn_in_every_language(
     if not data["awaiting_contact"]:
         pytest.skip("this phrasing found an answer; ordering is untested here")
     assert data["reply"].rstrip().endswith(t(data["language"], "ask_contact"))
+
+
+# ---------------------------------------------- the name in a real sentence
+
+
+@pytest.mark.parametrize("reply,expected", [
+    # Reported verbatim from the live CBE demo. The operator's queue got the
+    # number and no name, so the callback would open with "who am I speaking
+    # to?" — after the customer had already answered that.
+    ("Oli Oli and I can be reached at 0911234567", "Oli Oli"),
+    ("Oli Tamrat, you can reach me on 0911234567", "Oli Tamrat"),
+    ("Abebe Kebede and my phone is 0911234567", "Abebe Kebede"),
+    ("Oli oli@example.com", "Oli"),
+    # The short forms that already worked, so the looser rule can't lose them.
+    ("Oli 0911234567", "Oli"),
+    ("Oli, 0911234567", "Oli"),
+    ("My name is Oli and my number is 0911234567", "Oli"),
+])
+def test_the_name_survives_a_natural_sentence(reply: str, expected: str) -> None:
+    assert extract_contact(reply)[0] == expected
+
+
+@pytest.mark.parametrize("reply", [
+    # No name given. Storing one here would mean addressing a customer by a
+    # preposition for the rest of the conversation, and handing an operator a
+    # fabricated name is worse than handing them none.
+    "call me on 0911234567",
+    "you can reach me at 0911234567",
+    "my number is 0911234567",
+    "I am looking for a loan, 0911234567",
+    "0911234567",
+])
+def test_a_reply_with_no_name_stores_no_name(reply: str) -> None:
+    name, contact = extract_contact(reply)
+    assert contact is not None, "setup: the number must still be captured"
+    assert name is None, reply
+
+
+def test_the_captured_name_is_used_when_acknowledging(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Capturing the name is only half of it — the acknowledgement in the
+    screenshot said "Thank you —" rather than "Thank you Oli —" precisely
+    because the name never made it out of extract_contact."""
+    first = _ask(client, "demo", UNANSWERABLE)
+    data = _ask(
+        client, "demo", "Oli Oli and I can be reached at 0911234567",
+        first["conversation_id"],
+    )
+    assert t(data["language"], "contact_saved_named",
+             name="Oli Oli", contact="0911234567") in data["reply"]

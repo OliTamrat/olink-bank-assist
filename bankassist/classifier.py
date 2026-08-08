@@ -465,6 +465,16 @@ _NOT_A_NAME = frozenset(
         # question and short answers are the norm.
         "on", "at", "in", "about", "regarding", "me", "my", "your", "yes",
         "no", "ok", "okay", "please", "thanks", "thank", "sure", "hello",
+        # The connectors and verbs that begin the second half of a reply like
+        # "Oli Oli and I can be reached at 0911234567". They are what tells
+        # _leading_name where the name stops; without them it would swallow
+        # the rest of the sentence and _plausible_name would reject the lot,
+        # which is how that reply reached an operator with a number and no
+        # name attached.
+        "and", "or", "but", "you", "i", "im", "can", "could", "be", "is",
+        "am", "are", "reach", "reached", "reaching", "contact", "call",
+        "phone", "number", "mobile", "cell", "email", "it", "this", "that",
+        "we", "us", "they", "them", "so", "if", "then", "also", "for",
     ]
 )
 
@@ -555,6 +565,38 @@ _EMAIL_RE = re.compile(r"[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}", re.IGNORECASE)
 _MAX_BARE_NAME_WORDS = 3
 
 
+def _leading_name(text: str) -> str | None:
+    """The name at the start of a reply to "may I have your name and number?".
+
+    Only ever called once a valid phone number or email has been found in the
+    same message, which is the evidence that this is an answer to that
+    question rather than a stray sentence.
+
+    Takes the leading run of name-like words and stops at the first word that
+    is not one. The previous rule required the *whole* remainder to be three
+    words or fewer, so it captured "Oli 0911234567" but lost the name from
+    every natural sentence — "Oli Oli and I can be reached at 0911234567",
+    "Abebe Kebede and my phone is 0911234567", "Oli Tamrat, you can reach me
+    on 0911234567". Reported from the live CBE demo, where the operator's
+    queue got a phone number and no name.
+
+    Stopping at the first non-name word is what keeps this from swallowing a
+    sentence: the connectors that open the second clause are in _NOT_A_NAME,
+    so the walk ends there. Still capped at _MAX_BARE_NAME_WORDS, and still
+    passed through _plausible_name, so nothing reaches it that the stricter
+    rule would have accepted.
+    """
+    words = text.strip(" ,.!?።፣-").split()
+    leading: list[str] = []
+    for word in words[:_MAX_BARE_NAME_WORDS]:
+        if _plausible_name(word) is None:
+            break
+        leading.append(word)
+    if not leading:
+        return None
+    return _plausible_name(" ".join(leading))
+
+
 def normalize_phone(raw: str) -> str:
     """Strip formatting so two spellings of one number compare equal."""
     cleaned = re.sub(r"[\s.\-()]", "", raw)
@@ -632,9 +674,7 @@ def extract_contact(text: str) -> tuple[str | None, str | None]:
             name = _plausible_name(intro.group(1))
     if name is None and contact is not None:
         stripped, _greeted = strip_greeting(remainder)
-        candidate = stripped.strip(" ,.!?።፣-")
-        if candidate and len(candidate.split()) <= _MAX_BARE_NAME_WORDS:
-            name = _plausible_name(candidate)
+        name = _leading_name(stripped)
     return name, contact
 
 
