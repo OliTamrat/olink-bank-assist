@@ -1,6 +1,16 @@
 # Identity and access control — scope
 
-Status: **scoped and agreed, not started.** 2026-08-08.
+Status: **steps 2 and 3 shipped; step 1 blocked on a domain; steps 4–5 open.**
+Last updated 2026-08-08.
+
+| Step | State |
+|---|---|
+| 0. Domain | ⛔ not started — user-side, and it gates step 1 |
+| 1. Email service | ⛔ blocked on step 0 |
+| 2. Identity core | ✅ merged (#62) and **live** — migration 0010 applied in production, revision `bankassist-00101-vb9` |
+| 3. Authorization | ✅ merged (#64) — 15 routes, migration 0011 |
+| 4. Admin UI | ⏭ next: login screen, Users tab, and the visual rework |
+| 5. TOTP | ⏭ deferred by decision, should not drift far behind step 3 |
 
 ## Why
 
@@ -209,17 +219,26 @@ throughout so a mistake cannot lock a bank out of its own dashboard.
    surface yet.
 2. **Identity core.** Migration, password hashing, sessions, login/logout,
    invitation and reset flows.
-3. **Authorization.** Permission registry, role bundles, applied to all 14
-   routes. `audit_log.actor` becomes the person; `handoffs.resolved_by`
-   populated.
+3. **Authorization.** Permission registry, role bundles, applied to all 15
+   routes — the count was 14 in the original scope, which missed
+   `POST /users` itself. `audit_log.actor` becomes the person;
+   `handoffs.resolved_by` populated.
 4. **Admin UI.** Login screen, session cookie, logout, Users tab — and the
    UI/UX rework the current dashboard needs, which this is the natural moment
    for rather than bolting a form onto the existing page.
 5. **TOTP.** Enrolment, verification, recovery codes. Deferred out of the
    first pass, but it should not drift far behind step 3 — see above.
 
-Step 3 is the one that can break existing access, so it lands after identity
-is proven and before the UI depends on it.
+Step 3 is the one that can break existing access, so it landed after identity
+was proven **in production** — migration 0010 confirmed applied in the deploy
+log, not assumed — and before the UI depends on it.
+
+Steps 2 and 3 both shipped with **no user-facing change**, exactly as the
+sequence predicted. The dashboard still authenticates with the shared token,
+which retains every permission, so nothing an operator does today behaves
+differently. That is the cost of building the foundation first, and it is the
+point: the access-control model was proven against the real route table before
+a single screen depended on it.
 
 ## Deliberately not building
 
