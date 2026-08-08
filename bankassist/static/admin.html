@@ -1400,16 +1400,30 @@ function setUserActive(id, active) {
 
 /* ------------------------------------------------------------ settings */
 function loadSettings() {
+  renderSettings({ handoff_webhook: {}, telegram: {} });
+  api("/integrations").then(renderSettings).catch(function () {});
+}
+
+function renderSettings(cfg) {
+  var hw = cfg.handoff_webhook || {}, tg = cfg.telegram || {};
   $("main").innerHTML =
     '<div class="panel"><h3>Escalation webhook</h3>' +
+    '<div style="margin-bottom:10px"><span class="pill ' + (hw.connected ? "on" : "off") + '">' +
+      (hw.connected ? "Connected" : "Not connected") + "</span></div>" +
     '<div class="meta" style="margin-bottom:12px">Where escalations are delivered in your contact-centre tool. ' +
-    'Requests are signed, so the receiving system can verify they came from us. Leave empty to disconnect.</div>' +
-    '<div class="field"><input id="hw-url" placeholder="https://your-system.example/hooks/olink"></div>' +
+    'Requests are signed, so the receiving system can verify they came from us. Clear the field to disconnect.</div>' +
+    '<div class="field"><input id="hw-url" placeholder="https://your-system.example/hooks/olink" value="' +
+      esc(hw.url || "") + '"></div>' +
+    (hw.has_secret ? '<div class="meta" style="margin-bottom:10px">A signing secret is set. It cannot be shown ' +
+      "again — saving a URL here issues a new one and the old one stops working.</div>" : "") +
     '<button class="btn sm" id="hw-save">Save</button></div>' +
     '<div class="panel"><h3>Telegram</h3>' +
-    '<div class="meta" style="margin-bottom:12px">Connect a bot so customers can reach the assistant on Telegram.</div>' +
+    '<div style="margin-bottom:10px"><span class="pill ' + (tg.connected ? "on" : "off") + '">' +
+      (tg.connected ? "Connected" : "Not connected") + "</span></div>" +
+    '<div class="meta" style="margin-bottom:12px">Connect a bot so customers can reach the assistant on Telegram.' +
+      (tg.connected ? " Entering a new token replaces the current bot." : "") + "</div>" +
     '<div class="field"><input id="tg-token" placeholder="Bot token from @BotFather" type="password"></div>' +
-    '<button class="btn sm" id="tg-save">Connect</button></div>' +
+    '<button class="btn sm" id="tg-save">' + (tg.connected ? "Replace bot" : "Connect") + "</button></div>" +
     (state.me ? '<div class="panel"><h3>Your password</h3>' +
       '<div class="grid2"><div class="field"><label>Current</label><input id="pw-old" type="password"></div>' +
       '<div class="field"><label>New (12+ characters)</label><input id="pw-new" type="password"></div></div>' +
@@ -1419,13 +1433,16 @@ function loadSettings() {
   $("hw-save").onclick = function () {
     api("/handoff-webhook", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: $("hw-url").value.trim() || null }) })
-      .then(function (r) { setStatus(r.url ? "Webhook connected" : "Webhook disconnected"); })
+      .then(function (r) {
+        setStatus(r.connected ? "Webhook connected" : "Webhook disconnected");
+        loadSettings();
+      })
       .catch(function (e) { setStatus(e.message); });
   };
   $("tg-save").onclick = function () {
     api("/telegram/connect", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bot_token: $("tg-token").value.trim() }) })
-      .then(function () { setStatus("Telegram connected"); })
+      .then(function () { setStatus("Telegram connected"); loadSettings(); })
       .catch(function (e) { setStatus(e.message); });
   };
   if ($("pw-save")) {

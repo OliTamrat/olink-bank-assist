@@ -1,15 +1,15 @@
 # Identity and access control — scope
 
-Status: **steps 2 and 3 shipped; step 1 blocked on a domain; steps 4–5 open.**
+Status: **steps 2, 3 and 4 shipped and live; step 1 blocked on a domain; step 5 deferred.**
 Last updated 2026-08-08.
 
 | Step | State |
 |---|---|
 | 0. Domain | ⛔ not started — user-side, and it gates step 1 |
 | 1. Email service | ⛔ blocked on step 0 |
-| 2. Identity core | ✅ merged (#62) and **live** — migration 0010 applied in production, revision `bankassist-00101-vb9` |
-| 3. Authorization | ✅ merged (#64) — 15 routes, migration 0011 |
-| 4. Admin UI | ⏭ next: login screen, Users tab, and the visual rework |
+| 2. Identity core | ✅ merged (#62) and **live** — migration 0010 applied in production |
+| 3. Authorization | ✅ merged (#64) and **live** — 18 routes, migration 0011 confirmed at head in production |
+| 4. Admin UI | ✅ merged (#65) and **live** — revision `bankassist-00105-smn` |
 | 5. TOTP | ⏭ deferred by decision, should not drift far behind step 3 |
 
 ## Why
@@ -224,8 +224,21 @@ throughout so a mistake cannot lock a bank out of its own dashboard.
    `POST /users` itself. `audit_log.actor` becomes the person;
    `handoffs.resolved_by` populated.
 4. **Admin UI.** Login screen, session cookie, logout, Users tab — and the
-   UI/UX rework the current dashboard needs, which this is the natural moment
-   for rather than bolting a form onto the existing page.
+   UI/UX rework the dashboard needed, which this was the natural moment for
+   rather than bolting a form onto the existing page.
+
+   Shipped dark by default with a light alternative, structured on a reference
+   dashboard whose screens already matched ours, and themed per tenant from
+   `primary_color` so a bank opens a panel in its own colour. The shared token
+   remains reachable from the sign-in screen, because a tenant with no users
+   has nobody who could authorise creating the first one.
+
+   Four defects were found by rendering it and none by reading the diff: an
+   outcome vocabulary rewritten from memory, the escalation queue printing its
+   internal `reason` key, a clipped axis label that read as a date, and a
+   sticky rail that stopped halfway down the page. A fifth — a settings screen
+   that could not show what was currently configured — was found afterwards by
+   asking what someone would do with the screen rather than whether it worked.
 5. **TOTP.** Enrolment, verification, recovery codes. Deferred out of the
    first pass, but it should not drift far behind step 3 — see above.
 

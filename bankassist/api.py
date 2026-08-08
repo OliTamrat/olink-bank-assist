@@ -1216,6 +1216,35 @@ def list_handoffs(
     ]
 
 
+@app.get("/admin/api/{slug}/integrations")
+def integration_settings(
+    principal: Principal = NeedsIntegrationsManage, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """What is currently wired up. Never the secrets.
+
+    The settings screen shipped with empty fields whether or not anything was
+    connected, which is worse than merely unhelpful here: the one control on
+    that page decides where customers' names and phone numbers are delivered,
+    and someone who cannot see the current value can disconnect it by saving a
+    field they believed was already blank.
+
+    The webhook URL is returned; its signing secret is not, and neither is the
+    Telegram bot token. Both are shown once when set and never readable
+    afterwards — a value the API will re-display is a value that ends up in a
+    screenshot.
+    """
+    bank = principal.bank
+    return {
+        "handoff_webhook": {
+            "connected": bool(bank.handoff_webhook_url),
+            "url": bank.handoff_webhook_url,
+            # So the screen can say the secret exists without revealing it.
+            "has_secret": bool(bank.handoff_webhook_secret),
+        },
+        "telegram": {"connected": bool(bank.telegram_bot_token)},
+    }
+
+
 @app.get("/admin/api/{slug}/activity")
 def recent_activity(
     limit: int = 12,

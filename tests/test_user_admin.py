@@ -167,3 +167,44 @@ def test_the_role_table_is_generated_from_what_is_enforced(
     assert set(rows["admin"]["permissions"]) == set(permissions.ALL)
     assert permissions.Perm.DOCUMENTS_WRITE not in rows["operator"]["permissions"]
     assert rows["operator"]["is_builtin"] is True
+
+
+def test_integration_settings_show_state_but_never_secrets(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The screen must show what is wired up, and nothing that could forge it.
+
+    The settings page shipped with empty fields whether or not anything was
+    connected. That is worse than unhelpful on this particular page: the one
+    control on it decides where customers' names and phone numbers are
+    delivered, and someone who cannot see the current value can disconnect it
+    by saving a field they believed was already blank.
+    """
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+
+    before = admin.get("/admin/api/demo/integrations").json()
+    assert before["handoff_webhook"]["connected"] is False
+    assert before["handoff_webhook"]["url"] is None
+
+    created = admin.post(
+        "/admin/api/demo/handoff-webhook",
+        json={"url": "https://contact-centre.example/hooks/olink"},
+    ).json()
+    secret = created["secret"]
+
+    after = admin.get("/admin/api/demo/integrations")
+    body = after.json()
+    assert body["handoff_webhook"]["connected"] is True
+    assert body["handoff_webhook"]["url"] == "https://contact-centre.example/hooks/olink"
+    assert body["handoff_webhook"]["has_secret"] is True
+    # The signing secret is issued once and never readable again — a value the
+    # API will re-display is a value that ends up in a screenshot.
+    assert secret not in after.text
+
+
+def test_an_operator_cannot_read_the_integration_settings(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """It names where customer contact details are sent."""
+    ops = _signed_in(client, demo_bank, "ops@bank.et", "operator")
+    assert ops.get("/admin/api/demo/integrations").status_code == 403
