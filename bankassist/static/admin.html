@@ -73,6 +73,39 @@
 .transcript{margin-top:10px;border-top:1px solid #1e293b;padding-top:10px}
 .noteform{display:flex;gap:8px;margin-top:10px}
 .noteform input{flex:1;background:#0b1220;border:1px solid #273449;color:#e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit}
+/* Export + print */
+.tools{margin-bottom:14px}
+.tools button{background:#273449;border:none;color:#e2e8f0;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;margin-right:8px}
+.tools button:hover{background:#0f766e;color:#fff}
+.printonly{display:none}
+
+/* The dashboard is near-black by design. Printed as-is it is a wasted
+   cartridge and an unreadable page, so print gets an inverted palette rather
+   than the screen's. This is the one report that leaves the building — a bank
+   puts it in a board pack — so it has to look like a document, not a
+   screenshot of a console. */
+@media print {
+  @page { margin: 16mm; }
+  html, body { background: #fff !important; color: #111 !important; }
+  header, nav, .noprint, .windowbar { display: none !important; }
+  .printonly { display: block; }
+  .stamp { margin-bottom: 18px; border-bottom: 2px solid #111; padding-bottom: 10px }
+  .stamp h1 { font-size: 19px; margin: 0 0 4px; color: #111 }
+  .stamp div { font-size: 12px; color: #444 }
+  main { padding: 0 !important; max-width: none !important }
+  /* A panel split across a page break loses the heading that says what its
+     numbers are. */
+  .panel, .kpi { break-inside: avoid; page-break-inside: avoid;
+                 background: #fff !important; border: 1px solid #bbb !important;
+                 color: #111 !important }
+  .panel h3 { color: #111 !important }
+  .kpis { display: grid !important; grid-template-columns: repeat(4, 1fr) !important }
+  .kpi .v { color: #111 !important }
+  .kpi .k, .kpi .sub, .note, .bar .n, .topic .n { color: #444 !important }
+  .bar span, .topic, .topic span { color: #111 !important }
+  .bar .track { background: #e5e5e5 !important }
+  .bar .fill { background: #555 !important }
+}
 </style>
 </head>
 <body>
@@ -136,6 +169,11 @@ var OUTCOME_LABEL = {
   account_blocked:  ["Account request declined",   ""],
   unanswered:       ["Nobody could answer",        "bad"],
   complaint:        ["Complaint",                  "bad"],
+  // Added when the escalation intent shipped; without it this outcome
+  // rendered to a bank as the raw key "human_request", on screen and in the
+  // export. Any new outcome needs a row here — and SUBSTANTIVE below has to
+  // know about it too. tests/test_admin_labels.py fails if either drifts.
+  human_request:    ["Asked for a person",         "warn"],
   greeting:         ["Greeting",                   ""],
   contact_captured: ["Contact details given",      ""]
 };
@@ -184,8 +222,14 @@ function loadOverview() {
     // Only the outcomes that are actually questions. Greetings and the contact
     // exchange are real turns but they are not in the denominator above, and
     // charting them beside the others implies they are.
+    // MUST mirror agent.SUBSTANTIVE. The server counts these as the
+    // denominator of every rate; anything this list omits still lands in that
+    // denominator while being drawn under "not counted as questions", so the
+    // bars silently stop summing to their own total. human_request was
+    // missing for exactly that reason.
     var SUBSTANTIVE = ["answered", "general_guidance", "comparison",
-                       "account_blocked", "unanswered", "complaint"];
+                       "account_blocked", "unanswered", "complaint",
+                       "human_request"];
     var qRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) > -1; });
     var otherRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) < 0; });
 
@@ -216,8 +260,89 @@ function loadOverview() {
         : '<div class="empty">Nothing yet.</div>') +
       '<div class="note">Phone numbers and email addresses are removed from this list.</div></div>';
 
-    document.getElementById("main").innerHTML = windowbar + kpis + outcomes + languages + topics;
+    // Kept so the export reads exactly what the screen reads. Re-fetching on
+    // click would let the two disagree whenever the window changed in
+    // between, and a bank comparing a printout against the dashboard would be
+    // right to distrust both.
+    state.analytics = a;
+
+    // Provenance. A page in a board pack with no bank name, no window and no
+    // date is unciteable — the first question in the room is "as of when?".
+    var stamp = '<div class="printonly stamp"><h1>' + esc(a.bank_name || state.slug) +
+      " — assistant report</h1>" +
+      "<div>" + (a.window_days ? "Last " + a.window_days + " days" : "All time") +
+      (a.since ? " (since " + esc(a.since.slice(0, 10)) + ")" : "") +
+      " \u00b7 generated " + new Date().toISOString().slice(0, 10) + "</div></div>";
+
+    var tools = '<div class="tools noprint">' +
+      '<button onclick="exportAnalytics()">Export CSV</button>' +
+      '<button onclick="window.print()">Print / PDF</button></div>';
+
+    document.getElementById("main").innerHTML =
+      stamp + windowbar + tools + kpis + outcomes + languages + topics;
   }).catch(function (e) { setStatus(e.message); });
+}
+
+// The same report as a spreadsheet. One row per fact, tagged by section, so
+// it pivots — rather than a wide sheet someone has to unpick by hand.
+//
+// Rates carry the counts they came from, and a null rate is written "n/a"
+// rather than 0 or blank. The screen deliberately shows a dash on a fresh
+// tenant instead of "0% deflection"; an export that quietly turned that into
+// a zero would put a lie in front of the one audience that acts on it.
+function exportAnalytics() {
+  var a = state.analytics;
+  if (!a) { setStatus("Load the overview first"); return; }
+  var rows = [];
+  function add(section, item, count, share) {
+    rows.push([section, item, count == null ? "" : count, share == null ? "n/a" : share]);
+  }
+
+  add("Report", "Bank", a.bank_name || state.slug, "");
+  add("Report", "Window", a.window_days ? "Last " + a.window_days + " days" : "All time", "");
+  add("Report", "Generated", new Date().toISOString().slice(0, 10), "");
+
+  add("Headline", "Conversations", a.conversations, "");
+  add("Headline", "Questions asked", a.substantive_questions, "");
+  add("Headline", "Handled without a person", a.resolved_without_a_person, pct(a.deflection_rate));
+  add("Headline", "Answered from your own content", a.answered_from_own_content, pct(a.own_content_rate));
+
+  // Greetings and the contact exchange are real turns but they are NOT in the
+  // question denominator, so dividing them by it produces a number that means
+  // nothing — "Greeting 2, 28.6%" reads as a share of questions and is a
+  // share of nothing. The screen already separates them; the export has to
+  // make the same distinction or it quietly contradicts the page it came from.
+  var SUBSTANTIVE_OUT = ["answered", "general_guidance", "comparison",
+                         "account_blocked", "unanswered", "complaint",
+                         "human_request"];
+  a.outcomes.forEach(function (r) {
+    var label = (OUTCOME_LABEL[r.outcome] || [r.outcome])[0];
+    if (SUBSTANTIVE_OUT.indexOf(r.outcome) > -1) {
+      add("What happened", label, r.count,
+          a.substantive_questions ? pct(r.count / a.substantive_questions) : null);
+    } else {
+      add("Other turns (not counted as questions)", label, r.count, "");
+    }
+  });
+  if (a.unclassified_turns) {
+    add("What happened", "Predate outcome tracking, excluded from every rate",
+        a.unclassified_turns, "");
+  }
+
+  var langTotal = a.languages.reduce(function (s, r) { return s + r.count; }, 0);
+  a.languages.forEach(function (r) {
+    add("Languages", r.name || r.language, r.count, langTotal ? pct(r.count / langTotal) : null);
+  });
+  a.channels.forEach(function (r) { add("Channels", r.channel, r.count, ""); });
+
+  a.top_topics.forEach(function (t) { add("Most asked", t.example, t.count, ""); });
+
+  add("Handoffs", "Open", a.handoffs.open, "");
+  add("Handoffs", "Open and reachable", a.handoffs.open_reachable, "");
+  add("Handoffs", "Open with no contact details", a.handoffs.open_unreachable, "");
+  add("Handoffs", "Closed", a.handoffs.closed, "");
+
+  downloadCsv("report", ["Section", "Item", "Count", "Share"], rows);
 }
 
 // ------------------------------------------------ documents
