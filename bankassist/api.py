@@ -25,7 +25,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import admin_auth, handoff_webhook, passwords, permissions, roles, telegram
+from . import (
+    admin_auth,
+    channels,
+    handoff_webhook,
+    passwords,
+    permissions,
+    roles,
+    telegram,
+)
 from . import agent as agent_module
 from .agent import handle_message
 from .classifier import redact_contact
@@ -309,6 +317,7 @@ NeedsGapsRead = Depends(require(permissions.Perm.GAPS_READ))
 NeedsDocumentsRead = Depends(require(permissions.Perm.DOCUMENTS_READ))
 NeedsDocumentsWrite = Depends(require(permissions.Perm.DOCUMENTS_WRITE))
 NeedsIntegrationsManage = Depends(require(permissions.Perm.INTEGRATIONS_MANAGE))
+NeedsAuditRead = Depends(require(permissions.Perm.AUDIT_READ))
 NeedsUsersManage = Depends(require(permissions.Perm.USERS_MANAGE))
 
 
@@ -498,6 +507,22 @@ def chat(
 # tiny documents served on a cold open; revalidating costs nothing next to
 # demoing a stale UI to a prospect.
 _NO_STORE = {"Cache-Control": "no-store, must-revalidate"}
+
+
+@app.get("/embed.js")
+def embed_script() -> FileResponse:
+    """The loader a bank pastes onto its own site.
+
+    Cached, unlike the pages: this is fetched by every visitor to the bank's
+    website rather than by the handful of people who open the admin panel, and
+    a no-store script would be a request on every page view of a bank's site
+    for a file that changes a few times a year.
+    """
+    return FileResponse(
+        _STATIC / "embed.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/widget")
@@ -1261,6 +1286,20 @@ def integration_settings(
             "has_secret": bool(bank.handoff_webhook_secret),
         },
         "telegram": {"connected": bool(bank.telegram_bot_token)},
+        # Every channel, with what each actually requires. Served rather than
+        # written into the page so the answer to "can you do WhatsApp" is one
+        # list, kept next to the code that would implement it.
+        "channels": channels.catalogue(
+            telegram_connected=bool(bank.telegram_bot_token)
+        ),
+        # The snippet to paste on the bank's own site. It was never shown
+        # anywhere, so the one channel that is live by default had no
+        # instructions attached to it.
+        "embed": (
+            f'<script src="{get_settings().app_base_url}/embed.js" '
+            f'data-bank="{bank.slug}" data-color="{bank.primary_color}" '
+            f"defer></script>"
+        ),
         "branding": {
             "primary_color": bank.primary_color,
             "logo_url": bank.logo_url,
@@ -1372,6 +1411,99 @@ def recent_activity(
     ]
 
 
+@app.get("/admin/api/{slug}/audit")
+def audit_log(
+    limit: int = 50,
+    offset: int = 0,
+    action: str | None = None,
+    actor: str | None = None,
+    principal: Principal = NeedsAuditRead,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The full record of who did what, for an access review.
+
+    Distinct from `/activity`, which is the dashboard's feed. That one drops
+    sign-ins and caps at a dozen because it answers "what changed lately"; this
+    one answers "show me everything this person did" and drops nothing. A
+    review that silently omits a category of event is not a review, and sign-ins
+    are usually the first thing asked about.
+
+    Paged rather than capped, and the total is returned alongside, because "50
+    entries" and "50 of 4,300 entries" are different answers and only one of
+    them is honest about what is being looked at.
+    """
+    bank = principal.bank
+    where = [AuditLog.bank_id == bank.id]
+    if action:
+        where.append(AuditLog.action == action)
+    if actor:
+        where.append(AuditLog.actor == actor)
+
+    total = db.execute(
+        select(func.count()).select_from(AuditLog).where(*where)
+    ).scalar_one()
+    rows = db.execute(
+        select(AuditLog)
+        .where(*where)
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(max(1, min(limit, 500)))
+        .offset(max(0, offset))
+    ).scalars().all()
+
+    # Resolved here rather than in the browser, and only for the ids on this
+    # page — a review of a busy tenant should not pull every user row to label
+    # fifty lines.
+    ids = {r.actor for r in rows if r.actor != TOKEN_ACTOR}
+    people = {
+        u.id: {"name": u.display_name or u.email, "email": u.email}
+        for u in db.execute(select(User).where(User.id.in_(ids))).scalars()
+    } if ids else {}
+
+    def _who(actor_id: str) -> dict[str, Any]:
+        if actor_id == TOKEN_ACTOR:
+            return {"name": "Admin token", "email": None, "by_token": True}
+        # An id that no longer resolves is shown as itself. An audit trail that
+        # hides the entries it cannot pretty-print is not an audit trail.
+        person = people.get(actor_id)
+        return {
+            "name": person["name"] if person else actor_id,
+            "email": person["email"] if person else None,
+            "by_token": False,
+        }
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        # Every distinct action present for this tenant, so the filter offers
+        # what exists rather than a hardcoded list that drifts from it.
+        "actions": sorted(
+            a for (a,) in db.execute(
+                select(AuditLog.action)
+                .where(AuditLog.bank_id == bank.id)
+                .group_by(AuditLog.action)
+            ).all()
+        ),
+        "entries": [
+            {
+                "id": r.id,
+                "at": r.created_at.isoformat(),
+                "action": r.action,
+                "entity_type": r.entity_type,
+                "entity_id": r.entity_id,
+                "actor": _who(r.actor),
+                # The raw id as well as the label, so "show only this person"
+                # filters on identity. Two colleagues can share a display name
+                # and an audit filter that merged them would be worse than no
+                # filter at all.
+                "actor_id": r.actor,
+                "metadata": r.log_metadata or {},
+            }
+            for r in rows
+        ],
+    }
+
+
 @app.get("/admin/api/{slug}/content-gaps")
 def content_gaps(
     principal: Principal = NeedsGapsRead, db: Session = Depends(get_db)
@@ -1390,16 +1522,20 @@ def content_gaps(
     own words, with its own limits and fees.
     """
     bank = principal.bank
+    # Joined to the conversation for its language. Which language a gap was
+    # asked in decides which language the article has to be written in, and
+    # without it the page can rank the work but not assign it.
     rows = db.execute(
-        select(Handoff)
+        select(Handoff, Conversation.language)
+        .join(Conversation, Conversation.id == Handoff.conversation_id, isouter=True)
         .where(Handoff.bank_id == bank.id)
         .where(Handoff.reason.in_(["unanswered_question", "answered_from_general_knowledge"]))
         .order_by(Handoff.created_at.desc())
         .limit(1000)
-    ).scalars().all()
+    ).all()
 
     grouped: dict[str, dict[str, Any]] = {}
-    for h in rows:
+    for h, language in rows:
         # Same scrubbing as the analytics report, and for the same reason:
         # this is an aggregate view that gets exported. The handoff row itself
         # still carries the exact words and the contact fields, which is what
@@ -1415,11 +1551,14 @@ def content_gaps(
                 "count": 0,
                 "open_count": 0,
                 "reasons": {},
+                "languages": {},
                 "examples": [],
                 "last_asked": h.created_at.isoformat(),
             },
         )
         gap["count"] += 1
+        if language:
+            gap["languages"][language] = gap["languages"].get(language, 0) + 1
         if h.status == "open":
             gap["open_count"] += 1
         gap["reasons"][h.reason] = gap["reasons"].get(h.reason, 0) + 1

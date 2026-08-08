@@ -348,3 +348,162 @@ def test_the_assistant_recognises_both_names_as_this_bank(
     assert "CBE" in aliases
     assert demo_bank.name in aliases
     assert demo_bank.slug in aliases
+
+
+def test_the_embed_snippet_points_at_a_script_that_exists(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The snippet is copy-pasted onto a bank's production site.
+
+    It was first generated pointing at /embed.js before that route existed, so
+    the one channel that is live by default shipped with an install
+    instruction that 404s. Nothing in the type system or the render would have
+    caught it — the string was perfectly well-formed.
+    """
+    import re
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    snippet = admin.get("/admin/api/demo/integrations").json()["embed"]
+    src = re.search(r'src="([^"]+)"', snippet)
+    assert src, snippet
+    path = src.group(1).split("/", 3)[-1]
+    served = client.get("/" + path)
+    assert served.status_code == 200, f"{path} is not served"
+    assert "javascript" in served.headers["content-type"]
+    # And it carries this tenant, or it would load someone else's assistant.
+    assert f'data-bank="{demo_bank.slug}"' in snippet
+
+
+def test_the_channel_list_does_not_promise_what_is_not_built(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """WhatsApp is not built, and the page must not imply otherwise.
+
+    "Coming soon" beside a platform logo is a promise made on the bank's
+    behalf to someone deciding whether to buy. Every entry states its status
+    and what it would require, and the requirements are what make the claim
+    checkable rather than reassuring.
+    """
+    from bankassist import channels
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    rows = {c["key"]: c for c in admin.get("/admin/api/demo/integrations").json()["channels"]}
+
+    assert rows["web"]["status"] == channels.LIVE
+    assert rows["telegram"]["status"] == channels.AVAILABLE  # no token set yet
+    for key in ("whatsapp", "messenger", "instagram", "viber", "sms"):
+        assert rows[key]["status"] == channels.PLANNED, key
+        assert rows[key]["needs"], f"{key} claims to be planned but lists no prerequisite"
+
+
+def test_connecting_telegram_moves_it_to_live(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    from bankassist import channels
+    from bankassist.models import Bank
+
+    bank = db_session.get(Bank, demo_bank.id)
+    bank.telegram_bot_token = "123:fake-token-for-this-test"  # noqa: S105
+    db_session.commit()
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    rows = {c["key"]: c for c in admin.get("/admin/api/demo/integrations").json()["channels"]}
+    assert rows["telegram"]["status"] == channels.LIVE
+
+
+def test_content_gaps_carry_the_language_they_were_asked_in(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """Which language a gap was asked in decides which language to write in.
+
+    Without it the page can rank the work but cannot assign it — and the
+    column that used to be there read a field the endpoint never returned, so
+    it rendered blank for every row.
+    """
+    from bankassist.models import Conversation, Handoff
+
+    convo = Conversation(bank_id=demo_bank.id, channel="widget", language="am")
+    db_session.add(convo)
+    db_session.flush()
+    db_session.add(
+        Handoff(bank_id=demo_bank.id, conversation_id=convo.id,
+                reason="unanswered_question", detail="የመኪና ብድር አለ?")
+    )
+    db_session.commit()
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    gaps = admin.get("/admin/api/demo/content-gaps").json()
+    assert gaps, "expected at least one gap"
+    assert any(g["languages"].get("am") for g in gaps)
+
+
+def test_the_audit_log_keeps_what_the_dashboard_feed_drops(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The two views answer different questions and must not be merged.
+
+    The dashboard feed drops sign-ins so a busy morning does not crowd out
+    every content change. An access review that silently omitted them would be
+    hiding the category most likely to be asked about first.
+    """
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    admin.post("/admin/api/demo/documents",
+               json={"title": "T", "content": "C", "language": "en"})
+
+    feed = {r["action"] for r in admin.get("/admin/api/demo/activity").json()}
+    audit = {e["action"] for e in admin.get("/admin/api/demo/audit").json()["entries"]}
+    assert "admin_login" not in feed
+    assert "admin_login" in audit
+    assert "document_created" in audit
+
+
+def test_the_audit_log_reports_the_total_not_just_the_page(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """"50 entries" and "50 of 4,300" are different answers."""
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    for i in range(6):
+        admin.post("/admin/api/demo/documents",
+                   json={"title": f"T{i}", "content": "C", "language": "en"})
+    page = admin.get("/admin/api/demo/audit?limit=2").json()
+    assert len(page["entries"]) == 2
+    assert page["total"] > 2
+    # And paging actually moves.
+    second = admin.get("/admin/api/demo/audit?limit=2&offset=2").json()
+    assert [e["id"] for e in second["entries"]] != [e["id"] for e in page["entries"]]
+
+
+def test_the_audit_log_can_be_filtered_to_one_person_by_id(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """By id, not by display name — two colleagues can share a name."""
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    admin.post("/admin/api/demo/documents",
+               json={"title": "T", "content": "C", "language": "en"})
+    # The break-glass token acting, so there are two distinct actors present.
+    client.post("/admin/api/demo/documents", headers=_headers(demo_bank),
+                json={"title": "T2", "content": "C", "language": "en"})
+
+    me = db_session.execute(select(User).where(User.email == "boss@bank.et")).scalar_one()
+    mine = admin.get(f"/admin/api/demo/audit?actor={me.id}").json()
+    assert mine["entries"]
+    assert {e["actor_id"] for e in mine["entries"]} == {me.id}
+    assert all(e["actor"]["by_token"] is False for e in mine["entries"])
+
+    by_token = admin.get("/admin/api/demo/audit?actor=admin-token").json()
+    assert by_token["entries"]
+    assert all(e["actor"]["by_token"] is True for e in by_token["entries"])
+
+
+def test_an_operator_cannot_read_the_audit_log(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Reviewing colleagues' actions is a management function.
+
+    An operator who can see that a manager disabled someone's account on
+    Tuesday has been handed something nobody decided to give them.
+    """
+    ops = _signed_in(client, demo_bank, "ops@bank.et", "operator")
+    assert ops.get("/admin/api/demo/audit").status_code == 403
+    # ...and the dashboard feed stays open to them, which is the distinction.
+    assert ops.get("/admin/api/demo/activity").status_code == 200

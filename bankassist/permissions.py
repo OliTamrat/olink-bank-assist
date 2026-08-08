@@ -78,6 +78,20 @@ class Perm:
     it.
     """
 
+    AUDIT_READ: Final = "audit.read"
+    """The full record of who did what in this panel.
+
+    Its own permission, and deliberately not part of the read-everything
+    bundle. Reviewing colleagues' actions is a management function rather than
+    part of working the queue, and an operator who can see that a manager
+    disabled someone's account on Tuesday has been given something nobody
+    decided to give them.
+
+    Separating it also means a bank can hand audit access to a compliance
+    officer who should see nothing else — which is precisely the person most
+    likely to ask for it, and exactly what permissions-as-data is for.
+    """
+
     USERS_MANAGE: Final = "users.manage"
     """Create, disable and re-role colleagues.
 
@@ -97,6 +111,7 @@ ALL: Final[tuple[str, ...]] = (
     Perm.DOCUMENTS_READ,
     Perm.DOCUMENTS_WRITE,
     Perm.INTEGRATIONS_MANAGE,
+    Perm.AUDIT_READ,
     Perm.USERS_MANAGE,
 )
 
@@ -125,6 +140,7 @@ BUILTIN_ROLES: Final[dict[str, tuple[str, ...]]] = {
         Perm.HANDOFFS_RESOLVE,
         Perm.DOCUMENTS_WRITE,
         Perm.INTEGRATIONS_MANAGE,
+        Perm.AUDIT_READ,
         Perm.USERS_MANAGE,
     ),
 }
