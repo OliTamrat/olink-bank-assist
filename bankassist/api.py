@@ -129,6 +129,11 @@ class ChatResponse(BaseModel):
     # The reply asked how to reach this customer; the next message is expected
     # to be their name and number. Channels use it to prompt for exactly that.
     awaiting_contact: bool = False
+    # What this turn actually did — agent's outcome vocabulary. Exposed because
+    # intent alone mislabels every turn that isn't answering a question: storing
+    # a customer's phone number was displayed as "Product guidance", inherited
+    # from the placeholder intent the contact-capture path returns.
+    outcome: str | None = None
 
 
 class DocumentIn(BaseModel):
@@ -229,6 +234,7 @@ def chat(
         suggestions=result.suggestions,
         general_knowledge=result.general_knowledge,
         awaiting_contact=result.awaiting_contact,
+        outcome=result.outcome,
     )
 
 

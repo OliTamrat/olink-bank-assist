@@ -508,3 +508,33 @@ def test_the_number_is_only_confirmed_on_a_callback_turn(
     answered = _ask(client, "demo", "How do I open a savings account?", convo)
     assert answered["sources"], "setup: this should be answered from content"
     assert "0911234567" not in answered["reply"]
+
+
+def test_the_turn_reports_what_it_actually_did(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The contact-capture path returns a placeholder "question" intent, so a
+    channel labelling turns by intent alone showed "Product guidance" over a
+    reply that stored a phone number. outcome is what makes that fixable
+    without changing the stored intent."""
+    first = _ask(client, "demo", UNANSWERABLE)
+    assert first["outcome"] == "unanswered"
+
+    saved = _ask(client, "demo", "Oli 0911234567", first["conversation_id"])
+    assert saved["intent"] == "question", "the placeholder intent is unchanged"
+    assert saved["outcome"] == "contact_captured"
+
+
+def test_every_turn_carries_an_outcome(client: TestClient, demo_bank: Any) -> None:
+    """A null outcome would silently fall back to the intent label, which is
+    how the mislabel hid in the first place."""
+    for message in (
+        "Hello",
+        "How do I open a savings account?",
+        "What is my account balance?",
+        "I got scammed at the branch",
+        "Can I speak to a manager",
+        UNANSWERABLE,
+    ):
+        data = _ask(client, "demo", message)
+        assert data["outcome"], message
