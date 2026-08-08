@@ -9,19 +9,27 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from . import agent as agent_module
-from . import telegram
+from . import handoff_webhook, telegram
 from .agent import handle_message
 from .classifier import redact_contact
 from .config import get_settings
-from .db import get_db, init_db
+from .db import get_db, get_engine, init_db
 from .i18n import LANGUAGE_NAMES, SUPPORTED_LANGUAGES
 from .llm import active_backend, credentials_ready
 from .logging_config import configure_logging, log_event
@@ -197,9 +205,42 @@ def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     }
 
 
+def _deliver_handoffs(bank_id: str, handoff_ids: list[str]) -> None:
+    """Post each handoff to the bank's contact-centre tool, after the reply.
+
+    Opens its own session. The request's session is closed by the time a
+    background task runs, and reusing it would either fail or — worse — work
+    intermittently depending on how the pool happened to be behaving.
+
+    Nothing here can raise into anything: FastAPI runs background tasks
+    outside the request, so an exception is logged by the framework and the
+    customer never learns of it. Failing loudly would achieve nothing except
+    noise, and the handoff is safely in the console either way.
+    """
+    factory = sessionmaker(bind=get_engine(), expire_on_commit=False)
+    db = factory()
+    try:
+        bank = db.get(Bank, bank_id)
+        if bank is None:
+            return
+        for handoff_id in handoff_ids:
+            handoff = db.get(Handoff, handoff_id)
+            # Tenancy, even here. A background task with a stale id must never
+            # be able to post one bank's customer to another bank's endpoint.
+            if handoff is None or handoff.bank_id != bank.id:
+                continue
+            handoff_webhook.deliver(bank, handoff)
+    finally:
+        db.close()
+
+
 @app.post("/chat/{slug}", response_model=ChatResponse)
 def chat(
-    slug: str, payload: ChatRequest, request: Request, db: Session = Depends(get_db)
+    slug: str,
+    payload: ChatRequest,
+    request: Request,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
 ) -> ChatResponse:
     client_ip = request.client.host if request.client else "unknown"
     ip_limiter: SlidingWindowLimiter = request.app.state.ip_limiter
@@ -224,6 +265,14 @@ def chat(
         conversation.language = payload.language
 
     result = handle_message(db, bank, conversation, payload.message)
+
+    # handle_message has committed by now, so the handoff exists whatever
+    # happens next. Delivery runs after the response is sent: a bank's CRM
+    # being slow or down must never add its timeout to a customer's reply, and
+    # a customer reporting theft gets their acknowledgement either way.
+    if result.handoff_ids and bank.handoff_webhook_url:
+        background.add_task(_deliver_handoffs, bank.id, list(result.handoff_ids))
+
     return ChatResponse(
         conversation_id=conversation.id,
         reply=result.reply,
@@ -317,6 +366,58 @@ def telegram_connect(
     _audit(db, bank, "telegram_connected", "bank", bank.id, {"webhook_url": webhook_url})
     db.commit()
     return {"webhook_url": webhook_url, "telegram_response": response}
+
+
+class HandoffWebhookIn(BaseModel):
+    # None disconnects. An empty string would be indistinguishable from a
+    # typo, so turning it off has to be explicit.
+    url: str | None = Field(default=None, max_length=500)
+
+
+@app.post("/admin/api/{slug}/handoff-webhook")
+def set_handoff_webhook(
+    slug: str, payload: HandoffWebhookIn,
+    bank: Bank = Depends(require_admin), db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Point handoffs at the bank's own contact-centre tool.
+
+    The secret is generated here and returned exactly once. It cannot be read
+    back afterwards — an admin token that leaks would otherwise hand over the
+    means to forge handoffs into the bank's ticketing system, and a value the
+    API will re-display is a value that ends up in a screenshot.
+
+    Only https is accepted. The payload carries a customer's question and
+    phone number, and posting that over plain http would put it on the wire in
+    clear text on the way to a third party.
+    """
+    if payload.url is None:
+        bank.handoff_webhook_url = None
+        bank.handoff_webhook_secret = None
+        _audit(db, bank, "handoff_webhook_disconnected", "bank", bank.id, {})
+        db.commit()
+        return {"connected": False}
+
+    if not payload.url.startswith("https://"):
+        raise HTTPException(status_code=422, detail="Webhook URL must be https")
+
+    bank.handoff_webhook_url = payload.url
+    secret = new_token()
+    bank.handoff_webhook_secret = secret
+    # The URL is audited; the secret never is. An audit log is read by more
+    # people than the response to this call ever will be.
+    _audit(db, bank, "handoff_webhook_connected", "bank", bank.id, {"url": payload.url})
+    db.commit()
+    return {
+        "connected": True,
+        "url": payload.url,
+        "secret": secret,
+        "signature_header": handoff_webhook.SIGNATURE_HEADER,
+        "note": (
+            "Store this secret now — it is not retrievable. Verify each POST by "
+            "computing HMAC-SHA256 of the raw body with it and comparing "
+            "against the signature header, using a constant-time comparison."
+        ),
+    }
 
 
 # ---------------------------------------------------------------- admin: documents

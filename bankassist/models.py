@@ -53,6 +53,15 @@ class Bank(Base):
     allow_general_knowledge: Mapped[bool] = mapped_column(Boolean, default=True)
     telegram_bot_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     telegram_webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Where to POST a handoff so it lands in the bank's own contact-centre tool
+    # rather than only in our console. Null = off, and that has to stay the
+    # default: the payload carries a customer's question and their phone
+    # number, which is personal data leaving our control.
+    handoff_webhook_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Shared secret for the HMAC signature on each POST. Without it the
+    # receiving system cannot tell our request from anyone else's who learns
+    # the URL.
+    handoff_webhook_secret: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     documents: Mapped[list[Document]] = relationship(back_populates="bank")
