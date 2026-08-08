@@ -13,16 +13,43 @@
    every dashboard this was modelled on does — would have made the panel look
    like our product installed at their bank rather than like their product. */
 :root {
+  /* Dark by default. The panel is looked at all day by someone working a
+     queue, and this is the palette the rest of the Olink products use.
+     Light is a real alternative rather than an afterthought — some banks
+     will print from the screen and some offices are very bright — so every
+     colour below is a token and the light theme only redefines these. */
   --brand: #0f766e;
+  --bg: #0a0c12;
+  --surface: #12141d;
+  --surface-2: #171a25;
+  --side: #06070d;
+  --side-2: #171a25;
+  --line: #202433;
+  --ink: #f3f5f9;
+  --body: #c7cddc;
+  --muted: #8b94a8;
+  --faint: #646d80;
+  --side-text: #98a1b5;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --ok-bg: #10281a;
+  --warn-bg: #2b2110;
+  --bad-bg: #2c1618;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5);
+  --radius: 14px;
+}
+:root[data-theme="light"] {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #f9fafc;
+  --side: #131a2b;
+  --side-2: #1c2439;
+  --line: #e4e7ee;
   --ink: #0f1729;
   --body: #35415a;
   --muted: #6b7689;
   --faint: #8f99ab;
-  --line: #e4e7ee;
-  --bg: #f6f7fb;
-  --surface: #ffffff;
-  --side: #131a2b;
-  --side-2: #1c2439;
   --side-text: #aeb7c9;
   --ok: #15803d;
   --warn: #b45309;
@@ -30,7 +57,7 @@
   --ok-bg: #eafaf0;
   --warn-bg: #fdf5e6;
   --bad-bg: #fdeeee;
-  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06);
 }
 * { box-sizing: border-box; margin: 0; }
 body {
@@ -150,12 +177,52 @@ textarea { min-height: 170px; resize: vertical; }
 #status { font-size: 12.5px; color: var(--muted); }
 main { padding: 20px 24px 40px; }
 
+/* ------------------------------------------------------- welcome banner
+   From the reference dashboard, minus its mascot and its wave emoji. The
+   gradient is derived from the tenant's own hue, so it reads as their panel
+   and not as ours. */
+.hello {
+  background: linear-gradient(120deg,
+    color-mix(in srgb, var(--brand) 26%, var(--surface)),
+    var(--surface) 72%);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 20px 22px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.hello h2 { font-size: 20px; letter-spacing: -.01em; }
+.hello p { color: var(--muted); font-size: 13.5px; margin-top: 3px; }
+.hello .right { margin-left: auto; text-align: right; }
+.hello .big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.hello .cap { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
 /* ---------------------------------------------------------------- cards */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(198px, 1fr));
   gap: 14px; margin-bottom: 18px; }
 .kpi { background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 15px 16px; }
-.kpi .k { font-size: 12.5px; color: var(--muted); }
+.kpi { display: flex; gap: 12px; align-items: flex-start; }
+.kpi .txt { flex: 1; min-width: 0; }
+/* The circular tinted icon from the reference. Purely decorative, so it is
+   aria-hidden — a screen reader announcing "chart icon" before every number
+   would be noise. */
+.kpi .ico {
+  width: 34px; height: 34px; border-radius: 10px; flex: none;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  color: var(--brand);
+}
+/* Two lines' worth of room whether or not the label needs it, so the four
+   numbers sit on one line across the row. Without it, "Answered from your own
+   content" wraps and drops its value below the other three, which reads as a
+   misalignment rather than as a longer label. */
+.kpi .k { font-size: 12.5px; color: var(--muted); line-height: 1.35; height: 2.7em; }
+/* A delta is only drawn when there is a named previous window to compare
+   with. An arrow with no stated baseline is decoration that reads as
+   evidence. */
+.delta { font-size: 11.5px; font-weight: 600; margin-top: 6px; display: inline-block; }
+.delta.up { color: var(--ok); }
+.delta.down { color: var(--bad); }
+.delta.flat { color: var(--faint); font-weight: 500; }
 .kpi .v { font-size: 27px; font-weight: 650; margin-top: 5px; letter-spacing: -.02em;
   font-variant-numeric: tabular-nums; }
 /* A metric with no denominator renders as an em dash, never as 0%. The
@@ -178,6 +245,40 @@ main { padding: 20px 24px 40px; }
 .chart .gl { stroke: var(--line); stroke-width: 1; }
 .chart text { font-size: 10px; fill: var(--faint); }
 .chart .dot { fill: var(--brand); }
+.chart .hit { fill: transparent; }
+.chartwrap { position: relative; }
+/* Hover readout, as in the reference. Real values off the same series the
+   line is drawn from — there is no second source to disagree with. */
+.tip {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity .12s;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px;
+  padding: 7px 10px; font-size: 12px; color: var(--ink); box-shadow: var(--shadow);
+  white-space: nowrap; transform: translate(-50%, -120%); z-index: 3;
+}
+.tip .d { color: var(--muted); font-size: 11px; }
+.tip.on { opacity: 1; }
+
+/* --------------------------------------------------------- activity feed */
+.feed { display: flex; gap: 11px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.feed:last-child { border-bottom: none; }
+.feed .tile {
+  width: 30px; height: 30px; border-radius: 9px; flex: none; display: grid;
+  place-items: center; background: color-mix(in srgb, var(--brand) 15%, transparent);
+  color: var(--brand);
+}
+.feed .tile.token { background: var(--warn-bg); color: var(--warn); }
+.feed .what { font-size: 13px; color: var(--body); }
+.feed .who { font-size: 11.5px; color: var(--faint); margin-top: 1px; }
+
+/* --------------------------------------------------------- chat preview */
+.preview { padding: 0; overflow: hidden; }
+.preview h3 { padding: 16px 16px 0; }
+.preview .frame {
+  width: 100%; height: 380px; border: none; display: block;
+  border-top: 1px solid var(--line); margin-top: 12px; background: var(--surface);
+}
+.preview .cap { padding: 10px 16px; font-size: 11.5px; color: var(--faint);
+  border-top: 1px solid var(--line); }
 
 /* ---------------------------------------------------------------- bars */
 .bar { display: grid; grid-template-columns: 170px 1fr 46px; gap: 12px;
@@ -252,7 +353,19 @@ td.title { color: var(--ink); font-weight: 550; }
 .printonly { display: none; }
 @media print {
   @page { margin: 16mm; }
+  /* Printing the dark theme is a wasted cartridge and an unreadable page.
+     The report is the one artefact that leaves the building — a bank puts it
+     in a board pack — so print always uses the light palette whatever is on
+     screen. */
+  :root {
+    --bg: #fff; --surface: #fff; --surface-2: #fff; --line: #bbb;
+    --ink: #111; --body: #222; --muted: #444; --faint: #555;
+    --ok: #15803d; --warn: #b45309; --bad: #b91c1c;
+    --ok-bg: #fff; --warn-bg: #fff; --bad-bg: #fff; --shadow: none;
+  }
   body { background: #fff; }
+  .hello { background: #fff !important; }
+  .preview, .tip { display: none !important; }
   .side, .topbar, .noprint, .tools { display: none !important; }
   .shell { display: block; }
   .printonly { display: block; }
@@ -341,6 +454,10 @@ td.title { color: var(--ink); font-weight: 550; }
       <h2 id="page-title">Dashboard</h2>
       <div class="spacer"></div>
       <span id="status"></span>
+      <button class="iconbtn" id="theme-toggle" title="Switch between dark and light"
+              aria-label="Switch between dark and light">
+        <span id="theme-glyph">☾</span>
+      </button>
     </div>
     <main id="main"></main>
   </div>
@@ -604,10 +721,32 @@ var SUBSTANTIVE = ["account_blocked", "answered", "comparison", "complaint",
 function pct(x) { return x == null ? "—" : Math.round(x * 1000) / 10 + "%"; }
 function num(n) { return (n == null ? 0 : n).toLocaleString(); }
 
-function kpi(label, value, sub, isNone) {
-  return '<div class="kpi"><div class="k">' + esc(label) + "</div>" +
+/* now vs then, stated in the words of the comparison rather than as a bare
+   arrow. Returns "" when there is no previous window, which is the honest
+   answer for an all-time view or a tenant's first month. */
+function delta(now, then, asRate) {
+  if (then == null || now == null) return "";
+  if (asRate) {
+    var pts = Math.round((now - then) * 1000) / 10;
+    if (Math.abs(pts) < 0.1) return '<span class="delta flat">no change on previous period</span>';
+    return '<span class="delta ' + (pts > 0 ? "up" : "down") + '">' +
+      (pts > 0 ? "▲ " : "▼ ") + Math.abs(pts) + " pts vs previous period</span>";
+  }
+  if (!then) return "";
+  var chg = Math.round(((now - then) / then) * 1000) / 10;
+  if (Math.abs(chg) < 0.1) return '<span class="delta flat">no change on previous period</span>';
+  return '<span class="delta ' + (chg > 0 ? "up" : "down") + '">' +
+    (chg > 0 ? "▲ " : "▼ ") + Math.abs(chg) + "% vs previous period</span>";
+}
+
+function kpi(label, value, sub, isNone, iconName, deltaHtml) {
+  return '<div class="kpi">' +
+    '<div class="txt"><div class="k">' + esc(label) + "</div>" +
     '<div class="v' + (isNone ? " none" : "") + '">' + value + "</div>" +
-    (sub ? '<div class="sub">' + esc(sub) + "</div>" : "") + "</div>";
+    (sub ? '<div class="sub">' + esc(sub) + "</div>" : "") +
+    (deltaHtml || "") + "</div>" +
+    '<div class="ico" aria-hidden="true">' + icon(iconName || "dashboard", 17) + "</div>" +
+    "</div>";
 }
 
 function bars(rows, total, labeller) {
@@ -686,18 +825,36 @@ function loadDashboard() {
       '<button class="btn ghost sm" id="dl-csv">Export CSV</button>' +
       '<button class="btn ghost sm" id="do-print">Print</button></div>';
 
+    var openNow = a.handoffs.open;
+    h += '<div class="hello noprint"><div>' +
+      "<h2>" + esc(greeting()) + (state.me && state.me.display_name
+        ? ", " + esc(state.me.display_name.split(/\s+/)[0]) : "") + "</h2>" +
+      "<p>" + (openNow
+        ? esc(openNow + " escalation" + (openNow === 1 ? "" : "s") + " waiting for someone.")
+        : "Nothing is waiting in the queue.") + "</p></div>" +
+      '<div class="right"><div class="big">' + num(a.conversations) + "</div>" +
+      '<div class="cap">' + (a.window_days ? "last " + a.window_days + " days" : "all time") +
+      "</div></div></div>";
+
     /* Four numbers a bank actually decides on. Not "leads" — every one of
        these is either a count we hold or a rate with a real denominator, and
        a rate with no denominator prints as an em dash rather than 0%. */
+    var prev = a.previous;
     h += '<div class="kpis">' +
-      kpi("Conversations", num(a.conversations), a.window_days ? "last " + a.window_days + " days" : "all time") +
-      kpi("Questions asked", num(a.substantive_questions), "greetings and thanks excluded") +
+      kpi("Conversations", num(a.conversations),
+          a.window_days ? "last " + a.window_days + " days" : "all time", false, "convos",
+          prev && delta(a.conversations, prev.conversations)) +
+      kpi("Questions asked", num(a.substantive_questions),
+          "greetings and thanks excluded", false, "gaps",
+          prev && delta(a.substantive_questions, prev.substantive_questions)) +
       kpi("Resolved without a person", pct(a.deflection_rate),
           a.substantive_questions ? num(a.resolved_without_a_person) + " of " + num(a.substantive_questions) : "no questions yet",
-          a.deflection_rate == null) +
+          a.deflection_rate == null, "handoffs",
+          prev && delta(a.deflection_rate, prev.deflection_rate, true)) +
       kpi("Answered from your own content", pct(a.own_content_rate),
           a.substantive_questions ? num(a.answered_from_own_content) + " of " + num(a.substantive_questions) : "no questions yet",
-          a.own_content_rate == null) +
+          a.own_content_rate == null, "docs",
+          prev && delta(a.own_content_rate, prev.own_content_rate, true)) +
       "</div>";
 
     h += '<div class="grid2"><div>' +
@@ -712,7 +869,15 @@ function loadDashboard() {
         return esc((OUTCOME_LABEL[r.outcome] || r.outcome) + " (" + r.count + ")"); }).join(", ") + "</div>" : "") +
       (a.unclassified_turns ? '<div class="note">' + num(a.unclassified_turns) +
         " earlier replies carry no outcome and are not counted above.</div>" : "") +
-      "</div></div><div>" +
+      "</div>" +
+      '<div class="panel"><h3>Most asked</h3>' + (a.top_topics.length
+        ? a.top_topics.map(function (t) {
+            return '<div class="topic"><span class="n">' + t.count + "</span><span>" +
+              esc(t.example) + "</span></div>";
+          }).join("")
+        : '<div class="empty">Nothing asked yet in this window.</div>') +
+      '<div class="note">Grouped by wording. Phone numbers and names are removed before grouping.</div></div>' +
+      "</div><div>" +
       '<div class="panel"><h3>Escalation queue</h3>' +
       '<div class="bar"><span>Open</span><span class="track"><span class="fill warn" style="width:' +
         (a.handoffs.open + a.handoffs.closed ? (a.handoffs.open / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
@@ -724,14 +889,19 @@ function loadDashboard() {
       bars(a.languages, langTotal, function (r) { return [r.name || r.language, ""]; }) + "</div>" +
       '<div class="panel"><h3>Channels</h3>' +
       bars(a.channels, a.conversations, function (r) { return [r.channel, ""]; }) + "</div>" +
+      '<div class="panel noprint" id="activity"><h3>Recent activity</h3>' +
+      '<div class="empty">Loading…</div></div>' +
       "</div></div>";
 
-    h += '<div class="panel"><h3>Most asked</h3>' + (a.top_topics.length
-      ? a.top_topics.map(function (t) {
-          return '<div class="topic"><span class="n">' + t.count + "</span><span>" + esc(t.example) + "</span></div>";
-        }).join("")
-      : '<div class="empty">Nothing asked yet in this window.</div>') +
-      '<div class="note">Grouped by wording. Phone numbers and names are removed before grouping.</div></div>';
+    /* What a bank most wants to see in a demo: the assistant as its own
+       customers meet it, on the same page as the numbers it produces. The
+       widget is a real page, so this is the real thing rather than a mockup
+       that can drift from it. */
+    h += '<div class="panel preview noprint"><h3>Live preview</h3>' +
+      '<iframe class="frame" title="Assistant preview" src="/widget?bank=' +
+      encodeURIComponent(state.slug) + '"></iframe>' +
+      '<div class="cap">Exactly what a customer sees on your website. ' +
+      "Messages sent here are real and appear in Conversations.</div></div>";
 
     $("main").innerHTML = h;
     Array.prototype.forEach.call(document.querySelectorAll("[data-days]"), function (b) {
@@ -739,6 +909,8 @@ function loadDashboard() {
     });
     $("dl-csv").onclick = exportAnalytics;
     $("do-print").onclick = function () { window.print(); };
+    wireChartTip(a.daily);
+    loadActivity();
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
@@ -757,6 +929,87 @@ var REASON_LABEL = {
    agent and every outcome the agent emits appears here — tests/test_admin_labels.py
    fails on either gap, because an unlabelled outcome renders to a bank as its
    raw internal key. */
+function greeting() {
+  var h = new Date().getHours();
+  return h < 12 ? "Good morning" : (h < 17 ? "Good afternoon" : "Good evening");
+}
+
+/* Hover readout on the trend line. The chart is drawn in viewBox units and
+   scaled by CSS, so the pointer's page position has to be mapped back through
+   the rendered box rather than assumed to match — otherwise the tooltip
+   tracks correctly only at one window width. */
+function wireChartTip(daily) {
+  var svg = document.querySelector(".chart");
+  if (!svg || !daily || daily.length < 2) return;
+  var wrap = svg.parentNode;
+  var tip = document.createElement("div");
+  tip.className = "tip";
+  wrap.classList.add("chartwrap");
+  wrap.appendChild(tip);
+
+  svg.addEventListener("mousemove", function (ev) {
+    var box = svg.getBoundingClientRect();
+    var frac = (ev.clientX - box.left) / box.width;
+    var i = Math.round(frac * (daily.length - 1));
+    if (i < 0) i = 0;
+    if (i > daily.length - 1) i = daily.length - 1;
+    var d = daily[i];
+    tip.innerHTML = '<div class="d">' + esc(new Date(d.date + "T00:00:00").toDateString()) +
+      "</div><strong>" + d.conversations + " conversation" +
+      (d.conversations === 1 ? "" : "s") + "</strong>";
+    tip.style.left = ((i / (daily.length - 1)) * box.width) + "px";
+    tip.style.top = (box.height * 0.5) + "px";
+    tip.classList.add("on");
+  });
+  svg.addEventListener("mouseleave", function () { tip.classList.remove("on"); });
+}
+
+var ACTION_LABEL = {
+  document_created: "added an article",
+  document_updated: "edited an article",
+  document_deleted: "deleted an article",
+  documents_bulk_imported: "imported articles",
+  handoff_closed: "closed an escalation",
+  handoff_reopened: "reopened an escalation",
+  handoff_webhook_connected: "connected the escalation webhook",
+  handoff_webhook_disconnected: "disconnected the escalation webhook",
+  telegram_connected: "connected Telegram",
+  user_created: "added a colleague",
+  user_disabled: "disabled an account",
+  user_enabled: "restored an account",
+  admin_login: "signed in",
+  password_changed: "changed their password"
+};
+
+function ago(iso) {
+  var mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + " min ago";
+  var hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + " h ago";
+  return Math.round(hrs / 24) + " d ago";
+}
+
+/* Worth showing only because audit_log.actor became a person. Before that
+   every row read "admin" and this would have been a list of identical
+   entries. Break-glass rows are marked rather than dressed up as a colleague. */
+function loadActivity() {
+  var box = $("activity");
+  if (!box) return;
+  api("/activity").then(function (rows) {
+    box.innerHTML = "<h3>Recent activity</h3>" + (rows.length
+      ? rows.map(function (r) {
+          return '<div class="feed"><div class="tile' + (r.by_token ? " token" : "") + '">' +
+            icon(r.by_token ? "settings" : "team", 15) + "</div><div>" +
+            '<div class="what">' + esc(ACTION_LABEL[r.action] || r.action.replace(/_/g, " ")) + "</div>" +
+            '<div class="who">' + esc(r.actor) + " · " + esc(ago(r.at)) + "</div></div></div>";
+        }).join("")
+      : '<div class="empty">Nothing yet.</div>');
+  }).catch(function () {
+    box.innerHTML = "<h3>Recent activity</h3><div class=\"empty\">Unavailable.</div>";
+  });
+}
+
 var OUTCOME_LABEL = {
   answered: "Answered from your content",
   general_guidance: "Answered from general banking knowledge",
@@ -1174,7 +1427,23 @@ function loadSettings() {
   }
 }
 
+/* ------------------------------------------------------------ theme
+   Dark is the default because that is what was asked for and what the rest of
+   the Olink products use. The choice is remembered per browser, and print
+   always uses the light palette regardless — see the print block. */
+function applyTheme(name) {
+  if (name === "light") document.documentElement.setAttribute("data-theme", "light");
+  else document.documentElement.removeAttribute("data-theme");
+  localStorage.setItem("ba_theme", name);
+  var g = $("theme-glyph");
+  if (g) g.textContent = name === "light" ? "☀" : "☾";
+}
+
 /* ------------------------------------------------------------ boot */
+applyTheme(localStorage.getItem("ba_theme") || "dark");
+$("theme-toggle").onclick = function () {
+  applyTheme(localStorage.getItem("ba_theme") === "light" ? "dark" : "light");
+};
 $("slug").value = state.slug;
 $("signin-btn").onclick = signInWithPassword;
 $("token-btn").onclick = signInWithToken;

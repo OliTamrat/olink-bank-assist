@@ -1216,6 +1216,59 @@ def list_handoffs(
     ]
 
 
+@app.get("/admin/api/{slug}/activity")
+def recent_activity(
+    limit: int = 12,
+    principal: Principal = NeedsAnalyticsRead,
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """What people have been doing in this panel, most recent first.
+
+    Only worth building because `audit_log.actor` became a person in the
+    authorization change — before that every row said "admin", and a feed over
+    it would have been a list of identical entries.
+
+    The actor is resolved to a name here rather than in the browser, so the
+    panel does not have to fetch the whole user list to render a feed. An id
+    that no longer resolves is shown as-is rather than dropped: an audit trail
+    that hides the entries it cannot pretty-print is not an audit trail.
+    """
+    bank = principal.bank
+    # Sign-ins are excluded from this feed and only from this feed. They are
+    # still written to audit_log, and the Team screen shows each person's last
+    # sign-in — but on a busy morning they crowd out every content and queue
+    # change, and a panel that is eight identical "signed in" rows tells a
+    # reader nothing. This answers "what changed", not "who was here".
+    rows = db.execute(
+        select(AuditLog)
+        .where(AuditLog.bank_id == bank.id, AuditLog.action != "admin_login")
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(max(1, min(limit, 50)))
+    ).scalars().all()
+
+    ids = {r.actor for r in rows if r.actor != TOKEN_ACTOR}
+    people = {
+        u.id: (u.display_name or u.email)
+        for u in db.execute(select(User).where(User.id.in_(ids))).scalars()
+    } if ids else {}
+
+    return [
+        {
+            "action": r.action,
+            "entity_type": r.entity_type,
+            "actor": (
+                "Admin token" if r.actor == TOKEN_ACTOR
+                else people.get(r.actor, r.actor)
+            ),
+            # So the panel can mark the break-glass rows rather than passing
+            # them off as a colleague.
+            "by_token": r.actor == TOKEN_ACTOR,
+            "at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
 @app.get("/admin/api/{slug}/content-gaps")
 def content_gaps(
     principal: Principal = NeedsGapsRead, db: Session = Depends(get_db)
@@ -1322,6 +1375,50 @@ def analytics(
     substantive = sum(counts.get(o, 0) for o in agent_module.SUBSTANTIVE)
     resolved = sum(counts.get(o, 0) for o in agent_module.RESOLVED)
     answered = counts.get(agent_module.ANSWERED, 0)
+
+    # --- the same figures for the window before this one ---------------
+    #
+    # So the dashboard can say "up from 71 last month" instead of drawing an
+    # arrow whose baseline nobody can name. A comparison is only worth showing
+    # if the reader can say what it is against.
+    #
+    # Null when there is nothing to compare with — an all-time view has no
+    # preceding window, and a tenant in its first month would otherwise show a
+    # triumphant +100% against a period when the product was not installed.
+    previous: dict[str, Any] | None = None
+    if since is not None:
+        prior_start = since - timedelta(days=days)
+        prior = [Message.created_at >= prior_start, Message.created_at < since]
+        prior_rows = db.execute(
+            select(Message.outcome, func.count())
+            .where(Message.bank_id == bank.id, Message.role == "assistant")
+            .where(*prior)
+            .group_by(Message.outcome)
+        ).all()
+        prior_counts = {outcome: n for outcome, n in prior_rows if outcome}
+        prior_substantive = sum(prior_counts.get(o, 0) for o in agent_module.SUBSTANTIVE)
+        prior_resolved = sum(prior_counts.get(o, 0) for o in agent_module.RESOLVED)
+        prior_answered = prior_counts.get(agent_module.ANSWERED, 0)
+        prior_conversations = db.execute(
+            select(func.count()).select_from(Conversation).where(
+                Conversation.bank_id == bank.id,
+                Conversation.created_at >= prior_start,
+                Conversation.created_at < since,
+            )
+        ).scalar_one()
+        # Only reported once the previous window actually contains something.
+        # A first-ever month compared against silence is not a trend.
+        if prior_conversations or prior_substantive:
+            previous = {
+                "conversations": prior_conversations,
+                "substantive_questions": prior_substantive,
+                "resolved_without_a_person": prior_resolved,
+                "answered_from_own_content": prior_answered,
+                "deflection_rate": round(prior_resolved / prior_substantive, 4)
+                if prior_substantive else None,
+                "own_content_rate": round(prior_answered / prior_substantive, 4)
+                if prior_substantive else None,
+            }
 
     # --- conversations, languages, channels ---------------------------
     conversations = db.execute(
@@ -1435,6 +1532,9 @@ def analytics(
         "since": since.isoformat() if since else None,
         "conversations": conversations,
         "daily": daily,
+        # The equivalent window immediately before this one, or null when there
+        # is nothing honest to compare against.
+        "previous": previous,
         "substantive_questions": substantive,
         "resolved_without_a_person": resolved,
         # Null, not zero, when nothing has been asked yet.
