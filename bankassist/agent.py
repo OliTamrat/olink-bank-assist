@@ -107,6 +107,11 @@ class ChatResult:
     # let a new branch ship unclassified and quietly skew every metric built on
     # it, which is the failure mode analytics can least afford.
     outcome: str = field(kw_only=True)
+    # Handoffs filed on this turn, for delivery to the bank's own
+    # contact-centre tool once the transaction has committed. Ids rather than
+    # objects: the caller re-reads them in its own session, so nothing here
+    # depends on the agent's session still being open.
+    handoff_ids: list[str] = field(default_factory=list)
 
 
 def _extractive_answer(bank: Bank, chunks: list[RetrievedChunk], language: str) -> str:
@@ -125,8 +130,21 @@ def _answer_from_knowledge(
 
 
 def _create_handoff(
-    db: Session, bank: Bank, conversation: Conversation, reason: str, detail: str
+    db: Session,
+    bank: Bank,
+    conversation: Conversation,
+    reason: str,
+    detail: str,
+    created: list[str],
 ) -> None:
+    """File a handoff, and record its id in `created`.
+
+    `created` is a required parameter rather than a return value on purpose.
+    The ids drive webhook delivery to the bank's own contact-centre tool, and
+    an ignored return value is invisible — a new branch that forgot it would
+    stop delivering for that path with nothing failing. Requiring the argument
+    makes mypy the thing that catches it.
+    """
     handoff = Handoff(
         bank_id=bank.id,
         conversation_id=conversation.id,
@@ -141,6 +159,7 @@ def _create_handoff(
     )
     db.add(handoff)
     db.flush()
+    created.append(str(handoff.id))
     db.add(
         AuditLog(
             bank_id=bank.id,
@@ -262,6 +281,10 @@ def handle_message(
     db: Session, bank: Bank, conversation: Conversation, text: str
 ) -> ChatResult:
     started = time.perf_counter()
+    # Handoffs filed on this turn. Delivered to the bank's own contact-centre
+    # tool by the caller AFTER this function commits, never from inside it: a
+    # bank's CRM being slow must not add its timeout to a customer's reply.
+    handoffs: list[str] = []
     detected = classifier.detect_language(text)
     language = detected or conversation.language or bank.default_language
     conversation.language = language
@@ -340,7 +363,7 @@ def handle_message(
     elif intent == classifier.ACCOUNT_SPECIFIC:
         result = ChatResult(t(language, "account_help"), intent, language, outcome=ACCOUNT_BLOCKED)
     elif intent == classifier.COMPLAINT:
-        _create_handoff(db, bank, conversation, "complaint", text[:2000])
+        _create_handoff(db, bank, conversation, "complaint", text[:2000], handoffs)
         ack = t(language, "complaint_ack")
         if name:
             ack = f"{t(language, 'ack_named', name=name)} {ack}"
@@ -362,7 +385,7 @@ def handle_message(
         # information. It is a separate reason code from "complaint" so a bank
         # can see the difference between people who are unhappy and people who
         # simply want a human.
-        _create_handoff(db, bank, conversation, "human_requested", text[:2000])
+        _create_handoff(db, bank, conversation, "human_requested", text[:2000], handoffs)
         ack = t(language, "human_request_ack")
         if name:
             ack = f"{t(language, 'ack_named', name=name)} {ack}"
@@ -455,7 +478,8 @@ def handle_message(
             # ask this and that it has no content of its own, which is exactly
             # the prompt to write some.
             _create_handoff(
-                db, bank, conversation, "answered_from_general_knowledge", text[:2000]
+                db, bank, conversation, "answered_from_general_knowledge",
+                text[:2000], handoffs,
             )
             reply = f"{general}\n\n{t(language, 'general_guidance', bank=bank.name)}"
             result = ChatResult(
@@ -467,7 +491,7 @@ def handle_message(
                 outcome=GENERAL_GUIDANCE,
             )
         elif answer is None:
-            _create_handoff(db, bank, conversation, "unanswered_question", text[:2000])
+            _create_handoff(db, bank, conversation, "unanswered_question", text[:2000], handoffs)
             reply = t(language, "unknown")
             # Retrieval is lexical, so a customer who phrases a question
             # differently from the knowledge base gets nothing — and most
@@ -532,6 +556,10 @@ def handle_message(
     # actually was. Say both, in that order.
     if contact_ack is not None and result.outcome != CONTACT_CAPTURED:
         result.reply = f"{contact_ack}\n\n{result.reply}"
+
+    # Set here rather than in each branch, so a branch cannot construct a
+    # ChatResult that files a handoff and forgets to report it.
+    result.handoff_ids = handoffs
 
     user_message.outcome = result.outcome
     db.add(
