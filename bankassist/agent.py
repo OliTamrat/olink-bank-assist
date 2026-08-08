@@ -75,6 +75,20 @@ SUBSTANTIVE = (
     COMPARISON, HUMAN_REQUEST,
 )
 
+# Why a handoff was filed. Named constants rather than literals at the call
+# sites, so the admin panel can be tested for having a human label for each —
+# a bank reading "answered_from_general_knowledge" off its own queue is the
+# same failure as an unlabelled outcome, in a field nothing was checking.
+REASON_COMPLAINT = "complaint"
+REASON_HUMAN_REQUESTED = "human_requested"
+REASON_UNANSWERED = "unanswered_question"
+REASON_GENERAL_KNOWLEDGE = "answered_from_general_knowledge"
+
+HANDOFF_REASONS = (
+    REASON_COMPLAINT, REASON_HUMAN_REQUESTED, REASON_UNANSWERED,
+    REASON_GENERAL_KNOWLEDGE,
+)
+
 # Substantive turns that did NOT need a person. account_blocked belongs here:
 # refusing to read out an account balance in chat is the assistant working
 # correctly, and it files no handoff.
@@ -363,7 +377,7 @@ def handle_message(
     elif intent == classifier.ACCOUNT_SPECIFIC:
         result = ChatResult(t(language, "account_help"), intent, language, outcome=ACCOUNT_BLOCKED)
     elif intent == classifier.COMPLAINT:
-        _create_handoff(db, bank, conversation, "complaint", text[:2000], handoffs)
+        _create_handoff(db, bank, conversation, REASON_COMPLAINT, text[:2000], handoffs)
         ack = t(language, "complaint_ack")
         if name:
             ack = f"{t(language, 'ack_named', name=name)} {ack}"
@@ -385,7 +399,7 @@ def handle_message(
         # information. It is a separate reason code from "complaint" so a bank
         # can see the difference between people who are unhappy and people who
         # simply want a human.
-        _create_handoff(db, bank, conversation, "human_requested", text[:2000], handoffs)
+        _create_handoff(db, bank, conversation, REASON_HUMAN_REQUESTED, text[:2000], handoffs)
         ack = t(language, "human_request_ack")
         if name:
             ack = f"{t(language, 'ack_named', name=name)} {ack}"
@@ -478,7 +492,7 @@ def handle_message(
             # ask this and that it has no content of its own, which is exactly
             # the prompt to write some.
             _create_handoff(
-                db, bank, conversation, "answered_from_general_knowledge",
+                db, bank, conversation, REASON_GENERAL_KNOWLEDGE,
                 text[:2000], handoffs,
             )
             reply = f"{general}\n\n{t(language, 'general_guidance', bank=bank.name)}"
@@ -491,7 +505,7 @@ def handle_message(
                 outcome=GENERAL_GUIDANCE,
             )
         elif answer is None:
-            _create_handoff(db, bank, conversation, "unanswered_question", text[:2000], handoffs)
+            _create_handoff(db, bank, conversation, REASON_UNANSWERED, text[:2000], handoffs)
             reply = t(language, "unknown")
             # Retrieval is lexical, so a customer who phrases a question
             # differently from the knowledge base gets nothing — and most

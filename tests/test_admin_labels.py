@@ -70,10 +70,41 @@ def test_the_dashboard_and_the_server_agree_on_what_counts_as_a_question() -> No
     )
 
 
-def test_the_export_uses_the_same_set_as_the_chart() -> None:
-    """The CSV keeps its own copy so the download can be read without the
-    render having run. Two copies of one truth is the drift this file exists
-    to catch, so they are compared rather than trusted."""
-    block = re.search(r"var SUBSTANTIVE_OUT = \[(.*?)\];", ADMIN.read_text(), re.S)
-    assert block, "SUBSTANTIVE_OUT not found — did the CSV export change?"
-    assert set(re.findall(r'"(\w+)"', block.group(1))) == set(agent.SUBSTANTIVE)
+def _reason_keys() -> set[str]:
+    block = re.search(r"var REASON_LABEL = \{(.*?)\n\};", ADMIN.read_text(), re.S)
+    assert block, "REASON_LABEL not found — did the escalation queue's labels move?"
+    return set(re.findall(r"^\s*(\w+):", block.group(1), re.M))
+
+
+def test_every_handoff_reason_has_a_label() -> None:
+    """The queue rendered `reason` raw until someone looked at it.
+
+    A card headed "human_request" is the same failure the outcome labels are
+    checked for, in a field nothing was checking — and it was invisible in the
+    diff, because the raw string is a perfectly valid thing to render.
+    """
+    missing = set(agent.HANDOFF_REASONS) - _reason_keys()
+    assert not missing, f"no label for handoff reason: {sorted(missing)}"
+
+
+def test_no_label_exists_for_a_handoff_reason_never_filed() -> None:
+    stale = _reason_keys() - set(agent.HANDOFF_REASONS)
+    assert not stale, f"labels a reason the agent never files: {sorted(stale)}"
+
+
+def test_there_is_only_one_copy_of_the_question_set() -> None:
+    """The chart and the CSV export must read the same constant.
+
+    This replaces a test that compared two copies — `SUBSTANTIVE` for the chart
+    and `SUBSTANTIVE_OUT` for the export — which was the right test while two
+    copies existed. The dashboard rewrite collapsed them into one, so the drift
+    is now impossible by construction rather than merely detected, and what is
+    worth pinning is that nobody reintroduces the second copy.
+    """
+    text = ADMIN.read_text()
+    definitions = re.findall(r"var (SUBSTANTIVE\w*) *= *\[", text)
+    assert definitions == ["SUBSTANTIVE"], (
+        f"expected exactly one question-set constant, found {definitions}"
+    )
+    # And it is genuinely used by both readers, not defined and ignored.
+    assert text.count("SUBSTANTIVE.indexOf") >= 2

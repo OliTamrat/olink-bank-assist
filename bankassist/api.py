@@ -811,6 +811,119 @@ def create_user(
     return {"id": user.id, "email": user.email, "role": role.name}
 
 
+@app.get("/admin/api/{slug}/users")
+def list_users(
+    principal: Principal = NeedsUsersManage, db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """Everyone with access to this tenant, including the disabled.
+
+    Disabled people are listed rather than hidden. "Who can get in here" is the
+    question this screen exists to answer, and an answer that silently omits
+    accounts is the wrong answer — an access review needs to see that someone
+    was removed, not find no trace of them.
+    """
+    bank = principal.bank
+    rows = db.execute(
+        select(User, Role)
+        .join(Role, Role.id == User.role_id)
+        .where(User.bank_id == bank.id)
+        .order_by(User.email)
+    ).all()
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "display_name": u.display_name,
+            "role": r.name,
+            "is_active": u.is_active,
+            "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+            "created_at": u.created_at.isoformat(),
+            # So the UI can disable its own row's button rather than offering an
+            # action that is always refused.
+            "is_you": principal.user is not None and principal.user.id == u.id,
+        }
+        for u, r in rows
+    ]
+
+
+@app.get("/admin/api/{slug}/roles")
+def list_roles(
+    principal: Principal = NeedsUsersManage, db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """This bank's roles and exactly what each one grants.
+
+    Served as data rather than described in a help page, because this is the
+    table an access review asks for: "who can do what here". It is generated
+    from the same rows `require()` checks, so it cannot describe a policy the
+    system is not actually enforcing.
+    """
+    bank = principal.bank
+    rows = db.execute(
+        select(Role).where(Role.bank_id == bank.id).order_by(Role.name)
+    ).scalars().all()
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "description": r.description,
+            "is_builtin": r.is_builtin,
+            "permissions": sorted(roles.permissions_for_role(db, r.id)),
+        }
+        for r in rows
+    ]
+
+
+class SetUserActiveIn(BaseModel):
+    is_active: bool
+
+
+@app.post("/admin/api/{slug}/users/{user_id}/active")
+def set_user_active(
+    user_id: str,
+    payload: SetUserActiveIn,
+    principal: Principal = NeedsUsersManage,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Disable or restore a colleague's access.
+
+    Disabling revokes every session they hold, so it takes effect on their next
+    request rather than whenever their current one happens to expire. Removing
+    someone is the entire reason this feature exists; doing it with a delay
+    would be theatre.
+
+    You cannot disable yourself. Not a security control — the break-glass token
+    could undo it — but the realistic version of this mistake is the only
+    administrator locking themselves out mid-task, and refusing costs nothing.
+    """
+    bank = principal.bank
+    target = db.get(User, user_id)
+    if target is None or target.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown user")
+    if (
+        not payload.is_active
+        and principal.user is not None
+        and principal.user.id == target.id
+    ):
+        raise HTTPException(status_code=409, detail="You cannot disable yourself")
+
+    revoked = 0
+    if payload.is_active:
+        target.disabled_at = None
+    else:
+        target.disabled_at = datetime.now(UTC)
+        revoked = admin_auth.revoke_all_for_user(db, target.id)
+
+    _audit(
+        db, bank,
+        "user_enabled" if payload.is_active else "user_disabled",
+        "user", target.id,
+        {"email": target.email, "sessions_revoked": revoked},
+        actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"id": target.id, "is_active": target.is_active, "sessions_revoked": revoked}
+
+
 @app.post("/admin/api/{slug}/me/password")
 def change_own_password(
     slug: str,
@@ -1244,6 +1357,33 @@ def analytics(
     ]
     channels.sort(key=lambda row: -int(row["count"]))
 
+    # --- conversations per day ----------------------------------------
+    #
+    # Counted in Python from the rows' dates rather than with a SQL date
+    # function, because date truncation is spelled differently in SQLite and
+    # Postgres and the dashboard is not worth a dialect branch.
+    #
+    # Days with no conversations are filled in as zero. Without that, a quiet
+    # weekend simply vanishes from the axis and the line closes the gap, which
+    # draws a busy Friday and a busy Monday as one continuous slope — a picture
+    # of activity that did not happen.
+    started = db.execute(
+        select(Conversation.created_at)
+        .where(Conversation.bank_id == bank.id)
+        .where(*_window(Conversation.created_at))
+    ).scalars().all()
+    per_day: dict[str, int] = {}
+    for ts in started:
+        per_day[ts.date().isoformat()] = per_day.get(ts.date().isoformat(), 0) + 1
+    if days > 0:
+        span = [
+            (datetime.now(UTC).date() - timedelta(days=offset)).isoformat()
+            for offset in range(days - 1, -1, -1)
+        ]
+    else:
+        span = sorted(per_day)
+    daily = [{"date": d, "conversations": per_day.get(d, 0)} for d in span]
+
     # --- what customers actually asked --------------------------------
     # Grouped by content signature, the same way content gaps are, so the two
     # reports name the same topic the same way.
@@ -1294,6 +1434,7 @@ def analytics(
         "window_days": days,
         "since": since.isoformat() if since else None,
         "conversations": conversations,
+        "daily": daily,
         "substantive_questions": substantive,
         "resolved_without_a_person": resolved,
         # Null, not zero, when nothing has been asked yet.
