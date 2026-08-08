@@ -337,6 +337,28 @@
     complaint:         { label: "Complaint", icon: "flag", cls: "guard" }
   };
 
+  // Outcome -> label, checked before INTENTS. Intent describes what was
+  // *asked*; several turns are not answering a question at all, and were
+  // inheriting "Product guidance" from the placeholder intent as a result — a
+  // chip claiming the bank's own product information was given when it wasn't.
+  // In front of a bank evaluating a product whose whole pitch is "it tells you
+  // when it doesn't know", that is the worst chip to be wrong about.
+  //
+  // A key present with a null value SUPPRESSES the chip, which is why this is
+  // a hasOwnProperty lookup rather than `||`. Only outcomes that intent gets
+  // wrong belong here; everything else falls through to the intent chip.
+  var OUTCOMES = {
+    // Stored a phone number. Not guidance of any kind.
+    contact_captured: { label: "Contact saved", icon: "user", cls: "human" },
+    // Found nothing and routed to a person. Admitting the gap is the point;
+    // "Product guidance" claimed the opposite of what happened.
+    unanswered:       { label: "Knowledge gap", icon: "book", cls: "guard" },
+    // Already carries its own "General guidance" chip below. A second chip
+    // reading "Product guidance" both duplicates it and contradicts it, since
+    // this answer is explicitly NOT the bank's published content.
+    general_guidance: null
+  };
+
   var ICONS = {
     book:   '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
     chart:  '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
@@ -427,7 +449,9 @@
     if (data.language && LANGS[data.language]) {
       chips.push('<span class="chip">' + svg("globe") + LANGS[data.language] + '</span>');
     }
-    var it = INTENTS[data.intent];
+    var it = Object.prototype.hasOwnProperty.call(OUTCOMES, data.outcome)
+      ? OUTCOMES[data.outcome]
+      : INTENTS[data.intent];
     if (it) {
       chips.push('<span class="chip ' + (it.cls || "") + '">' + svg(it.icon) + it.label + '</span>');
     }
