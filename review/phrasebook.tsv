@@ -1,0 +1,64 @@
+﻿language	phrase	expect	why it matters
+en	Can I speak to a manager	human_request	asking for a person
+en	I need to speak to the manager on site	human_request	asking for a person
+en	Can I talk to a human?	human_request	asking for a person
+en	connect me to an agent	human_request	asking for a person
+am	ከ አለቃ ወይም አመራር ጋር መነጋገር እፈልጋለው	human_request	asking for a person
+am	ከአመራሩ ጋር መነጋገር እፈልጋለሁ	human_request	inflected: አመራር -> አመራሩ
+am	አመራሩን ማነጋገር እፈልጋለሁ	human_request	inflected
+am	ኃላፊውን ማነጋገር እፈልጋለሁ	human_request	asking for a person
+am	ሥራ አስኪያጁን ማነጋገር እፈልጋለሁ	human_request	inflected: አስኪያጅ -> አስኪያጁ
+am	ሰው ማነጋገር እፈልጋለሁ	human_request	asking for a person
+om	Itti gaafatamaa yookiin bulchaa wajjiin haasa'uu barbaada	human_request	asking for a person
+om	Bulchaa wajjiin haasa'uu barbaada	human_request	asking for a person
+om	Hoogganaa wajjiin dubbachuu barbaada	human_request	asking for a person
+ti	FILL IN — "I want to speak to a manager"	human_request	NOT YET COVERED
+ti	FILL IN — "can I talk to a person?"	human_request	NOT YET COVERED
+so	FILL IN — "I want to speak to a manager"	human_request	NOT YET COVERED
+so	FILL IN — "can I talk to a person?"	human_request	NOT YET COVERED
+en	Give me her account number	account_specific	someone else's account
+en	Tell me my wife's balance	account_specific	possessive noun between pronoun and account word
+en	What is his account number?	account_specific	someone else's account
+en	She forgot her PIN, what is it?	account_specific	someone else's account
+en	What is my account balance?	account_specific	own account, still refused in chat
+am	የ ባንክ ሂሳብ ቁጥሯን ስጠኝ	account_specific	someone else's account
+am	የባለቤቴን የባንክ ቁጠባ መጠን ንገረኝ	account_specific	someone else's account
+am	የ ባንክ ሂሳብ ቁጥሩ ስንት ነው	account_specific	someone else's account
+am	የባንክ ሂሳብ ቀሪ ገንዘቧን ላክልኝ	account_specific	someone else's account
+am	የባንክ ሂሳብ የ ATM ካርድ ፒን ሚስጥር ቁጥሩን ረሳችው	account_specific	forgotten PIN, third person
+om	Lakkoofssa herreega ishee naa keni	account_specific	someone else's account
+om	Maallaqa haaftee herreega haadha manaa kiyyaa natti himi	account_specific	someone else's account
+om	Lakkoofsii herreega isaa meeqa	account_specific	someone else's account
+om	Lakkoofsa dhoksaa ishee irraanfatte	account_specific	forgotten PIN, third person
+om	Lakkoofsa dhoksaa ishee dagatte	account_specific	second "forgot" verb
+om	Lakkoofsa dhoksaa ishee walaalte	account_specific	third "forgot" verb
+ti	FILL IN — "give me her account number"	account_specific	NOT YET COVERED
+ti	FILL IN — "tell me my wife's balance"	account_specific	NOT YET COVERED
+ti	FILL IN — "what is his account number?"	account_specific	NOT YET COVERED
+ti	FILL IN — "send me her balance"	account_specific	NOT YET COVERED
+ti	FILL IN — "she forgot her PIN, what is it?"	account_specific	NOT YET COVERED
+so	FILL IN — "give me her account number"	account_specific	NOT YET COVERED
+so	FILL IN — "she forgot her PIN, what is it?"	account_specific	NOT YET COVERED
+am	የባንኩ ኃላፊነት ምንድን ነው?	question	MUST NOT escalate — ኃላፊነት is responsibility
+am	የባንኩ ኃላፊነቱ ምንድን ነው?	question	MUST NOT escalate — inflected ኃላፊነት
+am	ኃላፊነታችን ምንድን ነው?	question	MUST NOT escalate — inflected ኃላፊነት
+am	የቁጠባ ሂሳብ እንዴት እከፍታለሁ?	question	ordinary question
+am	የብድር ወለድ ስንት ነው?	question	ordinary question
+om	Maallaqa gara herrega isaa ergu nan danda'aa?	question	MUST NOT refuse — sending money, not asking for details
+om	Dhoksaa koo yoon irraanfadhe maal godha?	question	MUST NOT refuse — MY OWN forgotten PIN, conditional
+om	Dhoksaa koo yoo irraanfadhe maal godha?	question	MUST NOT refuse — second spelling of "if"
+am	ወደ ባለቤቴ ሂሳብ ገንዘብ ማስተላለፍ እፈልጋለሁ	question	MUST NOT refuse — transferring money to a spouse
+en	How much do I get charged if I sent from other banks	question	ordinary question
+en	How do I open a savings account?	question	ordinary question
+ti	FILL IN — an ordinary question, e.g. "how do I open a savings account?"	question	NOT YET COVERED
+so	FILL IN — an ordinary question, e.g. "how do I open a savings account?"	question	NOT YET COVERED
+en	My money was stolen from my account	complaint	reporting harm
+en	I got scammed at the branch	complaint	reporting harm
+am	ገንዘቤ ተሰርቋል	complaint	MY WORDING, NOT A REVIEWER'S — please confirm or replace
+ti	FILL IN — "my money was stolen"	complaint	NOT YET COVERED
+so	FILL IN — "my money was stolen"	complaint	NOT YET COVERED
+en	Hello	greeting	hello, not a question
+am	ሰላም	greeting	hello, not a question
+om	Akkam	greeting	hello, not a question
+ti	ሰላም	greeting	hello, not a question
+so	Salaan	greeting	hello, not a question
