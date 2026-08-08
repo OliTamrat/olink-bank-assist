@@ -208,3 +208,84 @@ def test_an_operator_cannot_read_the_integration_settings(
     """It names where customer contact details are sent."""
     ops = _signed_in(client, demo_bank, "ops@bank.et", "operator")
     assert ops.get("/admin/api/demo/integrations").status_code == 403
+
+
+def test_every_supported_language_is_listed_even_at_zero(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """A language missing from the panel reads as unsupported, not unused.
+
+    CBE's live dashboard showed English and Afaan Oromo only, and the obvious
+    reading of that is that the assistant does not do Amharic — which is the
+    opposite of true. Zero here is a real count, not a rate with no
+    denominator, so stating it is a fact rather than an implied failure.
+    """
+    from bankassist.i18n import SUPPORTED_LANGUAGES
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    a = admin.get("/admin/api/demo/analytics?days=30").json()
+    listed = {row["language"] for row in a["languages"]}
+    assert set(SUPPORTED_LANGUAGES) <= listed
+    for row in a["languages"]:
+        assert row["name"], f"{row['language']} has no display name"
+
+
+def test_conversations_can_be_narrowed_by_language_and_channel(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """So a figure on the dashboard can be opened rather than taken on trust."""
+    from bankassist.models import Conversation
+
+    db_session.add_all([
+        Conversation(bank_id=demo_bank.id, channel="widget", language="am"),
+        Conversation(bank_id=demo_bank.id, channel="telegram", language="en"),
+    ])
+    db_session.commit()
+
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    am = admin.get("/admin/api/demo/conversations?language=am").json()
+    assert am and all(c["language"] == "am" for c in am)
+    tg = admin.get("/admin/api/demo/conversations?channel=telegram").json()
+    assert tg and all(c["channel"] == "telegram" for c in tg)
+
+
+def test_branding_rejects_anything_that_is_not_a_colour(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The value is interpolated into a CSS custom property in the widget.
+
+    An unchecked string there is stylesheet injection on the bank's own site,
+    which is why this is validated rather than trusted to a colour picker that
+    only exists in our own admin page.
+    """
+    admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
+    bad = admin.put(
+        "/admin/api/demo/branding",
+        json={"primary_color": "red; background:url(//evil)", "logo_url": None},
+    )
+    assert bad.status_code == 422
+
+    http_logo = admin.put(
+        "/admin/api/demo/branding",
+        json={"primary_color": "#722282", "logo_url": "http://insecure.example/l.png"},
+    )
+    assert http_logo.status_code == 422
+
+    ok = admin.put(
+        "/admin/api/demo/branding",
+        json={"primary_color": "#722282", "logo_url": "https://cbe.example/logo.png"},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["primary_color"] == "#722282"
+    # And it reaches the public endpoint the widget reads.
+    pub = client.get("/banks/demo/public").json()
+    assert pub["primary_color"] == "#722282"
+
+
+def test_an_operator_cannot_restyle_the_banks_widget(
+    client: TestClient, demo_bank: Any
+) -> None:
+    ops = _signed_in(client, demo_bank, "ops@bank.et", "operator")
+    assert ops.put(
+        "/admin/api/demo/branding", json={"primary_color": "#000000"}
+    ).status_code == 403

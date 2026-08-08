@@ -1140,11 +1140,25 @@ def delete_document(
 
 @app.get("/admin/api/{slug}/conversations")
 def list_conversations(
-    principal: Principal = NeedsConversationsRead, db: Session = Depends(get_db)
+    language: str | None = None,
+    channel: str | None = None,
+    principal: Principal = NeedsConversationsRead,
+    db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
+    """Recent conversations, optionally narrowed.
+
+    The filters exist so the dashboard's language and channel rows can be
+    clicked through to the conversations they count. A figure you cannot open
+    is a figure you have to take on trust.
+    """
     bank = principal.bank
+    where = [Conversation.bank_id == bank.id]
+    if language:
+        where.append(Conversation.language == language)
+    if channel:
+        where.append(Conversation.channel == channel)
     convos = db.execute(
-        select(Conversation).where(Conversation.bank_id == bank.id)
+        select(Conversation).where(*where)
         .order_by(Conversation.created_at.desc()).limit(100)
     ).scalars().all()
     return [
@@ -1242,7 +1256,51 @@ def integration_settings(
             "has_secret": bool(bank.handoff_webhook_secret),
         },
         "telegram": {"connected": bool(bank.telegram_bot_token)},
+        "branding": {
+            "primary_color": bank.primary_color,
+            "logo_url": bank.logo_url,
+            "name": bank.name,
+        },
     }
+
+
+class BrandingIn(BaseModel):
+    # #rgb or #rrggbb. Validated because it is interpolated straight into a CSS
+    # custom property in both the panel and the customer-facing widget, and an
+    # unchecked string there is a stylesheet injection on a bank's own site.
+    primary_color: str = Field(pattern=r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+    logo_url: str | None = Field(default=None, max_length=500)
+
+
+@app.put("/admin/api/{slug}/branding")
+def set_branding(
+    payload: BrandingIn,
+    principal: Principal = NeedsIntegrationsManage,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The bank's own colour and logo, editable without a deploy.
+
+    Seeded values are our reading of a bank's public site, which is a guess
+    however carefully it is made — the shade sampled from a screenshot is not
+    the one in the brand book. Rather than have every correction be a code
+    change, the tenant sets it here and both the admin panel and the widget
+    follow immediately.
+
+    https only for the logo: the widget is embedded on the bank's own pages,
+    and an http image there turns their padlock into a mixed-content warning.
+    """
+    bank = principal.bank
+    logo = (payload.logo_url or "").strip() or None
+    if logo is not None and not logo.startswith("https://"):
+        raise HTTPException(status_code=422, detail="Logo URL must be https")
+
+    bank.primary_color = payload.primary_color
+    bank.logo_url = logo
+    _audit(db, bank, "branding_updated", "bank", bank.id,
+           {"primary_color": payload.primary_color, "logo_url": logo},
+           actor=principal.audit_actor)
+    db.commit()
+    return {"primary_color": bank.primary_color, "logo_url": bank.logo_url}
 
 
 @app.get("/admin/api/{slug}/activity")
@@ -1470,6 +1528,18 @@ def analytics(
             .group_by(Conversation.language)
         ).all()
     ]
+    # Every language the assistant supports, including those nobody has used
+    # yet. A panel that lists only what has been spoken answers "what came in";
+    # a bank looking at it is usually asking the other question — "are we
+    # covered" — and Tigrinya missing from the list reads as unsupported
+    # rather than as unused. Zero here is a real count, not a rate with no
+    # denominator, so showing it states a fact rather than implying a failure.
+    seen = {row["language"] for row in languages}
+    for code in SUPPORTED_LANGUAGES:
+        if code not in seen:
+            languages.append(
+                {"language": code, "name": LANGUAGE_NAMES[code], "count": 0}
+            )
     languages.sort(key=lambda row: (-int(row["count"]), str(row["language"])))
 
     channels = [

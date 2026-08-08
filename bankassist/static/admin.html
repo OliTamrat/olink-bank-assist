@@ -117,12 +117,37 @@ textarea { min-height: 170px; resize: vertical; }
 .hidden { display: none !important; }
 
 /* ---------------------------------------------------------------- shell */
-.shell { display: grid; grid-template-columns: 236px 1fr; min-height: 100vh;
+.shell { display: grid; grid-template-columns: var(--rail) 1fr; min-height: 100vh;
+  transition: grid-template-columns .16s ease;
   /* The rail is sticky and one viewport tall, so on a long page the grid
      column beneath it showed the page background — a dark bar that stopped
      halfway down. Painting the stripe on the container keeps it whole at any
      scroll position without making the rail itself scroll. */
-  background: linear-gradient(to right, var(--side) 0 236px, var(--bg) 236px); }
+  background: linear-gradient(to right, var(--side) 0 var(--rail), var(--bg) var(--rail)); }
+/* Collapsed keeps the icons and the queue badge — a rail that hides how many
+   escalations are waiting has given up the reason it is always on screen. */
+:root { --rail: 236px; }
+:root[data-rail="mini"] { --rail: 62px; }
+[data-rail="mini"] .side-name, [data-rail="mini"] .side-sub,
+[data-rail="mini"] .navitem .label, [data-rail="mini"] .who .n,
+[data-rail="mini"] .who .r { display: none; }
+[data-rail="mini"] .side { padding: 16px 8px; align-items: center; }
+[data-rail="mini"] .side-brand { padding: 4px 0 18px; justify-content: center; }
+[data-rail="mini"] .navitem { justify-content: center; padding: 10px 0; }
+[data-rail="mini"] .who { justify-content: center; padding: 4px 0 10px; }
+[data-rail="mini"] .badge {
+  position: absolute; transform: translate(12px, -12px);
+  padding: 0 5px; min-width: 17px; font-size: 10px;
+}
+[data-rail="mini"] .navitem { position: relative; }
+.railtoggle {
+  background: none; border: none; color: var(--side-text); cursor: pointer;
+  padding: 7px 10px; border-radius: 9px; width: 100%; text-align: left;
+  display: flex; align-items: center; gap: 10px; font-size: 13.5px;
+}
+.railtoggle:hover { background: var(--side-2); color: #fff; }
+[data-rail="mini"] .railtoggle { justify-content: center; padding: 10px 0; }
+[data-rail="mini"] .railtoggle .label { display: none; }
 .side {
   background: var(--side); color: var(--side-text);
   display: flex; flex-direction: column; padding: 16px 12px;
@@ -132,8 +157,13 @@ textarea { min-height: 170px; resize: vertical; }
 .side-mark {
   width: 32px; height: 32px; border-radius: 9px; background: var(--brand);
   display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px;
-  flex: none;
+  flex: none; overflow: hidden;
 }
+/* When a bank supplies a logo it replaces the initials tile rather than
+   sitting beside it. White behind it because most bank logos are drawn for
+   paper — CBE's is gold line-work, which disappears on a dark tile. */
+.side-mark.haslogo, .gate-mark.haslogo { background: #fff; }
+.side-mark img, .gate-mark img { width: 100%; height: 100%; object-fit: contain; }
 .side-name { font-size: 13.5px; font-weight: 600; color: #fff; line-height: 1.25;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-sub { font-size: 11px; color: #6f7b93; }
@@ -216,6 +246,15 @@ main { padding: 20px 24px 40px; }
    content" wraps and drops its value below the other three, which reads as a
    misalignment rather than as a longer label. */
 .kpi .k { font-size: 12.5px; color: var(--muted); line-height: 1.35; height: 2.7em; }
+/* Anything that opens the rows behind it says so on hover. Only figures with
+   a genuine destination are made clickable — a card that looks interactive
+   and goes nowhere is worse than one that plainly does not. */
+.drill { cursor: pointer; transition: border-color .12s, transform .12s; }
+.drill:hover { border-color: color-mix(in srgb, var(--brand) 55%, var(--line)); }
+.kpi.drill:hover { transform: translateY(-1px); }
+.drill .k::after, .bar.drill span:first-child::after,
+.topic.drill span:last-child::after { content: " ›"; color: var(--faint); }
+.bar.drill:hover span:first-child, .topic.drill:hover span:last-child { color: var(--brand); }
 /* A delta is only drawn when there is a named previous window to compare
    with. An arrow with no stated baseline is decoration that reads as
    evidence. */
@@ -259,6 +298,15 @@ main { padding: 20px 24px 40px; }
 .tip.on { opacity: 1; }
 
 /* --------------------------------------------------------- activity feed */
+/* Capped and scrolled rather than allowed to run. A feed is unbounded by
+   nature, so left alone it sets the height of the whole right-hand column and
+   drags the layout out of balance with whatever is beside it. */
+.feedscroll { max-height: 268px; overflow-y: auto; }
+.feedscroll::-webkit-scrollbar { width: 8px; }
+.feedscroll::-webkit-scrollbar-thumb {
+  background: var(--line); border-radius: 99px;
+}
+.feedscroll::-webkit-scrollbar-track { background: transparent; }
 .feed { display: flex; gap: 11px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .feed:last-child { border-bottom: none; }
 .feed .tile {
@@ -438,6 +486,9 @@ td.title { color: var(--ink); font-weight: 550; }
     </div>
     <nav id="nav"></nav>
     <div class="side-foot">
+      <button class="railtoggle" id="rail-toggle" title="Collapse or expand the sidebar">
+        <span id="rail-glyph">‹‹</span><span class="label">Collapse</span>
+      </button>
       <div class="who">
         <div class="avatar" id="who-avatar">?</div>
         <div style="min-width:0">
@@ -539,8 +590,17 @@ function applyBrand(slug) {
     if (b.primary_color) document.documentElement.style.setProperty("--brand", b.primary_color);
     var initials = (b.name || slug).replace(/[^A-Za-zሀ-፿ ]/g, "")
       .split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase();
-    $("gate-mark").textContent = initials || "BA";
-    $("side-mark").textContent = initials || "BA";
+    [$("gate-mark"), $("side-mark")].forEach(function (el) {
+      if (b.logo_url) {
+        // Rendered rather than described: a bank's mark is the first thing it
+        // looks for, and initials on a coloured tile read as a placeholder.
+        el.innerHTML = '<img src="' + esc(b.logo_url) + '" alt="' + esc(b.name || slug) + '">';
+        el.classList.add("haslogo");
+      } else {
+        el.textContent = initials || "BA";
+        el.classList.remove("haslogo");
+      }
+    });
     $("side-name").textContent = b.name || slug;
     $("gate-title").textContent = "Sign in";
     $("gate-sub").textContent = b.name ? b.name + " — assistant administration" : "Olink Bank Assist";
@@ -739,8 +799,9 @@ function delta(now, then, asRate) {
     (chg > 0 ? "▲ " : "▼ ") + Math.abs(chg) + "% vs previous period</span>";
 }
 
-function kpi(label, value, sub, isNone, iconName, deltaHtml) {
-  return '<div class="kpi">' +
+function kpi(label, value, sub, isNone, iconName, deltaHtml, drill) {
+  return '<div class="kpi' + (drill ? " drill" : "") + '"' +
+    (drill ? ' data-drill="' + drill + '" role="button" tabindex="0"' : "") + ">" +
     '<div class="txt"><div class="k">' + esc(label) + "</div>" +
     '<div class="v' + (isNone ? " none" : "") + '">' + value + "</div>" +
     (sub ? '<div class="sub">' + esc(sub) + "</div>" : "") +
@@ -754,7 +815,12 @@ function bars(rows, total, labeller) {
   return rows.map(function (r) {
     var pair = labeller(r);
     var share = total ? r.count / total : 0;
-    return '<div class="bar"><span>' + esc(pair[0]) + "</span>" +
+    // pair[2] is a destination. Rows with nothing behind them — a language
+    // nobody has used — stay inert rather than opening an empty list.
+    var drill = pair[2] && r.count ? pair[2] : null;
+    return '<div class="bar' + (drill ? " drill" : "") + '"' +
+      (drill ? ' data-drill="' + drill + '" role="button" tabindex="0"' : "") + ">" +
+      "<span>" + esc(pair[0]) + "</span>" +
       '<span class="track"><span class="fill' + (pair[1] ? " " + pair[1] : "") +
       '" style="width:' + (share * 100).toFixed(1) + '%"></span></span>' +
       '<span class="n">' + r.count + "</span></div>";
@@ -843,18 +909,26 @@ function loadDashboard() {
     h += '<div class="kpis">' +
       kpi("Conversations", num(a.conversations),
           a.window_days ? "last " + a.window_days + " days" : "all time", false, "convos",
-          prev && delta(a.conversations, prev.conversations)) +
+          prev && delta(a.conversations, prev.conversations),
+          can("conversations.read") && "convos") +
       kpi("Questions asked", num(a.substantive_questions),
           "greetings and thanks excluded", false, "gaps",
-          prev && delta(a.substantive_questions, prev.substantive_questions)) +
+          prev && delta(a.substantive_questions, prev.substantive_questions),
+          can("conversations.read") && "convos") +
+      /* The rate itself has no page behind it, but the failures it is short of
+         do: what did not get resolved went to the queue. */
       kpi("Resolved without a person", pct(a.deflection_rate),
           a.substantive_questions ? num(a.resolved_without_a_person) + " of " + num(a.substantive_questions) : "no questions yet",
           a.deflection_rate == null, "handoffs",
-          prev && delta(a.deflection_rate, prev.deflection_rate, true)) +
+          prev && delta(a.deflection_rate, prev.deflection_rate, true),
+          can("handoffs.read") && "handoffs") +
+      /* Short of 100% means questions your published content did not cover,
+         which is precisely what Content Gaps lists. */
       kpi("Answered from your own content", pct(a.own_content_rate),
           a.substantive_questions ? num(a.answered_from_own_content) + " of " + num(a.substantive_questions) : "no questions yet",
           a.own_content_rate == null, "docs",
-          prev && delta(a.own_content_rate, prev.own_content_rate, true)) +
+          prev && delta(a.own_content_rate, prev.own_content_rate, true),
+          can("gaps.read") && "gaps") +
       "</div>";
 
     h += '<div class="grid2"><div>' +
@@ -863,7 +937,12 @@ function loadDashboard() {
       bars(qRows, a.substantive_questions, function (r) {
         var cls = r.outcome === "unanswered" ? "bad"
           : (["human_request", "complaint", "account_blocked"].indexOf(r.outcome) > -1 ? "warn" : "");
-        return [OUTCOME_LABEL[r.outcome] || r.outcome, cls];
+        // Two of these have somewhere to go and the rest do not. "Answered
+        // from your content" has no page listing exactly those turns, and
+        // inventing one that filtered nothing would be a link that lies.
+        var to = r.outcome === "unanswered" ? (can("gaps.read") && "gaps")
+          : (r.outcome === "human_request" ? (can("handoffs.read") && "handoffs") : null);
+        return [OUTCOME_LABEL[r.outcome] || r.outcome, cls, to];
       }) +
       (otherRows.length ? '<div class="note">Also recorded: ' + otherRows.map(function (r) {
         return esc((OUTCOME_LABEL[r.outcome] || r.outcome) + " (" + r.count + ")"); }).join(", ") + "</div>" : "") +
@@ -872,17 +951,24 @@ function loadDashboard() {
       "</div>" +
       '<div class="panel"><h3>Most asked</h3>' + (a.top_topics.length
         ? a.top_topics.map(function (t) {
-            return '<div class="topic"><span class="n">' + t.count + "</span><span>" +
+            var d = can("gaps.read");
+            return '<div class="topic' + (d ? " drill" : "") + '"' +
+              (d ? ' data-drill="gaps" role="button" tabindex="0"' : "") + ">" +
+              '<span class="n">' + t.count + "</span><span>" +
               esc(t.example) + "</span></div>";
           }).join("")
         : '<div class="empty">Nothing asked yet in this window.</div>') +
       '<div class="note">Grouped by wording. Phone numbers and names are removed before grouping.</div></div>' +
       "</div><div>" +
       '<div class="panel"><h3>Escalation queue</h3>' +
-      '<div class="bar"><span>Open</span><span class="track"><span class="fill warn" style="width:' +
+      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
+        (can("handoffs.read") ? ' data-drill="handoffs:open" role="button" tabindex="0"' : "") +
+        '><span>Open</span><span class="track"><span class="fill warn" style="width:' +
         (a.handoffs.open + a.handoffs.closed ? (a.handoffs.open / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
         '%"></span></span><span class="n">' + a.handoffs.open + "</span></div>" +
-      '<div class="bar"><span>Closed</span><span class="track"><span class="fill" style="width:' +
+      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
+        (can("handoffs.read") ? ' data-drill="handoffs:closed" role="button" tabindex="0"' : "") +
+        '><span>Closed</span><span class="track"><span class="fill" style="width:' +
         (a.handoffs.open + a.handoffs.closed ? (a.handoffs.closed / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
         '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div>" +
       /* Restored after the rebuild dropped it. Of the people still waiting on
@@ -897,9 +983,14 @@ function loadDashboard() {
         : "") +
       "</div>" +
       '<div class="panel"><h3>Languages</h3>' +
-      bars(a.languages, langTotal, function (r) { return [r.name || r.language, ""]; }) + "</div>" +
+      bars(a.languages, langTotal, function (r) {
+        return [r.name || r.language, "",
+                can("conversations.read") && "convos:language=" + r.language];
+      }) + "</div>" +
       '<div class="panel"><h3>Channels</h3>' +
-      bars(a.channels, a.conversations, function (r) { return [r.channel, ""]; }) + "</div>" +
+      bars(a.channels, a.conversations, function (r) {
+        return [r.channel, "", can("conversations.read") && "convos:channel=" + r.channel];
+      }) + "</div>" +
       '<div class="panel noprint" id="activity"><h3>Recent activity</h3>' +
       '<div class="empty">Loading…</div></div>' +
       "</div></div>";
@@ -921,6 +1012,7 @@ function loadDashboard() {
     $("dl-csv").onclick = exportAnalytics;
     $("do-print").onclick = function () { window.print(); };
     wireChartTip(a.daily);
+    wireDrills();
     loadActivity();
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
@@ -1007,14 +1099,14 @@ function ago(iso) {
 function loadActivity() {
   var box = $("activity");
   if (!box) return;
-  api("/activity").then(function (rows) {
+  api("/activity?limit=30").then(function (rows) {
     box.innerHTML = "<h3>Recent activity</h3>" + (rows.length
-      ? rows.map(function (r) {
+      ? '<div class="feedscroll">' + rows.map(function (r) {
           return '<div class="feed"><div class="tile' + (r.by_token ? " token" : "") + '">' +
             icon(r.by_token ? "settings" : "team", 15) + "</div><div>" +
             '<div class="what">' + esc(ACTION_LABEL[r.action] || r.action.replace(/_/g, " ")) + "</div>" +
             '<div class="who">' + esc(r.actor) + " · " + esc(ago(r.at)) + "</div></div></div>";
-        }).join("")
+        }).join("") + "</div>"
       : '<div class="empty">Nothing yet.</div>');
   }).catch(function () {
     box.innerHTML = "<h3>Recent activity</h3><div class=\"empty\">Unavailable.</div>";
@@ -1127,6 +1219,38 @@ function loadHandoffs() {
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
+/* One handler for every drilled figure.
+ *
+ * A destination is "page" or "page:key=value". The filter is applied to the
+ * page's own state before it loads, so the list that opens is the one the
+ * number counted rather than the page's default view — clicking "telegram: 8"
+ * and landing on all channels would be a link that technically worked and
+ * answered a different question.
+ */
+function wireDrills() {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-drill]"), function (el) {
+    function go_() { drillTo(el.getAttribute("data-drill")); }
+    el.onclick = go_;
+    el.onkeydown = function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go_(); }
+    };
+  });
+}
+
+function drillTo(dest) {
+  var parts = dest.split(":");
+  var page = parts[0];
+  state.convoFilter = null;
+  if (parts[1]) {
+    var kv = parts[1].split("=");
+    if (page === "handoffs") state.hstatus = parts[1];
+    else if (page === "convos") state.convoFilter = { key: kv[0], value: kv[1] };
+  } else if (page === "handoffs") {
+    state.hstatus = "open";
+  }
+  go(page);
+}
+
 function wire(sel, attr, fn) {
   Array.prototype.forEach.call(document.querySelectorAll(sel), function (el) {
     el.onclick = function () { fn(el.getAttribute("data-" + attr), el); };
@@ -1171,8 +1295,18 @@ function exportHandoffs() {
 
 /* --------------------------------------------------------- conversations */
 function loadConvos() {
-  api("/conversations").then(function (rows) {
-    $("main").innerHTML = rows.length ? rows.map(function (c) {
+  var f = state.convoFilter;
+  api("/conversations" + (f ? "?" + f.key + "=" + encodeURIComponent(f.value) : ""))
+    .then(function (rows) {
+    // The filter is stated and removable. A list silently showing a subset is
+    // how someone concludes there were only eight conversations all month.
+    var head = f
+      ? '<div class="tools"><span class="pill">' + esc(f.key) + ": " + esc(f.value) +
+        '</span><button class="linky" id="clear-filter">Show all</button>' +
+        '<div style="flex:1"></div><span class="meta">' + rows.length +
+        " shown</span></div>"
+      : "";
+    $("main").innerHTML = head + (rows.length ? rows.map(function (c) {
       return '<div class="panel"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
         '<span class="pill">' + esc(c.channel) + "</span>" +
         '<span class="meta">' + new Date(c.created_at).toLocaleString() + "</span>" +
@@ -1180,8 +1314,11 @@ function loadConvos() {
         '<div style="flex:1"></div>' +
         '<button class="btn ghost sm" data-msgs="' + esc(c.id) + '">View messages</button></div>' +
         '<div id="m-' + esc(c.id) + '"></div></div>';
-    }).join("") : '<div class="empty">No conversations yet.</div>';
+    }).join("") : '<div class="empty">No conversations match.</div>');
     wire("[data-msgs]", "msgs", loadMsgs);
+    if ($("clear-filter")) {
+      $("clear-filter").onclick = function () { state.convoFilter = null; loadConvos(); };
+    }
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
@@ -1405,8 +1542,22 @@ function loadSettings() {
 }
 
 function renderSettings(cfg) {
-  var hw = cfg.handoff_webhook || {}, tg = cfg.telegram || {};
+  var hw = cfg.handoff_webhook || {}, tg = cfg.telegram || {}, br = cfg.branding || {};
   $("main").innerHTML =
+    '<div class="panel"><h3>Branding</h3>' +
+    '<div class="meta" style="margin-bottom:12px">Your colour and logo, used in this panel ' +
+    'and in the chat widget on your website. Saved values apply immediately — no deploy.</div>' +
+    '<div class="grid2"><div class="field"><label>Brand colour</label>' +
+    '<div style="display:flex;gap:8px;align-items:center">' +
+    '<input type="color" id="br-color" value="' + esc(br.primary_color || "#0f766e") +
+      '" style="width:52px;padding:3px;flex:none">' +
+    '<input id="br-hex" value="' + esc(br.primary_color || "") + '" placeholder="#722282"></div></div>' +
+    '<div class="field"><label>Logo URL (https)</label>' +
+    '<input id="br-logo" value="' + esc(br.logo_url || "") + '" placeholder="https://your-bank.et/logo.png"></div>' +
+    "</div>" +
+    '<div class="meta" style="margin-bottom:12px">Seeded colours are our reading of your ' +
+    "public site, not your brand book. If it is wrong, this is where to fix it.</div>" +
+    '<button class="btn sm" id="br-save">Save branding</button></div>' +
     '<div class="panel"><h3>Escalation webhook</h3>' +
     '<div style="margin-bottom:10px"><span class="pill ' + (hw.connected ? "on" : "off") + '">' +
       (hw.connected ? "Connected" : "Not connected") + "</span></div>" +
@@ -1445,6 +1596,22 @@ function renderSettings(cfg) {
       .then(function () { setStatus("Telegram connected"); loadSettings(); })
       .catch(function (e) { setStatus(e.message); });
   };
+  // Keep the swatch and the hex box showing the same value, whichever is used.
+  $("br-color").oninput = function () { $("br-hex").value = $("br-color").value; };
+  $("br-hex").oninput = function () {
+    if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test($("br-hex").value)) {
+      $("br-color").value = $("br-hex").value;
+    }
+  };
+  $("br-save").onclick = function () {
+    api("/branding", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        primary_color: $("br-hex").value.trim() || $("br-color").value,
+        logo_url: $("br-logo").value.trim() || null
+      }) })
+      .then(function () { setStatus("Branding saved"); applyBrand(state.slug); loadSettings(); })
+      .catch(function (e) { setStatus(e.message); });
+  };
   if ($("pw-save")) {
     $("pw-save").onclick = function () {
       api("/me/password", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -1467,8 +1634,20 @@ function applyTheme(name) {
   if (g) g.textContent = name === "light" ? "☀" : "☾";
 }
 
+function applyRail(mode) {
+  if (mode === "mini") document.documentElement.setAttribute("data-rail", "mini");
+  else document.documentElement.removeAttribute("data-rail");
+  localStorage.setItem("ba_rail", mode);
+  var g = $("rail-glyph");
+  if (g) g.textContent = mode === "mini" ? "››" : "‹‹";
+}
+
 /* ------------------------------------------------------------ boot */
 applyTheme(localStorage.getItem("ba_theme") || "dark");
+applyRail(localStorage.getItem("ba_rail") || "full");
+$("rail-toggle").onclick = function () {
+  applyRail(localStorage.getItem("ba_rail") === "mini" ? "full" : "mini");
+};
 $("theme-toggle").onclick = function () {
   applyTheme(localStorage.getItem("ba_theme") === "light" ? "dark" : "light");
 };
