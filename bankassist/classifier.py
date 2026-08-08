@@ -161,8 +161,20 @@ _ACCOUNT_RE = re.compile(
     r"\b(check|what('| i)?s) my\b|"
     # Disclosure verbs aimed at a person, for any of those nouns rather than
     # balance alone.
-    rf"\b(give|tell|send|share|provide) (me|us|her|him|them) "
-    rf"(the |her |his |their |my )?{_ACCOUNT_NOUN}\b|"
+    # A possessive NOUN may sit between the pronoun and the account word:
+    # "tell me my wife's balance", "send me my brother's statement". Every
+    # alternative above breaks on that — "my ... balance" is not adjacent —
+    # so the plainest social-engineering phrasing in English was classified
+    # as an ordinary question. It was in the very list of five phrasings a
+    # reviewer supplied; the Amharic and Oromo translations of it were
+    # verified and the English original never was.
+    #
+    # The disclosure verb stays REQUIRED. Matching "my wife's account" on its
+    # own would refuse "I want to transfer money to my wife's account", which
+    # is the over-refusal a reviewer had already caught once in Afaan Oromo.
+    # Asking to be TOLD something is the whole difference.
+    rf"\b(give|tell|send|share|provide) (with |to )?(me|us|her|him|them) "
+    rf"((the|her|his|their|my|our) )?(\w+'?s )?{_ACCOUNT_NOUN}\b|"
     r"\bbalance (for|of|on) account\b|"
     r"\boverride (the )?security\b|"
     r"\bባላንስ|ቀሪ ሂሳቤ|ሂሳቤ|ካርዴ|ፒኔ|ሚስጥር ቁጥሬ|"
@@ -313,7 +325,11 @@ _COMPLAINT_RE = re.compile(
     r"missing money|lost my money|terrible|worst|angry|not working|failed transfer|"
     r"(got|been|was) scammed|victim of fraud|fraud on my account|"
     r"report(ed|ing)? (a )?fraud)|"
-    r"ቅሬታ|ተጭበርብሬ|ጠፋብኝ|ማጭበርበር",
+    # ተሰረቀ / ተሰርቋል / ሰረቁኝ — "was stolen". Theft is the single most urgent
+    # thing a customer can report and the Amharic word for it was absent, so
+    # "ገንዘቤ ተሰርቋል" was handled as an ordinary question. My own wording, not a
+    # reviewer's: see review/phrasebook.tsv, which marks it as unverified.
+    r"ቅሬታ|ተጭበርብሬ|ጠፋብኝ|ማጭበርበር|ተሰረቀ|ተሰርቋ|ሰረቁኝ|ተዘርፍ",
     re.IGNORECASE,
 )
 
