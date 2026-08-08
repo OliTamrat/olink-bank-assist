@@ -43,7 +43,37 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - uses: google-github-actions/setup-gcloud@v2
+      # Attempt, retry once, then check what we actually ended up with.
+      #
+      # This step resolves "latest" against an upstream endpoint and downloads
+      # the SDK, so it is a network fetch in the critical path of every deploy.
+      # It returned `unexpected HTTP response: 404` on the run for ff96962 and
+      # took the whole deploy down with it — nothing was built, migrated or
+      # released, which is the safe way to fail but still a failure caused
+      # entirely outside this repository.
+      #
+      # `continue-on-error` on both attempts is not a way to ignore the
+      # problem: the verify step below is the real gate. GitHub's Ubuntu runner
+      # images ship the Google Cloud CLI preinstalled, so a total outage of
+      # this action no longer blocks a release — and if gcloud genuinely is not
+      # on PATH, `gcloud --version` fails the job immediately with an obvious
+      # message rather than something cryptic three steps later.
+      - id: gcloud_setup
+        uses: google-github-actions/setup-gcloud@v2
+        continue-on-error: true
+
+      - id: gcloud_setup_retry
+        if: steps.gcloud_setup.outcome == 'failure'
+        uses: google-github-actions/setup-gcloud@v2
+        continue-on-error: true
+
+      - name: Verify gcloud is available
+        run: |
+          if ! command -v gcloud >/dev/null; then
+            echo "::error::gcloud is not on PATH. setup-gcloud failed (outcome: ${{ steps.gcloud_setup.outcome }}, retry: ${{ steps.gcloud_setup_retry.outcome }}) and the runner image did not provide it."
+            exit 1
+          fi
+          gcloud --version
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
