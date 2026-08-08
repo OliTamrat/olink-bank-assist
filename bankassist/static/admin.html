@@ -5,631 +5,1478 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bank Assist — Admin</title>
 <style>
-  * { box-sizing: border-box; margin: 0; }
-  body { font-family: "Noto Sans Ethiopic", "Segoe UI", system-ui, sans-serif; background: #0b1220; color: #e2e8f0; min-height: 100vh; }
-  header { padding: 16px 24px; border-bottom: 1px solid #1e293b; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
-  header h1 { font-size: 16px; font-weight: 700; }
-  header input { background: #111a2c; border: 1px solid #273449; color: #e2e8f0; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
-  header button, .btn { background: #0f766e; border: none; color: #fff; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
-  .btn.secondary { background: #273449; }
-  .btn.danger { background: #7f1d1d; }
-  nav { display: flex; gap: 4px; padding: 12px 24px 0; }
-  nav button { background: none; border: none; color: #94a3b8; padding: 8px 14px; font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent; }
-  nav button.active { color: #fff; border-bottom-color: #0f766e; }
-  main { padding: 20px 24px; max-width: 1100px; }
-  .card { background: #111a2c; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-  .card h3 { font-size: 14.5px; margin-bottom: 6px; }
-  .meta { font-size: 12px; color: #64748b; margin-bottom: 8px; }
-  .card pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; color: #cbd5e1; max-height: 130px; overflow: hidden; }
-  .row { display: flex; gap: 8px; margin-top: 10px; }
-  form.doc input, form.doc textarea, form.doc select {
-    width: 100%; background: #0b1220; border: 1px solid #273449; color: #e2e8f0;
-    border-radius: 8px; padding: 9px 11px; font-size: 13.5px; margin-bottom: 10px; font-family: inherit;
-  }
-  form.doc textarea { min-height: 180px; resize: vertical; }
-  .pill { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 99px; background: #273449; margin-right: 6px; }
-  .pill.open { background: #78350f; }
-  .pill.closed { background: #14532d; }
-  .msgline { padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; font-size: 13.5px; white-space: pre-wrap; }
-  .msgline.user { background: #1e3a5f; }
-  .msgline.assistant { background: #16233c; }
-  #status { font-size: 12px; color: #64748b; margin-left: auto; }
-  .empty { color: #64748b; font-size: 13.5px; padding: 12px 0; }
-.contact{margin:8px 0;font-size:13px}
-.contact a{color:#2dd4bf;text-decoration:none}
-.contact.none{color:#9aa0a6;font-style:italic}
-/* Overview. Palette matches the rest of the panel — this is a dark theme,
-   and light cards rendered the labels near-invisible. */
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:18px}
-.kpi{background:#111a2c;border:1px solid #1e293b;border-radius:12px;padding:14px 16px}
-.kpi .v{font-size:30px;font-weight:600;line-height:1.15;color:#2dd4bf}
-.kpi .v.muted{color:#64748b;font-weight:400;font-size:22px}
-.kpi .k{font-size:12.5px;color:#94a3b8;margin-top:2px}
-.kpi .sub{font-size:11.5px;color:#64748b;margin-top:6px}
-.panel{background:#111a2c;border:1px solid #1e293b;border-radius:12px;padding:14px 16px;margin-bottom:14px}
-.panel h3{margin:0 0 12px;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8}
-.bar{display:grid;grid-template-columns:180px 1fr 42px;gap:12px;align-items:center;margin:7px 0;font-size:13px;color:#cbd5e1}
-.bar .track{background:#0b1220;border:1px solid #1e293b;border-radius:5px;height:10px;overflow:hidden}
-/* display:block matters — a span is inline, so width and height are ignored
-   and every bar renders as an empty track. */
-.bar .fill{display:block;background:#2dd4bf;height:100%}
-.bar .fill.warn{background:#f59e0b}
-.bar .fill.bad{background:#ef4444}
-.bar .n{text-align:right;color:#94a3b8;font-variant-numeric:tabular-nums}
-.topic{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:baseline;margin:7px 0;font-size:13px;color:#cbd5e1}
-.topic .n{text-align:right;color:#94a3b8;font-variant-numeric:tabular-nums}
-.windowbar{margin-bottom:14px;font-size:12.5px;color:#94a3b8}
-.windowbar button{margin-left:6px;background:#273449;border:none;color:#e2e8f0;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}
-.windowbar button.on{background:#0f766e;color:#fff}
-.note{font-size:12px;color:#64748b;margin-top:12px}
-/* Handoff console */
-.hstate{margin-bottom:14px;font-size:12.5px;color:#94a3b8}
-.hstate button{margin-left:6px;background:#273449;border:none;color:#e2e8f0;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}
-.hstate button.on{background:#0f766e;color:#fff}
-.waiting{font-size:12px;color:#f59e0b}
-.waiting.cold{color:#ef4444}
-.resolution{margin:8px 0;font-size:13px;color:#cbd5e1;border-left:2px solid #0f766e;padding-left:10px}
-.resolution .when{color:#64748b;font-size:11.5px}
-.transcript{margin-top:10px;border-top:1px solid #1e293b;padding-top:10px}
-.noteform{display:flex;gap:8px;margin-top:10px}
-.noteform input{flex:1;background:#0b1220;border:1px solid #273449;color:#e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit}
-/* Export + print */
-.tools{margin-bottom:14px}
-.tools button{background:#273449;border:none;color:#e2e8f0;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;margin-right:8px}
-.tools button:hover{background:#0f766e;color:#fff}
-.printonly{display:none}
+/* ---------------------------------------------------------------- tokens
+   The brand hue is the tenant's own primary_color, injected at runtime from
+   /banks/{slug}/public, exactly as the widget does it. Every accent below is
+   derived from --brand with color-mix, so CBE opens a green panel and Awash an
+   orange one without a second stylesheet. Hard-coding a house violet here — as
+   every dashboard this was modelled on does — would have made the panel look
+   like our product installed at their bank rather than like their product. */
+:root {
+  /* Dark by default. The panel is looked at all day by someone working a
+     queue, and this is the palette the rest of the Olink products use.
+     Light is a real alternative rather than an afterthought — some banks
+     will print from the screen and some offices are very bright — so every
+     colour below is a token and the light theme only redefines these. */
+  --brand: #0f766e;
+  --bg: #0a0c12;
+  --surface: #12141d;
+  --surface-2: #171a25;
+  --side: #06070d;
+  --side-2: #171a25;
+  --line: #202433;
+  --ink: #f3f5f9;
+  --body: #c7cddc;
+  --muted: #8b94a8;
+  --faint: #646d80;
+  --side-text: #98a1b5;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --ok-bg: #10281a;
+  --warn-bg: #2b2110;
+  --bad-bg: #2c1618;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5);
+  --radius: 14px;
+}
+:root[data-theme="light"] {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #f9fafc;
+  --side: #131a2b;
+  --side-2: #1c2439;
+  --line: #e4e7ee;
+  --ink: #0f1729;
+  --body: #35415a;
+  --muted: #6b7689;
+  --faint: #8f99ab;
+  --side-text: #aeb7c9;
+  --ok: #15803d;
+  --warn: #b45309;
+  --bad: #b91c1c;
+  --ok-bg: #eafaf0;
+  --warn-bg: #fdf5e6;
+  --bad-bg: #fdeeee;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+}
+* { box-sizing: border-box; margin: 0; }
+body {
+  font-family: "Noto Sans Ethiopic", "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: var(--bg); color: var(--ink);
+  min-height: 100vh; font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--brand); }
+button { font-family: inherit; }
 
-/* The dashboard is near-black by design. Printed as-is it is a wasted
-   cartridge and an unreadable page, so print gets an inverted palette rather
-   than the screen's. This is the one report that leaves the building — a bank
-   puts it in a board pack — so it has to look like a document, not a
-   screenshot of a console. */
+/* ---------------------------------------------------------------- sign in */
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.gate-card {
+  width: 100%; max-width: 400px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 16px; padding: 28px;
+  box-shadow: 0 12px 40px rgba(16, 24, 40, .08);
+}
+.gate-mark {
+  width: 42px; height: 42px; border-radius: 11px; background: var(--brand);
+  display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 17px;
+  margin-bottom: 16px;
+}
+.gate h1 { font-size: 19px; margin-bottom: 4px; }
+.gate .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+label { display: block; font-size: 12.5px; font-weight: 600; color: var(--body); margin-bottom: 6px; }
+.field { margin-bottom: 14px; }
+input, select, textarea {
+  width: 100%; background: var(--surface); border: 1px solid var(--line);
+  color: var(--ink); border-radius: 9px; padding: 10px 12px; font-size: 14px;
+  font-family: inherit;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+textarea { min-height: 170px; resize: vertical; }
+.btn {
+  background: var(--brand); border: none; color: #fff; border-radius: 9px;
+  padding: 10px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.btn:hover { filter: brightness(1.07); }
+.btn[disabled] { opacity: .55; cursor: not-allowed; filter: none; }
+.btn.wide { width: 100%; }
+.btn.sm { padding: 7px 12px; font-size: 12.5px; }
+.btn.ghost { background: transparent; color: var(--body); border: 1px solid var(--line); }
+.btn.ghost:hover { background: var(--bg); filter: none; }
+.btn.danger { background: var(--bad); }
+.linky {
+  background: none; border: none; color: var(--brand); cursor: pointer;
+  font-size: 12.5px; padding: 0; text-decoration: underline;
+}
+.err {
+  background: var(--bad-bg); color: var(--bad); border-radius: 9px;
+  padding: 9px 12px; font-size: 13px; margin-bottom: 14px;
+}
+.hidden { display: none !important; }
+
+/* ---------------------------------------------------------------- shell */
+.shell { display: grid; grid-template-columns: 236px 1fr; min-height: 100vh;
+  /* The rail is sticky and one viewport tall, so on a long page the grid
+     column beneath it showed the page background — a dark bar that stopped
+     halfway down. Painting the stripe on the container keeps it whole at any
+     scroll position without making the rail itself scroll. */
+  background: linear-gradient(to right, var(--side) 0 236px, var(--bg) 236px); }
+.side {
+  background: var(--side); color: var(--side-text);
+  display: flex; flex-direction: column; padding: 16px 12px;
+  position: sticky; top: 0; height: 100vh;
+}
+.side-brand { display: flex; gap: 10px; align-items: center; padding: 4px 8px 18px; }
+.side-mark {
+  width: 32px; height: 32px; border-radius: 9px; background: var(--brand);
+  display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px;
+  flex: none;
+}
+.side-name { font-size: 13.5px; font-weight: 600; color: #fff; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-sub { font-size: 11px; color: #6f7b93; }
+.navitem {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: none; color: var(--side-text);
+  padding: 9px 10px; border-radius: 9px; font-size: 13.5px; cursor: pointer;
+  text-align: left; margin-bottom: 2px;
+}
+.navitem:hover { background: var(--side-2); color: #fff; }
+.navitem.on { background: var(--brand); color: #fff; font-weight: 600; }
+.navitem svg { flex: none; opacity: .9; }
+.navitem .label { flex: 1; }
+/* Borrowed from the conversational-builder reference: a count on the rail so
+   waiting work is visible without navigating to it. The escalation queue is
+   the one thing here that is time-sensitive. */
+.badge {
+  background: var(--bad); color: #fff; font-size: 11px; font-weight: 700;
+  border-radius: 99px; padding: 1px 7px; min-width: 20px; text-align: center;
+}
+.navitem.on .badge { background: rgba(255,255,255,.24); }
+.side-foot { margin-top: auto; border-top: 1px solid var(--side-2); padding-top: 12px; }
+.who { display: flex; gap: 9px; align-items: center; padding: 4px 8px 10px; }
+.avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex: none;
+  background: var(--side-2); color: #fff; display: grid; place-items: center;
+  font-size: 11.5px; font-weight: 700;
+}
+.who .n { font-size: 12.5px; color: #fff; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.who .r { font-size: 11px; color: #6f7b93; text-transform: capitalize; }
+
+.content { min-width: 0; }
+.topbar {
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  padding: 14px 24px; display: flex; align-items: center; gap: 14px;
+  flex-wrap: wrap; position: sticky; top: 0; z-index: 5;
+}
+.topbar h2 { font-size: 17px; }
+.topbar .spacer { flex: 1; }
+#status { font-size: 12.5px; color: var(--muted); }
+main { padding: 20px 24px 40px; }
+
+/* ------------------------------------------------------- welcome banner
+   From the reference dashboard, minus its mascot and its wave emoji. The
+   gradient is derived from the tenant's own hue, so it reads as their panel
+   and not as ours. */
+.hello {
+  background: linear-gradient(120deg,
+    color-mix(in srgb, var(--brand) 26%, var(--surface)),
+    var(--surface) 72%);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 20px 22px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.hello h2 { font-size: 20px; letter-spacing: -.01em; }
+.hello p { color: var(--muted); font-size: 13.5px; margin-top: 3px; }
+.hello .right { margin-left: auto; text-align: right; }
+.hello .big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.hello .cap { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+/* ---------------------------------------------------------------- cards */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(198px, 1fr));
+  gap: 14px; margin-bottom: 18px; }
+.kpi { background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 15px 16px; }
+.kpi { display: flex; gap: 12px; align-items: flex-start; }
+.kpi .txt { flex: 1; min-width: 0; }
+/* The circular tinted icon from the reference. Purely decorative, so it is
+   aria-hidden — a screen reader announcing "chart icon" before every number
+   would be noise. */
+.kpi .ico {
+  width: 34px; height: 34px; border-radius: 10px; flex: none;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  color: var(--brand);
+}
+/* Two lines' worth of room whether or not the label needs it, so the four
+   numbers sit on one line across the row. Without it, "Answered from your own
+   content" wraps and drops its value below the other three, which reads as a
+   misalignment rather than as a longer label. */
+.kpi .k { font-size: 12.5px; color: var(--muted); line-height: 1.35; height: 2.7em; }
+/* A delta is only drawn when there is a named previous window to compare
+   with. An arrow with no stated baseline is decoration that reads as
+   evidence. */
+.delta { font-size: 11.5px; font-weight: 600; margin-top: 6px; display: inline-block; }
+.delta.up { color: var(--ok); }
+.delta.down { color: var(--bad); }
+.delta.flat { color: var(--faint); font-weight: 500; }
+.kpi .v { font-size: 27px; font-weight: 650; margin-top: 5px; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; }
+/* A metric with no denominator renders as an em dash, never as 0%. The
+   analytics endpoint returns null on purpose when nothing has been asked yet,
+   and "0%" would report a failure that has not happened. */
+.kpi .v.none { color: var(--faint); font-weight: 400; font-size: 22px; }
+.kpi .sub { font-size: 11.5px; color: var(--faint); margin-top: 5px; }
+.panel { background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+.panel > h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); margin-bottom: 12px; }
+.grid2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } .shell { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; } }
+
+/* ---------------------------------------------------------------- chart */
+.chart { width: 100%; height: 190px; display: block; }
+.chart .line { fill: none; stroke: var(--brand); stroke-width: 2; }
+.chart .area { fill: url(#brandfade); }
+.chart .gl { stroke: var(--line); stroke-width: 1; }
+.chart text { font-size: 10px; fill: var(--faint); }
+.chart .dot { fill: var(--brand); }
+.chart .hit { fill: transparent; }
+.chartwrap { position: relative; }
+/* Hover readout, as in the reference. Real values off the same series the
+   line is drawn from — there is no second source to disagree with. */
+.tip {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity .12s;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px;
+  padding: 7px 10px; font-size: 12px; color: var(--ink); box-shadow: var(--shadow);
+  white-space: nowrap; transform: translate(-50%, -120%); z-index: 3;
+}
+.tip .d { color: var(--muted); font-size: 11px; }
+.tip.on { opacity: 1; }
+
+/* --------------------------------------------------------- activity feed */
+.feed { display: flex; gap: 11px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.feed:last-child { border-bottom: none; }
+.feed .tile {
+  width: 30px; height: 30px; border-radius: 9px; flex: none; display: grid;
+  place-items: center; background: color-mix(in srgb, var(--brand) 15%, transparent);
+  color: var(--brand);
+}
+.feed .tile.token { background: var(--warn-bg); color: var(--warn); }
+.feed .what { font-size: 13px; color: var(--body); }
+.feed .who { font-size: 11.5px; color: var(--faint); margin-top: 1px; }
+
+/* --------------------------------------------------------- chat preview */
+.preview { padding: 0; overflow: hidden; }
+.preview h3 { padding: 16px 16px 0; }
+.preview .frame {
+  width: 100%; height: 380px; border: none; display: block;
+  border-top: 1px solid var(--line); margin-top: 12px; background: var(--surface);
+}
+.preview .cap { padding: 10px 16px; font-size: 11.5px; color: var(--faint);
+  border-top: 1px solid var(--line); }
+
+/* ---------------------------------------------------------------- bars */
+.bar { display: grid; grid-template-columns: 170px 1fr 46px; gap: 12px;
+  align-items: center; margin: 8px 0; font-size: 13px; color: var(--body); }
+.bar .track { background: var(--bg); border: 1px solid var(--line);
+  border-radius: 5px; height: 9px; overflow: hidden; }
+/* display:block matters — a span is inline, so width is ignored and every bar
+   renders as an empty track. */
+.bar .fill { display: block; background: var(--brand); height: 100%; }
+.bar .fill.warn { background: var(--warn); }
+.bar .fill.bad { background: var(--bad); }
+.bar .n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.topic { display: grid; grid-template-columns: 44px 1fr; gap: 12px;
+  align-items: baseline; margin: 8px 0; font-size: 13px; color: var(--body); }
+.topic .n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- tables */
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); font-weight: 600;
+  padding: 0 10px 9px; border-bottom: 1px solid var(--line); }
+td { padding: 11px 10px; border-bottom: 1px solid var(--line);
+  font-size: 13.5px; color: var(--body); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td.title { color: var(--ink); font-weight: 550; }
+.rowacts { display: flex; gap: 6px; justify-content: flex-end; }
+.iconbtn { background: none; border: 1px solid var(--line); color: var(--muted);
+  border-radius: 7px; padding: 5px 7px; cursor: pointer; line-height: 0; }
+.iconbtn:hover { border-color: var(--brand); color: var(--brand); }
+.iconbtn.danger:hover { border-color: var(--bad); color: var(--bad); }
+
+.pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 9px;
+  border-radius: 99px; background: var(--bg); color: var(--body); }
+.pill.open { background: var(--warn-bg); color: var(--warn); }
+.pill.closed { background: var(--ok-bg); color: var(--ok); }
+.pill.on { background: var(--ok-bg); color: var(--ok); }
+.pill.off { background: var(--bad-bg); color: var(--bad); }
+
+.seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 9px; padding: 2px; }
+.seg button { background: none; border: none; color: var(--muted);
+  padding: 5px 12px; font-size: 12.5px; border-radius: 7px; cursor: pointer; }
+.seg button.on { background: var(--surface); color: var(--ink); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16,24,40,.08); }
+
+.empty { color: var(--muted); font-size: 13.5px; padding: 22px 0; text-align: center; }
+.note { font-size: 12px; color: var(--faint); margin-top: 12px; }
+.meta { font-size: 12px; color: var(--muted); }
+.tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+
+.msgline { padding: 9px 11px; border-radius: 9px; margin-bottom: 6px;
+  font-size: 13.5px; white-space: pre-wrap; }
+.msgline.user { background: color-mix(in srgb, var(--brand) 9%, var(--bg)); }
+.msgline.assistant { background: var(--bg); }
+.contact { margin: 8px 0; font-size: 13px; }
+.contact.none { color: var(--faint); font-style: italic; }
+.waiting { font-size: 12px; color: var(--warn); }
+.waiting.cold { color: var(--bad); }
+.resolution { margin: 8px 0; font-size: 13px; color: var(--body);
+  border-left: 2px solid var(--brand); padding-left: 10px; }
+.resolution .when { color: var(--faint); font-size: 11.5px; }
+.noteform { display: flex; gap: 8px; margin-top: 10px; }
+.noteform input { flex: 1; }
+.perm { display: inline-block; font-size: 11px; font-family: ui-monospace, monospace;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  padding: 2px 7px; margin: 0 5px 5px 0; color: var(--body); }
+
+/* ---------------------------------------------------------------- print
+   The screen is light already, so print needs far less undoing than the old
+   near-black panel did. This is the one report that leaves the building — a
+   bank puts it in a board pack — so it has to read as a document. */
+.printonly { display: none; }
 @media print {
   @page { margin: 16mm; }
-  html, body { background: #fff !important; color: #111 !important; }
-  header, nav, .noprint, .windowbar { display: none !important; }
+  /* Printing the dark theme is a wasted cartridge and an unreadable page.
+     The report is the one artefact that leaves the building — a bank puts it
+     in a board pack — so print always uses the light palette whatever is on
+     screen. */
+  :root {
+    --bg: #fff; --surface: #fff; --surface-2: #fff; --line: #bbb;
+    --ink: #111; --body: #222; --muted: #444; --faint: #555;
+    --ok: #15803d; --warn: #b45309; --bad: #b91c1c;
+    --ok-bg: #fff; --warn-bg: #fff; --bad-bg: #fff; --shadow: none;
+  }
+  body { background: #fff; }
+  .hello { background: #fff !important; }
+  .preview, .tip { display: none !important; }
+  .side, .topbar, .noprint, .tools { display: none !important; }
+  .shell { display: block; }
   .printonly { display: block; }
-  .stamp { margin-bottom: 18px; border-bottom: 2px solid #111; padding-bottom: 10px }
-  .stamp h1 { font-size: 19px; margin: 0 0 4px; color: #111 }
-  .stamp div { font-size: 12px; color: #444 }
-  main { padding: 0 !important; max-width: none !important }
-  /* A panel split across a page break loses the heading that says what its
-     numbers are. */
-  .panel, .kpi { break-inside: avoid; page-break-inside: avoid;
-                 background: #fff !important; border: 1px solid #bbb !important;
-                 color: #111 !important }
-  .panel h3 { color: #111 !important }
-  .kpis { display: grid !important; grid-template-columns: repeat(4, 1fr) !important }
-  .kpi .v { color: #111 !important }
-  .kpi .k, .kpi .sub, .note, .bar .n, .topic .n { color: #444 !important }
-  .bar span, .topic, .topic span { color: #111 !important }
-  .bar .track { background: #e5e5e5 !important }
-  .bar .fill { background: #555 !important }
+  .stamp { margin-bottom: 18px; border-bottom: 2px solid #111; padding-bottom: 10px; }
+  .stamp h1 { font-size: 19px; margin-bottom: 4px; }
+  .stamp div { font-size: 12px; color: #444; }
+  main { padding: 0 !important; }
+  .panel, .kpi { break-inside: avoid; page-break-inside: avoid; box-shadow: none; }
+  .kpis { grid-template-columns: repeat(4, 1fr) !important; }
+  .grid2 { grid-template-columns: 1fr 1fr !important; }
 }
 </style>
 </head>
 <body>
-<header>
-  <h1>Bank Assist Admin</h1>
-  <input id="slug" placeholder="bank slug (e.g. demo)" size="14">
-  <input id="token" placeholder="admin token" size="28" type="password">
-  <button onclick="connect()">Connect</button>
-  <span id="status"></span>
-</header>
-<nav>
-  <button id="tab-overview" class="active" onclick="showTab('overview')">Overview</button>
-  <button id="tab-docs" onclick="showTab('docs')">Knowledge Base</button>
-  <button id="tab-convos" onclick="showTab('convos')">Conversations</button>
-  <button id="tab-handoffs" onclick="showTab('handoffs')">Handoffs</button>
-  <button id="tab-gaps" onclick="showTab('gaps')">Content Gaps</button>
-</nav>
-<main id="main"><div class="empty">Enter your bank slug and admin token, then Connect.</div></main>
+
+<!-- ------------------------------------------------------------ sign in -->
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="gate-mark" id="gate-mark">BA</div>
+    <h1 id="gate-title">Sign in</h1>
+    <div class="sub" id="gate-sub">Olink Bank Assist — administration</div>
+    <div class="err hidden" id="gate-err"></div>
+
+    <div class="field">
+      <label for="slug">Bank</label>
+      <input id="slug" placeholder="e.g. demo" autocomplete="organization">
+    </div>
+
+    <div id="pw-mode">
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username" placeholder="you@bank.et">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password">
+      </div>
+      <button class="btn wide" id="signin-btn">Sign in</button>
+      <div style="margin-top:14px;text-align:center">
+        <button class="linky" id="to-token">Use an admin token instead</button>
+      </div>
+    </div>
+
+    <div id="token-mode" class="hidden">
+      <div class="field">
+        <label for="token">Admin token</label>
+        <input id="token" type="password" autocomplete="off">
+        <div class="meta" style="margin-top:6px">
+          Recovery and automation access. It is not tied to a person, so
+          everything done with it is recorded as <code>admin-token</code>.
+        </div>
+      </div>
+      <button class="btn wide" id="token-btn">Continue</button>
+      <div style="margin-top:14px;text-align:center">
+        <button class="linky" id="to-pw">Sign in with email instead</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- -------------------------------------------------------------- shell -->
+<div class="shell hidden" id="shell">
+  <aside class="side">
+    <div class="side-brand">
+      <div class="side-mark" id="side-mark">BA</div>
+      <div style="min-width:0">
+        <div class="side-name" id="side-name">Bank Assist</div>
+        <div class="side-sub">Assistant admin</div>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      <div class="who">
+        <div class="avatar" id="who-avatar">?</div>
+        <div style="min-width:0">
+          <div class="n" id="who-name">—</div>
+          <div class="r" id="who-role">—</div>
+        </div>
+      </div>
+      <button class="navitem" id="signout"><span class="label">Sign out</span></button>
+    </div>
+  </aside>
+
+  <div class="content">
+    <div class="topbar">
+      <h2 id="page-title">Dashboard</h2>
+      <div class="spacer"></div>
+      <span id="status"></span>
+      <button class="iconbtn" id="theme-toggle" title="Switch between dark and light"
+              aria-label="Switch between dark and light">
+        <span id="theme-glyph">☾</span>
+      </button>
+    </div>
+    <main id="main"></main>
+  </div>
+</div>
 
 <script>
-var state = { slug: localStorage.getItem("ba_slug") || "", token: localStorage.getItem("ba_token") || "", tab: "overview", days: 30, hstatus: "open" };
-document.getElementById("slug").value = state.slug;
-document.getElementById("token").value = state.token;
+"use strict";
+
+/* Which nav entries exist, what each needs, and where each person lands.
+   The permission strings are the same ones require() checks server-side. This
+   only decides what is OFFERED — hiding a button is a courtesy, never a
+   control, and every route re-checks on the server. A tampered response can
+   hide a link; it cannot grant anything. */
+var PAGES = [
+  { id: "dashboard", label: "Dashboard",     perm: "analytics.read",     load: loadDashboard },
+  { id: "handoffs",  label: "Escalations",   perm: "handoffs.read",      load: loadHandoffs, badge: true },
+  { id: "convos",    label: "Conversations", perm: "conversations.read", load: loadConvos },
+  { id: "docs",      label: "Knowledge Base",perm: "documents.read",     load: loadDocs },
+  { id: "gaps",      label: "Content Gaps",  perm: "gaps.read",          load: loadGaps },
+  { id: "team",      label: "Team",          perm: "users.manage",       load: loadTeam },
+  { id: "settings",  label: "Settings",      perm: "integrations.manage",load: loadSettings }
+];
+
+var ICONS = {
+  dashboard: '<path d="M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z"/>',
+  handoffs:  '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-4.6A8.4 8.4 0 1 1 21 11.5z"/>',
+  convos:    '<path d="M8 10h8M8 14h5M21 12a9 9 0 1 1-3.2-6.9"/><circle cx="19" cy="5" r="2"/>',
+  docs:      '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5M8 13h8M8 17h5"/>',
+  gaps:      '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M11 8v3M11 14h.01"/>',
+  team:      '<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M17 11.2A3.2 3.2 0 1 0 17 5M18 20h3.5a5.5 5.5 0 0 0-3-4.9"/>',
+  settings:  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.500 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>',
+  edit:      '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/>',
+  trash:     '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>'
+};
+function icon(name, size) {
+  return '<svg width="' + (size || 17) + '" height="' + (size || 17) + '" viewBox="0 0 24 24"' +
+    ' fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"' +
+    ' stroke-linejoin="round">' + (ICONS[name] || "") + "</svg>";
+}
+
+var state = {
+  slug: localStorage.getItem("ba_slug") || "",
+  token: "",          // break-glass only; never persisted (see signInWithToken)
+  me: null,           // { email, role, permissions[] } — null on the token path
+  page: null,
+  days: 30,
+  hstatus: "open",
+  openHandoffs: null
+};
+
+/* ------------------------------------------------------------- plumbing */
+function $(id) { return document.getElementById(id); }
+function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+function setStatus(t) { $("status").textContent = t || ""; }
 
 function api(path, opts) {
   opts = opts || {};
-  opts.headers = Object.assign({ "X-Admin-Token": state.token, "Content-Type": "application/json" }, opts.headers || {});
+  opts.credentials = "same-origin";           // carries the session cookie
+  if (state.token) {
+    opts.headers = opts.headers || {};
+    opts.headers["X-Admin-Token"] = state.token;
+  }
   return fetch("/admin/api/" + encodeURIComponent(state.slug) + path, opts).then(function (r) {
-    if (r.status === 401) throw new Error("Invalid admin token");
-    if (!r.ok && r.status !== 204) throw new Error("Request failed (" + r.status + ")");
+    if (r.status === 401) { signedOut("Your session has ended. Please sign in again."); throw new Error("Signed out"); }
+    if (r.status === 403) { throw new Error("You do not have permission to do that."); }
+    if (!r.ok) { return r.text().then(function (t) { throw new Error(t || ("HTTP " + r.status)); }); }
     return r.status === 204 ? null : r.json();
   });
 }
-function setStatus(text) { document.getElementById("status").textContent = text; }
-function connect() {
-  state.slug = document.getElementById("slug").value.trim();
-  state.token = document.getElementById("token").value.trim();
-  localStorage.setItem("ba_slug", state.slug);
-  localStorage.setItem("ba_token", state.token);
-  showTab(state.tab);
+
+/* The tenant's own colour, on the sign-in screen as well as inside. Public
+   endpoint, so it works before anyone has authenticated. */
+function applyBrand(slug) {
+  if (!slug) return Promise.resolve(null);
+  return fetch("/banks/" + encodeURIComponent(slug) + "/public").then(function (r) {
+    return r.ok ? r.json() : null;
+  }).then(function (b) {
+    if (!b) return null;
+    if (b.primary_color) document.documentElement.style.setProperty("--brand", b.primary_color);
+    var initials = (b.name || slug).replace(/[^A-Za-zሀ-፿ ]/g, "")
+      .split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase();
+    $("gate-mark").textContent = initials || "BA";
+    $("side-mark").textContent = initials || "BA";
+    $("side-name").textContent = b.name || slug;
+    $("gate-title").textContent = "Sign in";
+    $("gate-sub").textContent = b.name ? b.name + " — assistant administration" : "Olink Bank Assist";
+    return b;
+  }).catch(function () { return null; });
 }
-function showTab(tab) {
-  state.tab = tab;
-  ["overview", "docs", "convos", "handoffs", "gaps"].forEach(function (t) {
-    document.getElementById("tab-" + t).classList.toggle("active", t === tab);
+
+/* ---------------------------------------------------------------- auth */
+function gateError(msg) {
+  var el = $("gate-err");
+  if (!msg) { el.classList.add("hidden"); return; }
+  el.textContent = msg; el.classList.remove("hidden");
+}
+
+function signInWithPassword() {
+  var slug = $("slug").value.trim();
+  var email = $("email").value.trim();
+  var pw = $("password").value;
+  if (!slug || !email || !pw) { gateError("Bank, email and password are all required."); return; }
+  gateError("");
+  $("signin-btn").disabled = true;
+  fetch("/admin/api/" + encodeURIComponent(slug) + "/login", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: email, password: pw })
+  }).then(function (r) {
+    if (r.status === 429) throw new Error("Too many attempts. Please wait a moment.");
+    // One message for every cause, matching the server, which answers an
+    // unknown email and a wrong password identically so the screen cannot be
+    // used to find out who has an account here.
+    if (!r.ok) throw new Error("That email and password did not match.");
+    return r.json();
+  }).then(function (me) {
+    state.slug = slug; state.token = ""; state.me = me;
+    localStorage.setItem("ba_slug", slug);
+    $("password").value = "";
+    enterApp();
+  }).catch(function (e) { gateError(e.message); })
+    .then(function () { $("signin-btn").disabled = false; });
+}
+
+function signInWithToken() {
+  var slug = $("slug").value.trim();
+  var token = $("token").value.trim();
+  if (!slug || !token) { gateError("Bank and token are both required."); return; }
+  gateError("");
+  state.slug = slug; state.token = token; state.me = null;
+  localStorage.setItem("ba_slug", slug);
+  // Deliberately NOT stored. The previous panel kept the tenant's admin token
+  // in localStorage, where any script on the page could read it and where it
+  // outlived the tab. It now lives in memory for this tab only — which is also
+  // the honest cost of a break-glass credential, and the reason to sign in
+  // with a password instead.
+  api("/analytics?days=1").then(function () {
+    enterApp();
+  }).catch(function () {
+    state.token = "";
+    gateError("That token was not accepted for this bank.");
   });
-  if (!state.slug || !state.token) return;
-  if (tab === "overview") loadOverview();
-  if (tab === "docs") loadDocs();
-  if (tab === "convos") loadConvos();
-  if (tab === "handoffs") loadHandoffs();
-  if (tab === "gaps") loadGaps();
 }
-function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
 
-// ------------------------------------------------ overview
-var OUTCOME_LABEL = {
-  answered:         ["Answered from your content", ""],
-  general_guidance: ["General banking guidance",   "warn"],
-  comparison:       ["Competitive question",       ""],
-  account_blocked:  ["Account request declined",   ""],
-  unanswered:       ["Nobody could answer",        "bad"],
-  complaint:        ["Complaint",                  "bad"],
-  // Added when the escalation intent shipped; without it this outcome
-  // rendered to a bank as the raw key "human_request", on screen and in the
-  // export. Any new outcome needs a row here — and SUBSTANTIVE below has to
-  // know about it too. tests/test_admin_labels.py fails if either drifts.
-  human_request:    ["Asked for a person",         "warn"],
-  greeting:         ["Greeting",                   ""],
-  contact_captured: ["Contact details given",      ""]
-};
+function signedOut(msg) {
+  state.token = ""; state.me = null; state.page = null;
+  $("shell").classList.add("hidden");
+  $("gate").classList.remove("hidden");
+  gateError(msg || "");
+}
 
-function pct(x) { return x == null ? "\u2014" : Math.round(x * 1000) / 10 + "%"; }
+function signOut() {
+  fetch("/admin/api/" + encodeURIComponent(state.slug) + "/logout",
+    { method: "POST", credentials: "same-origin" })
+    .catch(function () {})
+    .then(function () { signedOut("You are signed out."); });
+}
+
+function can(perm) {
+  // The break-glass token holds everything, exactly as the server treats it.
+  if (!state.me) return true;
+  return (state.me.permissions || []).indexOf(perm) > -1;
+}
+
+function enterApp() {
+  $("gate").classList.add("hidden");
+  $("shell").classList.remove("hidden");
+  applyBrand(state.slug);
+
+  if (state.me) {
+    $("who-name").textContent = state.me.display_name || state.me.email;
+    $("who-role").textContent = state.me.role || "";
+    var src = state.me.display_name || state.me.email || "?";
+    $("who-avatar").textContent = src.replace(/[^A-Za-z]/g, "").slice(0, 2).toUpperCase() || "?";
+  } else {
+    $("who-name").textContent = "Admin token";
+    $("who-role").textContent = "break-glass access";
+    $("who-avatar").textContent = "•";
+  }
+  renderNav();
+
+  var landing = landingPage();
+  if (!landing) { $("main").innerHTML = '<div class="empty">This account has no permissions yet. Ask an administrator.</div>'; return; }
+  go(landing);
+  refreshBadge();
+}
+
+/* Where this person starts.
+ *
+ * Keyed on the job, not on nav order. Both built-in roles can read analytics,
+ * so "first page they are allowed to open" put an operator on a wall of
+ * numbers they cannot act on while eight escalations waited one click away —
+ * which is what this did until it was watched rather than reasoned about.
+ *
+ * Someone who can change what the assistant says, wire up an integration or
+ * add a colleague is running the thing, and lands on the overview. Everyone
+ * else who works the queue lands in the queue. A narrowed custom role that
+ * matches neither still falls through to whatever it can actually open, so
+ * nobody arrives at a blank screen.
+ */
+var MANAGEMENT = ["documents.write", "integrations.manage", "users.manage"];
+
+function landingPage() {
+  var manages = MANAGEMENT.some(can);
+  var order = manages
+    ? ["dashboard", "handoffs"]
+    : ["handoffs", "dashboard"];
+  var allowed = PAGES.filter(function (p) { return can(p.perm); });
+  for (var i = 0; i < order.length; i++) {
+    var hit = allowed.filter(function (p) { return p.id === order[i]; })[0];
+    if (hit) return hit.id;
+  }
+  return allowed.length ? allowed[0].id : null;
+}
+
+function renderNav() {
+  $("nav").innerHTML = PAGES.filter(function (p) { return can(p.perm); }).map(function (p) {
+    return '<button class="navitem" id="nav-' + p.id + '" data-page="' + p.id + '">' +
+      icon(p.id) + '<span class="label">' + esc(p.label) + "</span>" +
+      (p.badge ? '<span class="badge hidden" id="badge-' + p.id + '"></span>' : "") +
+      "</button>";
+  }).join("");
+  Array.prototype.forEach.call($("nav").querySelectorAll(".navitem"), function (b) {
+    b.onclick = function () { go(b.getAttribute("data-page")); };
+  });
+}
+
+function go(id) {
+  var page = PAGES.filter(function (p) { return p.id === id; })[0];
+  if (!page || !can(page.perm)) return;
+  state.page = id;
+  Array.prototype.forEach.call($("nav").querySelectorAll(".navitem"), function (b) {
+    b.classList.toggle("on", b.getAttribute("data-page") === id);
+  });
+  $("page-title").textContent = page.label;
+  $("main").innerHTML = '<div class="empty">Loading…</div>';
+  setStatus("");
+  page.load();
+}
+
+/* The queue count on the rail, so waiting work is visible from any page. */
+function refreshBadge() {
+  if (!can("handoffs.read")) return;
+  api("/handoffs?status=open").then(function (rows) {
+    state.openHandoffs = rows.length;
+    var el = $("badge-handoffs");
+    if (!el) return;
+    el.textContent = rows.length;
+    el.classList.toggle("hidden", rows.length === 0);
+  }).catch(function () {});
+}
+
+/* ------------------------------------------------------------ dashboard */
+/* The set the SERVER computes every rate over (agent.SUBSTANTIVE). Charted
+   against a different set, the bars would be drawn over a denominator that
+   does not contain them — percentages wrong rather than merely incomplete.
+   Used by both the chart and the CSV export, so there is one copy to drift. */
+var SUBSTANTIVE = ["account_blocked", "answered", "comparison", "complaint",
+                   "general_guidance", "human_request", "unanswered"];
+
+function pct(x) { return x == null ? "—" : Math.round(x * 1000) / 10 + "%"; }
+function num(n) { return (n == null ? 0 : n).toLocaleString(); }
+
+/* now vs then, stated in the words of the comparison rather than as a bare
+   arrow. Returns "" when there is no previous window, which is the honest
+   answer for an all-time view or a tenant's first month. */
+function delta(now, then, asRate) {
+  if (then == null || now == null) return "";
+  if (asRate) {
+    var pts = Math.round((now - then) * 1000) / 10;
+    if (Math.abs(pts) < 0.1) return '<span class="delta flat">no change on previous period</span>';
+    return '<span class="delta ' + (pts > 0 ? "up" : "down") + '">' +
+      (pts > 0 ? "▲ " : "▼ ") + Math.abs(pts) + " pts vs previous period</span>";
+  }
+  if (!then) return "";
+  var chg = Math.round(((now - then) / then) * 1000) / 10;
+  if (Math.abs(chg) < 0.1) return '<span class="delta flat">no change on previous period</span>';
+  return '<span class="delta ' + (chg > 0 ? "up" : "down") + '">' +
+    (chg > 0 ? "▲ " : "▼ ") + Math.abs(chg) + "% vs previous period</span>";
+}
+
+function kpi(label, value, sub, isNone, iconName, deltaHtml) {
+  return '<div class="kpi">' +
+    '<div class="txt"><div class="k">' + esc(label) + "</div>" +
+    '<div class="v' + (isNone ? " none" : "") + '">' + value + "</div>" +
+    (sub ? '<div class="sub">' + esc(sub) + "</div>" : "") +
+    (deltaHtml || "") + "</div>" +
+    '<div class="ico" aria-hidden="true">' + icon(iconName || "dashboard", 17) + "</div>" +
+    "</div>";
+}
 
 function bars(rows, total, labeller) {
   if (!rows.length) return '<div class="empty">Nothing yet.</div>';
   return rows.map(function (r) {
-    var l = labeller(r);
-    var w = total ? Math.max(2, Math.round((r.count / total) * 100)) : 0;
-    return '<div class="bar"><span>' + esc(l[0]) + '</span>' +
-      '<span class="track"><span class="fill ' + l[1] + '" style="width:' + w + '%"></span></span>' +
+    var pair = labeller(r);
+    var share = total ? r.count / total : 0;
+    return '<div class="bar"><span>' + esc(pair[0]) + "</span>" +
+      '<span class="track"><span class="fill' + (pair[1] ? " " + pair[1] : "") +
+      '" style="width:' + (share * 100).toFixed(1) + '%"></span></span>' +
       '<span class="n">' + r.count + "</span></div>";
   }).join("");
 }
 
-function setDays(d) { state.days = d; loadOverview(); }
+/* A real series from the analytics endpoint, with empty days present as zero.
+   Drawn as inline SVG: no chart library, no CDN, and it prints. */
+function sparkArea(daily) {
+  if (!daily || daily.length < 2) return '<div class="empty">Not enough days yet to draw a trend.</div>';
+  var w = 640, h = 190, padL = 34, padB = 22, padT = 10;
+  var max = Math.max.apply(null, daily.map(function (d) { return d.conversations; }));
+  var top = Math.max(max, 1);
+  var iw = w - padL - 8, ih = h - padB - padT;
+  var pts = daily.map(function (d, i) {
+    var x = padL + (daily.length === 1 ? iw / 2 : (i / (daily.length - 1)) * iw);
+    var y = padT + ih - (d.conversations / top) * ih;
+    return [x, y];
+  });
+  var line = pts.map(function (p, i) { return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); }).join(" ");
+  var area = line + " L" + pts[pts.length - 1][0].toFixed(1) + " " + (padT + ih) +
+             " L" + pts[0][0].toFixed(1) + " " + (padT + ih) + " Z";
+  var ticks = [0, 0.5, 1].map(function (f) {
+    var y = padT + ih - f * ih;
+    return '<line class="gl" x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (w - 8) + '" y2="' + y.toFixed(1) + '"/>' +
+      '<text x="' + (padL - 6) + '" y="' + (y + 3).toFixed(1) + '" text-anchor="end">' + Math.round(f * top) + "</text>";
+  }).join("");
+  function dayLabel(iso) { return iso.slice(5).replace("-", "/"); }
+  // The first and last labels are anchored to the ends of the plot, not
+  // centred on their points. Centred, half of each sits outside the viewBox
+  // and is clipped — the final label rendered as "08/0", which reads as a
+  // date rather than as a truncation, so it is the kind of wrong that gets
+  // believed. Only visible by looking at it; no assertion would have caught it.
+  var idx = [0, Math.floor(daily.length / 2), daily.length - 1]
+    .filter(function (v, i, a) { return a.indexOf(v) === i; });
+  var labels = idx.map(function (i) {
+    var anchor = i === 0 ? "start" : (i === daily.length - 1 ? "end" : "middle");
+    return '<text x="' + pts[i][0].toFixed(1) + '" y="' + (h - 6) + '" text-anchor="' + anchor + '">' +
+      dayLabel(daily[i].date) + "</text>";
+  }).join("");
+  // No preserveAspectRatio="none". Stretching the viewBox to fill the panel
+  // also stretches the glyphs and the stroke, which looks like a rendering
+  // fault rather than a design. Scaling uniformly costs a few pixels of side
+  // margin at unusual widths and keeps the type honest.
+  return '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" role="img" aria-label="Conversations per day">' +
+    '<defs><linearGradient id="brandfade" x1="0" x2="0" y1="0" y2="1">' +
+    '<stop offset="0%" stop-color="var(--brand)" stop-opacity="0.22"/>' +
+    '<stop offset="100%" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>' +
+    ticks + '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>' + labels + "</svg>";
+}
 
-function loadOverview() {
+function loadDashboard() {
   api("/analytics?days=" + state.days).then(function (a) {
-    setStatus(a.conversations + " conversations in window");
+    state.analytics = a;
     var langTotal = a.languages.reduce(function (s, r) { return s + r.count; }, 0);
-
-    var windowbar = '<div class="windowbar">Window: ' +
-      [7, 30, 90, 0].map(function (d) {
-        return '<button class="' + (state.days === d ? "on" : "") + '" onclick="setDays(' + d + ')">' +
-          (d ? d + " days" : "All time") + "</button>";
-      }).join("") + "</div>";
-
-    // Rates are null until something has been asked. Showing 0% on a fresh
-    // tenant would read as "the product answers nothing".
-    var kpis = '<div class="kpis">' +
-      '<div class="kpi"><div class="v' + (a.deflection_rate == null ? " muted" : "") + '">' + pct(a.deflection_rate) + '</div>' +
-        '<div class="k">Handled without a person</div>' +
-        '<div class="sub">' + a.resolved_without_a_person + " of " + a.substantive_questions + " questions</div></div>" +
-      '<div class="kpi"><div class="v' + (a.own_content_rate == null ? " muted" : "") + '">' + pct(a.own_content_rate) + '</div>' +
-        '<div class="k">Answered from your own content</div>' +
-        '<div class="sub">' + a.answered_from_own_content + " questions</div></div>" +
-      '<div class="kpi"><div class="v">' + a.conversations + '</div><div class="k">Conversations</div>' +
-        '<div class="sub">' + a.substantive_questions + " questions asked</div></div>" +
-      '<div class="kpi"><div class="v">' + a.handoffs.open + '</div><div class="k">Open handoffs</div>' +
-        '<div class="sub">' + a.handoffs.open_reachable + " reachable, " + a.handoffs.open_unreachable + " with no contact</div></div>" +
-      "</div>";
-
-    // Only the outcomes that are actually questions. Greetings and the contact
-    // exchange are real turns but they are not in the denominator above, and
-    // charting them beside the others implies they are.
-    // MUST mirror agent.SUBSTANTIVE. The server counts these as the
-    // denominator of every rate; anything this list omits still lands in that
-    // denominator while being drawn under "not counted as questions", so the
-    // bars silently stop summing to their own total. human_request was
-    // missing for exactly that reason.
-    var SUBSTANTIVE = ["answered", "general_guidance", "comparison",
-                       "account_blocked", "unanswered", "complaint",
-                       "human_request"];
     var qRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) > -1; });
     var otherRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) < 0; });
 
-    var outcomes = '<div class="panel"><h3>What happened to each question</h3>' +
-      bars(qRows, a.substantive_questions, function (r) {
-        return OUTCOME_LABEL[r.outcome] || [r.outcome, ""];
-      }) +
-      (otherRows.length
-        ? '<div class="note">Not counted as questions: ' +
-          otherRows.map(function (r) {
-            return (OUTCOME_LABEL[r.outcome] || [r.outcome])[0].toLowerCase() + " \u00d7" + r.count;
-          }).join(", ") + ".</div>"
-        : "") +
-      (a.unclassified_turns
-        ? '<div class="note">' + a.unclassified_turns + " earlier turns predate outcome tracking and are left out of every rate here.</div>"
-        : "") +
+    var h = '<div class="printonly stamp"><h1>' + esc(a.bank_name) + " — assistant report</h1>" +
+      "<div>" + (a.window_days ? "Last " + a.window_days + " days" : "All time") +
+      " · generated " + new Date().toLocaleString() + "</div></div>";
+
+    h += '<div class="tools noprint">' +
+      '<div class="seg">' + [[7, "7 days"], [30, "30 days"], [90, "90 days"], [0, "All"]].map(function (d) {
+        return '<button class="' + (state.days === d[0] ? "on" : "") + '" data-days="' + d[0] + '">' + d[1] + "</button>";
+      }).join("") + "</div>" +
+      '<div style="flex:1"></div>' +
+      '<button class="btn ghost sm" id="dl-csv">Export CSV</button>' +
+      '<button class="btn ghost sm" id="do-print">Print</button></div>';
+
+    var openNow = a.handoffs.open;
+    h += '<div class="hello noprint"><div>' +
+      "<h2>" + esc(greeting()) + (state.me && state.me.display_name
+        ? ", " + esc(state.me.display_name.split(/\s+/)[0]) : "") + "</h2>" +
+      "<p>" + (openNow
+        ? esc(openNow + " escalation" + (openNow === 1 ? "" : "s") + " waiting for someone.")
+        : "Nothing is waiting in the queue.") + "</p></div>" +
+      '<div class="right"><div class="big">' + num(a.conversations) + "</div>" +
+      '<div class="cap">' + (a.window_days ? "last " + a.window_days + " days" : "all time") +
+      "</div></div></div>";
+
+    /* Four numbers a bank actually decides on. Not "leads" — every one of
+       these is either a count we hold or a rate with a real denominator, and
+       a rate with no denominator prints as an em dash rather than 0%. */
+    var prev = a.previous;
+    h += '<div class="kpis">' +
+      kpi("Conversations", num(a.conversations),
+          a.window_days ? "last " + a.window_days + " days" : "all time", false, "convos",
+          prev && delta(a.conversations, prev.conversations)) +
+      kpi("Questions asked", num(a.substantive_questions),
+          "greetings and thanks excluded", false, "gaps",
+          prev && delta(a.substantive_questions, prev.substantive_questions)) +
+      kpi("Resolved without a person", pct(a.deflection_rate),
+          a.substantive_questions ? num(a.resolved_without_a_person) + " of " + num(a.substantive_questions) : "no questions yet",
+          a.deflection_rate == null, "handoffs",
+          prev && delta(a.deflection_rate, prev.deflection_rate, true)) +
+      kpi("Answered from your own content", pct(a.own_content_rate),
+          a.substantive_questions ? num(a.answered_from_own_content) + " of " + num(a.substantive_questions) : "no questions yet",
+          a.own_content_rate == null, "docs",
+          prev && delta(a.own_content_rate, prev.own_content_rate, true)) +
       "</div>";
 
-    var languages = '<div class="panel"><h3>Languages customers used</h3>' +
-      bars(a.languages, langTotal, function (r) { return [r.name || r.language, ""]; }) + "</div>";
-
-    var topics = '<div class="panel"><h3>Most asked</h3>' +
-      (a.top_topics.length
+    h += '<div class="grid2"><div>' +
+      '<div class="panel"><h3>Conversations per day</h3>' + sparkArea(a.daily) + "</div>" +
+      '<div class="panel"><h3>What happened to each question</h3>' +
+      bars(qRows, a.substantive_questions, function (r) {
+        var cls = r.outcome === "unanswered" ? "bad"
+          : (["human_request", "complaint", "account_blocked"].indexOf(r.outcome) > -1 ? "warn" : "");
+        return [OUTCOME_LABEL[r.outcome] || r.outcome, cls];
+      }) +
+      (otherRows.length ? '<div class="note">Also recorded: ' + otherRows.map(function (r) {
+        return esc((OUTCOME_LABEL[r.outcome] || r.outcome) + " (" + r.count + ")"); }).join(", ") + "</div>" : "") +
+      (a.unclassified_turns ? '<div class="note">' + num(a.unclassified_turns) +
+        " earlier replies carry no outcome and are not counted above.</div>" : "") +
+      "</div>" +
+      '<div class="panel"><h3>Most asked</h3>' + (a.top_topics.length
         ? a.top_topics.map(function (t) {
-            return '<div class="topic"><span class="n">' + t.count + '\u00d7</span>' +
-              "<span>" + esc(t.example) + "</span></div>";
+            return '<div class="topic"><span class="n">' + t.count + "</span><span>" +
+              esc(t.example) + "</span></div>";
           }).join("")
-        : '<div class="empty">Nothing yet.</div>') +
-      '<div class="note">Phone numbers and email addresses are removed from this list.</div></div>';
+        : '<div class="empty">Nothing asked yet in this window.</div>') +
+      '<div class="note">Grouped by wording. Phone numbers and names are removed before grouping.</div></div>' +
+      "</div><div>" +
+      '<div class="panel"><h3>Escalation queue</h3>' +
+      '<div class="bar"><span>Open</span><span class="track"><span class="fill warn" style="width:' +
+        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.open / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
+        '%"></span></span><span class="n">' + a.handoffs.open + "</span></div>" +
+      '<div class="bar"><span>Closed</span><span class="track"><span class="fill" style="width:' +
+        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.closed / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
+        '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div>" +
+      /* Restored after the rebuild dropped it. Of the people still waiting on
+         a callback, how many can actually be called — an open handoff with no
+         number on it is a dead letter, and that is the one fact about the
+         queue that changes what someone does next. */
+      (a.handoffs.open
+        ? '<div class="note">' + num(a.handoffs.open_reachable) + " reachable" +
+          (a.handoffs.open_unreachable
+            ? " · " + num(a.handoffs.open_unreachable) + " with no contact details"
+            : "") + "</div>"
+        : "") +
+      "</div>" +
+      '<div class="panel"><h3>Languages</h3>' +
+      bars(a.languages, langTotal, function (r) { return [r.name || r.language, ""]; }) + "</div>" +
+      '<div class="panel"><h3>Channels</h3>' +
+      bars(a.channels, a.conversations, function (r) { return [r.channel, ""]; }) + "</div>" +
+      '<div class="panel noprint" id="activity"><h3>Recent activity</h3>' +
+      '<div class="empty">Loading…</div></div>' +
+      "</div></div>";
 
-    // Kept so the export reads exactly what the screen reads. Re-fetching on
-    // click would let the two disagree whenever the window changed in
-    // between, and a bank comparing a printout against the dashboard would be
-    // right to distrust both.
-    state.analytics = a;
+    /* What a bank most wants to see in a demo: the assistant as its own
+       customers meet it, on the same page as the numbers it produces. The
+       widget is a real page, so this is the real thing rather than a mockup
+       that can drift from it. */
+    h += '<div class="panel preview noprint"><h3>Live preview</h3>' +
+      '<iframe class="frame" title="Assistant preview" src="/widget?bank=' +
+      encodeURIComponent(state.slug) + '"></iframe>' +
+      '<div class="cap">Exactly what a customer sees on your website. ' +
+      "Messages sent here are real and appear in Conversations.</div></div>";
 
-    // Provenance. A page in a board pack with no bank name, no window and no
-    // date is unciteable — the first question in the room is "as of when?".
-    var stamp = '<div class="printonly stamp"><h1>' + esc(a.bank_name || state.slug) +
-      " — assistant report</h1>" +
-      "<div>" + (a.window_days ? "Last " + a.window_days + " days" : "All time") +
-      (a.since ? " (since " + esc(a.since.slice(0, 10)) + ")" : "") +
-      " \u00b7 generated " + new Date().toISOString().slice(0, 10) + "</div></div>";
-
-    var tools = '<div class="tools noprint">' +
-      '<button onclick="exportAnalytics()">Export CSV</button>' +
-      '<button onclick="window.print()">Print / PDF</button></div>';
-
-    document.getElementById("main").innerHTML =
-      stamp + windowbar + tools + kpis + outcomes + languages + topics;
-  }).catch(function (e) { setStatus(e.message); });
+    $("main").innerHTML = h;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-days]"), function (b) {
+      b.onclick = function () { state.days = parseInt(b.getAttribute("data-days"), 10); loadDashboard(); };
+    });
+    $("dl-csv").onclick = exportAnalytics;
+    $("do-print").onclick = function () { window.print(); };
+    wireChartTip(a.daily);
+    loadActivity();
+  }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
-// The same report as a spreadsheet. One row per fact, tagged by section, so
-// it pivots — rather than a wide sheet someone has to unpick by hand.
-//
-// Rates carry the counts they came from, and a null rate is written "n/a"
-// rather than 0 or blank. The screen deliberately shows a dash on a fresh
-// tenant instead of "0% deflection"; an export that quietly turned that into
-// a zero would put a lie in front of the one audience that acts on it.
+/* Why an escalation was filed, written for a bank rather than for us. The
+   queue rendered these raw — a card headed "human_request" — which is the
+   same failure as an unlabelled outcome in a field nothing was checking.
+   tests/test_admin_labels.py now pins this against agent.HANDOFF_REASONS. */
+var REASON_LABEL = {
+  complaint: "Complaint",
+  human_requested: "Asked for a person",
+  unanswered_question: "No answer in your content",
+  answered_from_general_knowledge: "Answered from general knowledge"
+};
+
+/* How each outcome is written for a bank. Every key here is emitted by the
+   agent and every outcome the agent emits appears here — tests/test_admin_labels.py
+   fails on either gap, because an unlabelled outcome renders to a bank as its
+   raw internal key. */
+function greeting() {
+  var h = new Date().getHours();
+  return h < 12 ? "Good morning" : (h < 17 ? "Good afternoon" : "Good evening");
+}
+
+/* Hover readout on the trend line. The chart is drawn in viewBox units and
+   scaled by CSS, so the pointer's page position has to be mapped back through
+   the rendered box rather than assumed to match — otherwise the tooltip
+   tracks correctly only at one window width. */
+function wireChartTip(daily) {
+  var svg = document.querySelector(".chart");
+  if (!svg || !daily || daily.length < 2) return;
+  var wrap = svg.parentNode;
+  var tip = document.createElement("div");
+  tip.className = "tip";
+  wrap.classList.add("chartwrap");
+  wrap.appendChild(tip);
+
+  svg.addEventListener("mousemove", function (ev) {
+    var box = svg.getBoundingClientRect();
+    var frac = (ev.clientX - box.left) / box.width;
+    var i = Math.round(frac * (daily.length - 1));
+    if (i < 0) i = 0;
+    if (i > daily.length - 1) i = daily.length - 1;
+    var d = daily[i];
+    tip.innerHTML = '<div class="d">' + esc(new Date(d.date + "T00:00:00").toDateString()) +
+      "</div><strong>" + d.conversations + " conversation" +
+      (d.conversations === 1 ? "" : "s") + "</strong>";
+    tip.style.left = ((i / (daily.length - 1)) * box.width) + "px";
+    tip.style.top = (box.height * 0.5) + "px";
+    tip.classList.add("on");
+  });
+  svg.addEventListener("mouseleave", function () { tip.classList.remove("on"); });
+}
+
+var ACTION_LABEL = {
+  document_created: "added an article",
+  document_updated: "edited an article",
+  document_deleted: "deleted an article",
+  documents_bulk_imported: "imported articles",
+  handoff_closed: "closed an escalation",
+  handoff_reopened: "reopened an escalation",
+  handoff_webhook_connected: "connected the escalation webhook",
+  handoff_webhook_disconnected: "disconnected the escalation webhook",
+  telegram_connected: "connected Telegram",
+  user_created: "added a colleague",
+  user_disabled: "disabled an account",
+  user_enabled: "restored an account",
+  admin_login: "signed in",
+  password_changed: "changed their password"
+};
+
+function ago(iso) {
+  var mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + " min ago";
+  var hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + " h ago";
+  return Math.round(hrs / 24) + " d ago";
+}
+
+/* Worth showing only because audit_log.actor became a person. Before that
+   every row read "admin" and this would have been a list of identical
+   entries. Break-glass rows are marked rather than dressed up as a colleague. */
+function loadActivity() {
+  var box = $("activity");
+  if (!box) return;
+  api("/activity").then(function (rows) {
+    box.innerHTML = "<h3>Recent activity</h3>" + (rows.length
+      ? rows.map(function (r) {
+          return '<div class="feed"><div class="tile' + (r.by_token ? " token" : "") + '">' +
+            icon(r.by_token ? "settings" : "team", 15) + "</div><div>" +
+            '<div class="what">' + esc(ACTION_LABEL[r.action] || r.action.replace(/_/g, " ")) + "</div>" +
+            '<div class="who">' + esc(r.actor) + " · " + esc(ago(r.at)) + "</div></div></div>";
+        }).join("")
+      : '<div class="empty">Nothing yet.</div>');
+  }).catch(function () {
+    box.innerHTML = "<h3>Recent activity</h3><div class=\"empty\">Unavailable.</div>";
+  });
+}
+
+var OUTCOME_LABEL = {
+  answered: "Answered from your content",
+  general_guidance: "Answered from general banking knowledge",
+  unanswered: "Could not answer",
+  human_request: "Asked for a person",
+  complaint: "Complaint",
+  account_blocked: "Account access problem",
+  comparison: "Compared with another bank",
+  greeting: "Greeting",
+  contact_captured: "Contact details captured"
+};
+
+function csvCell(v) {
+  var s = v == null ? "" : String(v);
+  // A leading =, +, - or @ makes a spreadsheet treat the cell as a formula.
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+
 function exportAnalytics() {
   var a = state.analytics;
-  if (!a) { setStatus("Load the overview first"); return; }
-  var rows = [];
-  function add(section, item, count, share) {
-    rows.push([section, item, count == null ? "" : count, share == null ? "n/a" : share]);
-  }
-
-  add("Report", "Bank", a.bank_name || state.slug, "");
-  add("Report", "Window", a.window_days ? "Last " + a.window_days + " days" : "All time", "");
-  add("Report", "Generated", new Date().toISOString().slice(0, 10), "");
-
-  add("Headline", "Conversations", a.conversations, "");
-  add("Headline", "Questions asked", a.substantive_questions, "");
-  add("Headline", "Handled without a person", a.resolved_without_a_person, pct(a.deflection_rate));
-  add("Headline", "Answered from your own content", a.answered_from_own_content, pct(a.own_content_rate));
-
-  // Greetings and the contact exchange are real turns but they are NOT in the
-  // question denominator, so dividing them by it produces a number that means
-  // nothing — "Greeting 2, 28.6%" reads as a share of questions and is a
-  // share of nothing. The screen already separates them; the export has to
-  // make the same distinction or it quietly contradicts the page it came from.
-  var SUBSTANTIVE_OUT = ["answered", "general_guidance", "comparison",
-                         "account_blocked", "unanswered", "complaint",
-                         "human_request"];
+  if (!a) return;
+  var lines = [["Section", "Item", "Count", "Share"].join(",")];
+  function add(section, item, count, share) { lines.push([section, item, count, share].map(csvCell).join(",")); }
+  add("Summary", "Conversations", a.conversations, "");
+  add("Summary", "Questions asked", a.substantive_questions, "");
+  add("Summary", "Resolved without a person", a.resolved_without_a_person, pct(a.deflection_rate));
+  add("Summary", "Answered from own content", a.answered_from_own_content, pct(a.own_content_rate));
   a.outcomes.forEach(function (r) {
-    var label = (OUTCOME_LABEL[r.outcome] || [r.outcome])[0];
-    if (SUBSTANTIVE_OUT.indexOf(r.outcome) > -1) {
-      add("What happened", label, r.count,
-          a.substantive_questions ? pct(r.count / a.substantive_questions) : null);
-    } else {
-      add("Other turns (not counted as questions)", label, r.count, "");
-    }
+    add("Outcomes", OUTCOME_LABEL[r.outcome] || r.outcome, r.count,
+        a.substantive_questions && SUBSTANTIVE.indexOf(r.outcome) > -1
+          ? pct(r.count / a.substantive_questions) : "");
   });
-  if (a.unclassified_turns) {
-    add("What happened", "Predate outcome tracking, excluded from every rate",
-        a.unclassified_turns, "");
-  }
-
-  var langTotal = a.languages.reduce(function (s, r) { return s + r.count; }, 0);
-  a.languages.forEach(function (r) {
-    add("Languages", r.name || r.language, r.count, langTotal ? pct(r.count / langTotal) : null);
-  });
+  a.daily.forEach(function (d) { add("Conversations per day", d.date, d.conversations, ""); });
+  a.languages.forEach(function (r) { add("Languages", r.name || r.language, r.count, ""); });
   a.channels.forEach(function (r) { add("Channels", r.channel, r.count, ""); });
-
   a.top_topics.forEach(function (t) { add("Most asked", t.example, t.count, ""); });
-
-  add("Handoffs", "Open", a.handoffs.open, "");
-  add("Handoffs", "Open and reachable", a.handoffs.open_reachable, "");
-  add("Handoffs", "Open with no contact details", a.handoffs.open_unreachable, "");
-  add("Handoffs", "Closed", a.handoffs.closed, "");
-
-  downloadCsv("report", ["Section", "Item", "Count", "Share"], rows);
+  add("Escalations", "Open", a.handoffs.open, "");
+  add("Escalations", "Closed", a.handoffs.closed, "");
+  download(a.bank_name.replace(/\s+/g, "-").toLowerCase() + "-report.csv",
+           "﻿" + lines.join("\r\n"), "text/csv;charset=utf-8");
 }
 
-// ------------------------------------------------ documents
-function docForm(doc) {
-  doc = doc || { title: "", content: "", category: "general", language: "en" };
-  return '<form class="doc card" onsubmit="return saveDoc(event, \'' + (doc.id || "") + '\')">' +
-    '<input name="title" placeholder="Title" required value="' + esc(doc.title) + '">' +
-    '<div class="row"><select name="category">' +
-      ["general", "products", "how-to", "financial-education", "fees"].map(function (c) {
-        return '<option' + (c === doc.category ? " selected" : "") + '>' + c + "</option>";
-      }).join("") + "</select>" +
-    '<select name="language">' +
-      ["en", "am", "om", "ti", "so"].map(function (l) {
-        return '<option' + (l === doc.language ? " selected" : "") + '>' + l + "</option>";
-      }).join("") + "</select></div>" +
-    '<textarea name="content" placeholder="Official content the assistant may quote. Separate topics with blank lines." required>' + esc(doc.content) + "</textarea>" +
-    '<div class="row"><button class="btn" type="submit">Save</button>' +
-    (doc.id ? '<button class="btn danger" type="button" onclick="deleteDoc(\'' + doc.id + '\')">Delete</button>' : "") +
-    "</div></form>";
-}
-function bulkImportForm() {
-  return '<div class="card"><h3>Bulk import</h3>' +
-    '<div class="meta">Paste a JSON array of documents, or choose a .json file — each item needs title + content, category/language are optional (default general/en).</div>' +
-    '<textarea id="bulk-json" placeholder=\'[{"title": "Savings Accounts", "content": "...", "category": "products", "language": "en"}]\'></textarea>' +
-    '<div class="row"><input type="file" id="bulk-file" accept="application/json" onchange="bulkFileChosen(event)">' +
-    '<button class="btn" type="button" onclick="submitBulkImport()">Import</button></div></div>';
-}
-function bulkFileChosen(e) {
-  var file = e.target.files[0];
-  if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function () { document.getElementById("bulk-json").value = reader.result; };
-  reader.readAsText(file);
-}
-function submitBulkImport() {
-  var raw = document.getElementById("bulk-json").value.trim();
-  var docs;
-  try {
-    docs = JSON.parse(raw);
-    if (!Array.isArray(docs)) throw new Error("Expected a JSON array of documents");
-  } catch (e) {
-    setStatus("Invalid JSON: " + e.message);
-    return;
-  }
-  api("/documents/bulk", { method: "POST", body: JSON.stringify({ documents: docs }) })
-    .then(function (res) { setStatus("Imported " + res.created + " documents"); loadDocs(); })
-    .catch(function (err) { setStatus(err.message); });
-}
-function loadDocs() {
-  api("/documents").then(function (docs) {
-    setStatus(docs.length + " documents");
-    var answering = state.answering;
-    var banner = answering
-      ? '<div class="card"><h3>Answering a content gap</h3>' +
-        '<div class="meta">' + answering.count + ' customer' + (answering.count === 1 ? "" : "s") +
-        ' asked this and nobody could answer. The callbacks are tracked separately in Handoffs.</div>' +
-        "<pre>" + answering.examples.map(esc).join("\n") + "</pre>" +
-        '<div class="row"><button class="btn secondary" onclick="state.answering=null;loadDocs()">Dismiss</button></div></div>'
-      : "";
-    var html = banner + bulkImportForm() + '<div class="card"><h3>Add document</h3>' + docForm(null) + "</div>";
-    html += docs.map(function (d) {
-      return '<div class="card"><h3>' + esc(d.title) + "</h3>" +
-        '<div class="meta"><span class="pill">' + esc(d.category) + '</span><span class="pill">' + esc(d.language) + "</span> updated " + d.updated_at.slice(0, 16).replace("T", " ") + "</div>" +
-        docForm(d) + "</div>";
-    }).join("");
-    document.getElementById("main").innerHTML = html || '<div class="empty">No documents yet.</div>';
-  }).catch(function (e) { setStatus(e.message); });
-}
-function saveDoc(e, id) {
-  e.preventDefault();
-  var f = e.target;
-  var body = JSON.stringify({ title: f.title.value, content: f.content.value, category: f.category.value, language: f.language.value });
-  var req = id ? api("/documents/" + id, { method: "PUT", body: body }) : api("/documents", { method: "POST", body: body });
-  req.then(function () { loadDocs(); }).catch(function (err) { setStatus(err.message); });
-  return false;
-}
-function deleteDoc(id) {
-  if (!confirm("Delete this document? The assistant will stop answering from it.")) return;
-  api("/documents/" + id, { method: "DELETE" }).then(loadDocs).catch(function (e) { setStatus(e.message); });
+function download(name, body, type) {
+  var url = URL.createObjectURL(new Blob([body], { type: type }));
+  var a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
 }
 
-// ------------------------------------------------ conversations
-function loadConvos() {
-  api("/conversations").then(function (rows) {
-    setStatus(rows.length + " conversations");
-    document.getElementById("main").innerHTML = rows.length ? rows.map(function (c) {
-      return '<div class="card"><div class="meta"><span class="pill">' + esc(c.channel) + "</span>" +
-        (c.language ? '<span class="pill">' + esc(c.language) + "</span>" : "") +
-        c.created_at.slice(0, 16).replace("T", " ") + "</div>" +
-        '<button class="btn secondary" onclick="loadMsgs(\'' + c.id + '\')">View messages</button>' +
-        '<div id="m-' + c.id + '"></div></div>';
-    }).join("") : '<div class="empty">No conversations yet.</div>';
-  }).catch(function (e) { setStatus(e.message); });
-}
-function loadMsgs(id) {
-  api("/conversations/" + id + "/messages").then(function (msgs) {
-    document.getElementById("m-" + id).innerHTML = "<div style='margin-top:10px'>" + msgs.map(function (m) {
-      return '<div class="msgline ' + m.role + '"><strong>' + m.role + (m.intent ? " · " + esc(m.intent) : "") + ":</strong> " + esc(m.text) + "</div>";
-    }).join("") + "</div>";
-  }).catch(function (e) { setStatus(e.message); });
-}
-
-// ------------------------------------------------ handoffs
-function setHandoffStatus(v) { state.hstatus = v; loadHandoffs(); }
-
-// Contact details are included here on purpose — this is the sheet an
-// operator works from, and a callback list without numbers is useless. That
-// is the opposite of the aggregate reports, which scrub them.
-function exportHandoffs() {
-  downloadCsv("handoffs-" + (state.hstatus || "open"),
-    ["Status", "Reason", "Question", "Name", "Contact", "Raised", "Resolution", "Closed"],
-    (state.handoffRows || []).map(function (h) {
-      return [h.status, h.reason, h.detail, h.contact_name, h.contact_phone,
-              h.created_at, h.resolution, h.resolved_at];
-    }));
-}
-
-// How long someone has been waiting. The number that decides what to work on
-// next, and it was nowhere on the row before.
+/* ----------------------------------------------------------- escalations */
 function waited(iso) {
-  var hrs = (Date.now() - new Date(iso).getTime()) / 3600000;
-  if (hrs < 1) return ["just now", ""];
-  if (hrs < 24) return [Math.round(hrs) + "h waiting", ""];
-  var d = Math.round(hrs / 24);
-  return [d + (d === 1 ? " day waiting" : " days waiting"), d >= 2 ? "cold" : ""];
+  var mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 60) return [mins + " min", mins > 30 ? "cold" : ""];
+  var hrs = Math.round(mins / 60);
+  if (hrs < 48) return [hrs + " h", "cold"];
+  return [Math.round(hrs / 24) + " days", "cold"];
 }
 
 function loadHandoffs() {
-  var st = state.hstatus || "open";
-  api("/handoffs?status=" + st).then(function (rows) {
-    setStatus(rows.length + " " + st + " handoff" + (rows.length === 1 ? "" : "s"));
-
+  var st = state.hstatus === "all" ? "" : state.hstatus;
+  api("/handoffs" + (st ? "?status=" + st : "")).then(function (rows) {
     state.handoffRows = rows;
-    var filters = '<div class="hstate">Showing:' +
+    var h = '<div class="tools"><div class="seg">' +
       [["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(function (o) {
-        return '<button class="' + (st === o[0] ? "on" : "") + '" onclick="setHandoffStatus(\'' + o[0] + '\')">' + o[1] + "</button>";
-      }).join("") +
-      (rows.length ? ' <button onclick="exportHandoffs()">Export CSV</button>' : "") + "</div>";
+        return '<button class="' + (state.hstatus === o[0] ? "on" : "") + '" data-hs="' + o[0] + '">' + o[1] + "</button>";
+      }).join("") + "</div><div style='flex:1'></div>" +
+      '<button class="btn ghost sm" id="dl-handoffs">Export CSV</button></div>';
 
-    var body = rows.length ? rows.map(function (h) {
-      var w = h.status === "open" ? waited(h.created_at) : null;
-      return '<div class="card" id="h-' + h.id + '">' +
-        '<div class="meta"><span class="pill ' + h.status + '">' + esc(h.status) + '</span>' +
-        '<span class="pill">' + esc(h.reason) + "</span>" +
-        h.created_at.slice(0, 16).replace("T", " ") +
-        (w ? ' &middot; <span class="waiting ' + w[1] + '">' + w[0] + "</span>" : "") + "</div>" +
-        "<pre>" + esc(h.detail) + "</pre>" +
-        // Who to call. A queue row that says a customer wants a callback but
-        // not where to reach them is a to-do nobody can action.
-        (h.contact_phone
-          ? '<div class="contact">Contact: <strong>' + esc(h.contact_name || "Not given") + '</strong> &middot; <a href="' + (h.contact_phone.indexOf("@") > -1 ? "mailto:" : "tel:") + encodeURIComponent(h.contact_phone) + '">' + esc(h.contact_phone) + "</a></div>"
-          : '<div class="contact none">No contact details — the customer did not leave a number.</div>') +
-        (h.resolution
-          ? '<div class="resolution">' + esc(h.resolution) +
-            (h.resolved_at ? '<div class="when">closed ' + h.resolved_at.slice(0, 16).replace("T", " ") + "</div>" : "") + "</div>"
-          : "") +
-        '<div class="transcript" id="t-' + h.id + '"></div>' +
-        '<div class="row">' +
-          '<button class="btn secondary" onclick="showTranscript(\'' + h.conversation_id + '\',\'' + h.id + '\')">Show conversation</button>' +
-          (h.status === "open" ? "" : '<button class="btn secondary" onclick="reopenHandoff(\'' + h.id + '\')">Reopen</button>') +
+    h += rows.length ? rows.map(function (hd) {
+      var w = waited(hd.created_at);
+      return '<div class="panel"><div style="display:flex;gap:10px;align-items:flex-start">' +
+        '<div style="flex:1;min-width:0">' +
+        '<span class="pill ' + esc(hd.status) + '">' + esc(hd.status) + "</span> " +
+        '<strong style="margin-left:6px">' + esc(REASON_LABEL[hd.reason] || hd.reason) + "</strong>" +
+        (hd.status === "open" ? ' <span class="waiting ' + w[1] + '">waiting ' + w[0] + "</span>" : "") +
+        '<div class="meta" style="margin-top:5px">' + new Date(hd.created_at).toLocaleString() + "</div>" +
+        (hd.contact_name || hd.contact_phone
+          ? '<div class="contact"><strong>' + esc(hd.contact_name || "Name not given") + "</strong>" +
+            (hd.contact_phone ? ' · <a href="tel:' + esc(hd.contact_phone) + '">' + esc(hd.contact_phone) + "</a>" : "") + "</div>"
+          : '<div class="contact none">No contact details captured.</div>') +
+        (hd.detail ? "<div>" + esc(hd.detail) + "</div>" : "") +
+        (hd.resolution ? '<div class="resolution">' + esc(hd.resolution) +
+          '<div class="when">closed ' + (hd.resolved_at ? new Date(hd.resolved_at).toLocaleString() : "") + "</div></div>" : "") +
+        "</div></div>" +
+        '<div class="tools" style="margin:10px 0 0">' +
+        '<button class="btn ghost sm" data-tx="' + esc(hd.conversation_id) + '" data-hid="' + esc(hd.id) + '">View conversation</button>' +
+        (hd.status !== "open" && can("handoffs.resolve")
+          ? '<button class="btn ghost sm" data-reopen="' + esc(hd.id) + '">Reopen</button>' : "") +
         "</div>" +
-        (h.status === "open"
-          ? '<div class="noteform"><input id="n-' + h.id + '" placeholder="What was done? (optional)">' +
-            '<button class="btn" onclick="closeHandoff(\'' + h.id + '\')">Mark handled</button></div>'
-          : "");
-    }).join("") : '<div class="empty">Nothing here. When the assistant cannot answer or a customer complains, it appears in Open.</div>';
+        '<div id="tx-' + esc(hd.id) + '"></div>' +
+        (hd.status === "open" && can("handoffs.resolve")
+          ? '<div class="noteform"><input id="note-' + esc(hd.id) + '" placeholder="What was done about it? (optional)">' +
+            '<button class="btn sm" data-close="' + esc(hd.id) + '">Save &amp; close</button></div>' : "") +
+        "</div>";
+    }).join("") : '<div class="empty">Nothing in this queue.</div>';
 
-    document.getElementById("main").innerHTML = filters + body;
-  }).catch(function (e) { setStatus(e.message); });
+    $("main").innerHTML = h;
+    wire("[data-hs]", "hs", function (v) { state.hstatus = v; loadHandoffs(); });
+    wire("[data-tx]", "tx", function (v, el) { showTranscript(v, el.getAttribute("data-hid")); });
+    wire("[data-close]", "close", closeHandoff);
+    wire("[data-reopen]", "reopen", reopenHandoff);
+    $("dl-handoffs").onclick = exportHandoffs;
+  }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
-// An operator calling someone back needs to know what they actually asked.
-// Without this the only way to find out was to hunt for the conversation in
-// another tab by its id.
+function wire(sel, attr, fn) {
+  Array.prototype.forEach.call(document.querySelectorAll(sel), function (el) {
+    el.onclick = function () { fn(el.getAttribute("data-" + attr), el); };
+  });
+}
+
 function showTranscript(conversationId, handoffId) {
-  var box = document.getElementById("t-" + handoffId);
+  var box = $("tx-" + handoffId);
   if (box.innerHTML) { box.innerHTML = ""; return; }
+  box.innerHTML = '<div class="empty">Loading…</div>';
   api("/conversations/" + conversationId + "/messages").then(function (msgs) {
-    box.innerHTML = msgs.map(function (m) {
+    box.innerHTML = '<div style="margin-top:10px">' + msgs.map(function (m) {
       return '<div class="msgline ' + esc(m.role) + '">' + esc(m.text) + "</div>";
-    }).join("") || '<div class="empty">No messages.</div>';
+    }).join("") + "</div>";
   }).catch(function (e) { box.innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
-function reopenHandoff(id) {
-  api("/handoffs/" + id + "/reopen", { method: "POST" }).then(loadHandoffs)
+function closeHandoff(id) {
+  var input = $("note-" + id);
+  api("/handoffs/" + id + "/close", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resolution: input && input.value ? input.value : null })
+  }).then(function () { setStatus("Escalation closed"); loadHandoffs(); refreshBadge(); })
     .catch(function (e) { setStatus(e.message); });
 }
-// ------------------------------------------------ export
-// A cell beginning = + - or @ is executed as a formula by Excel and Sheets.
-// Every string here is customer-authored, so this is untrusted input on its
-// way into a spreadsheet someone at a bank will open. Prefix with an
-// apostrophe, which Excel strips on display and never evaluates.
-function csvCell(value) {
-  var text = value == null ? "" : String(value);
-  if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
-  return '"' + text.replace(/"/g, '""') + '"';
+
+function reopenHandoff(id) {
+  api("/handoffs/" + id + "/reopen", { method: "POST" })
+    .then(function () { loadHandoffs(); refreshBadge(); })
+    .catch(function (e) { setStatus(e.message); });
 }
 
-function downloadCsv(filename, header, rows) {
-  var body = [header.map(csvCell).join(",")]
-    .concat(rows.map(function (r) { return r.map(csvCell).join(","); }))
-    .join("\r\n");
-  // BOM so Excel reads the Amharic, Oromo and Tigrinya columns as UTF-8
-  // rather than mojibake — without it the whole point of the language mix
-  // is lost the moment it leaves the browser.
-  var blob = new Blob(["\ufeff" + body], { type: "text/csv;charset=utf-8;" });
-  var a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = state.slug + "-" + filename + ".csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(a.href);
+function exportHandoffs() {
+  var rows = state.handoffRows || [];
+  var lines = [["Opened", "Status", "Reason", "Name", "Phone", "Detail", "Resolution", "Closed"].join(",")];
+  rows.forEach(function (h) {
+    lines.push([h.created_at, h.status, h.reason, h.contact_name || "", h.contact_phone || "",
+                h.detail || "", h.resolution || "", h.resolved_at || ""].map(csvCell).join(","));
+  });
+  download("escalations.csv", "﻿" + lines.join("\r\n"), "text/csv;charset=utf-8");
 }
 
-// ------------------------------------------------ content gaps
-// The handoff list is a pile; this is the work queue. Ranked by how many
-// customers asked, so the bank writes the most-wanted content first.
-function exportGaps() {
-  downloadCsv("content-gaps",
-    ["Question", "Times asked", "Unanswered", "Answered generically", "Last asked", "Also asked as"],
-    (state.gaps || []).map(function (g) {
-      return [
-        g.examples[0] || g.signature,
-        g.count,
-        g.reasons["unanswered_question"] || 0,
-        g.reasons["answered_from_general_knowledge"] || 0,
-        g.last_asked,
-        g.examples.slice(1).join(" | ")
-      ];
-    }));
+/* --------------------------------------------------------- conversations */
+function loadConvos() {
+  api("/conversations").then(function (rows) {
+    $("main").innerHTML = rows.length ? rows.map(function (c) {
+      return '<div class="panel"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+        '<span class="pill">' + esc(c.channel) + "</span>" +
+        '<span class="meta">' + new Date(c.created_at).toLocaleString() + "</span>" +
+        '<span class="meta">' + esc(c.language || "—") + "</span>" +
+        '<div style="flex:1"></div>' +
+        '<button class="btn ghost sm" data-msgs="' + esc(c.id) + '">View messages</button></div>' +
+        '<div id="m-' + esc(c.id) + '"></div></div>';
+    }).join("") : '<div class="empty">No conversations yet.</div>';
+    wire("[data-msgs]", "msgs", loadMsgs);
+  }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
-// Seeing the gap and writing the answer were in different tabs with nothing
-// connecting them. This carries the customer's actual wording across, because
-// the phrasing is the useful part — the bank knows its own products, but not
-// which words customers reach for.
-//
-// It deliberately does NOT close the related handoffs. Writing the content and
-// calling back the people who asked are different obligations, and collapsing
-// them would quietly drop the callbacks.
-function writeAnswerFor(index) {
-  state.answering = (state.gaps || [])[index] || null;
-  showTab("docs");
+function loadMsgs(id) {
+  var box = $("m-" + id);
+  if (box.innerHTML) { box.innerHTML = ""; return; }
+  api("/conversations/" + id + "/messages").then(function (msgs) {
+    box.innerHTML = '<div style="margin-top:10px">' + msgs.map(function (m) {
+      return '<div class="msgline ' + esc(m.role) + '">' + esc(m.text) + "</div>";
+    }).join("") + "</div>";
+  }).catch(function (e) { box.innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
+/* -------------------------------------------------------- knowledge base */
+var CATEGORIES = ["general", "products", "how-to", "financial-education", "fees"];
+var LANGS = ["en", "am", "om", "ti", "so"];
+
+function loadDocs() {
+  api("/documents").then(function (docs) {
+    var writable = can("documents.write");
+    var h = '<div class="tools">' +
+      (writable ? '<button class="btn sm" id="new-doc">Add article</button>' +
+                  '<button class="btn ghost sm" id="bulk-doc">Bulk import</button>' : "") +
+      '<div style="flex:1"></div><span class="meta">' + docs.length + " article" +
+      (docs.length === 1 ? "" : "s") + "</span></div>" +
+      '<div id="doc-form"></div>';
+
+    h += '<div class="panel">' + (docs.length ? '<table><thead><tr>' +
+      "<th>Title</th><th>Category</th><th>Language</th><th>Updated</th>" +
+      (writable ? '<th style="text-align:right">Actions</th>' : "") + "</tr></thead><tbody>" +
+      docs.map(function (d) {
+        return "<tr><td class='title'>" + esc(d.title) + "</td>" +
+          '<td><span class="pill">' + esc(d.category) + "</span></td>" +
+          "<td>" + esc(d.language) + "</td>" +
+          '<td class="meta">' + new Date(d.updated_at).toLocaleDateString() + "</td>" +
+          (writable ? '<td><div class="rowacts">' +
+            '<button class="iconbtn" title="Edit" data-edit="' + esc(d.id) + '">' + icon("edit", 15) + "</button>" +
+            '<button class="iconbtn danger" title="Delete" data-del="' + esc(d.id) + '">' + icon("trash", 15) + "</button>" +
+            "</div></td>" : "") + "</tr>";
+      }).join("") + "</tbody></table>" : '<div class="empty">No articles yet.</div>') + "</div>";
+
+    $("main").innerHTML = h;
+    state.docs = docs;
+    if (writable) {
+      $("new-doc").onclick = function () { docForm(null); };
+      $("bulk-doc").onclick = bulkForm;
+      wire("[data-edit]", "edit", function (id) {
+        docForm(state.docs.filter(function (d) { return d.id === id; })[0]);
+      });
+      wire("[data-del]", "del", deleteDoc);
+    }
+  }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+}
+
+function docForm(doc) {
+  doc = doc || {};
+  $("doc-form").innerHTML = '<div class="panel">' +
+    "<h3>" + (doc.id ? "Edit article" : "New article") + "</h3>" +
+    '<div class="field"><label>Title</label><input id="d-title" value="' + esc(doc.title || "") + '"></div>' +
+    '<div class="grid2"><div class="field"><label>Category</label><select id="d-cat">' +
+    CATEGORIES.map(function (c) {
+      return '<option' + (doc.category === c ? " selected" : "") + ">" + c + "</option>";
+    }).join("") + "</select></div>" +
+    '<div class="field"><label>Language</label><select id="d-lang">' +
+    LANGS.map(function (l) {
+      return '<option' + (doc.language === l ? " selected" : "") + ">" + l + "</option>";
+    }).join("") + "</select></div></div>" +
+    '<div class="field"><label>Content</label><textarea id="d-body">' + esc(doc.content || "") + "</textarea></div>" +
+    '<div class="tools"><button class="btn" id="d-save">Save</button>' +
+    '<button class="btn ghost" id="d-cancel">Cancel</button></div></div>';
+  $("d-save").onclick = function () { saveDoc(doc.id); };
+  $("d-cancel").onclick = function () { $("doc-form").innerHTML = ""; };
+  $("d-title").focus();
+}
+
+function saveDoc(id) {
+  var body = {
+    title: $("d-title").value, content: $("d-body").value,
+    category: $("d-cat").value, language: $("d-lang").value
+  };
+  var opts = { method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
+               body: JSON.stringify(body) };
+  api("/documents" + (id ? "/" + id : ""), opts)
+    .then(function () { setStatus("Saved"); loadDocs(); })
+    .catch(function (e) { setStatus(e.message); });
+}
+
+function deleteDoc(id) {
+  if (!confirm("Delete this article? The assistant will stop using it.")) return;
+  api("/documents/" + id, { method: "DELETE" })
+    .then(function () { setStatus("Deleted"); loadDocs(); })
+    .catch(function (e) { setStatus(e.message); });
+}
+
+function bulkForm() {
+  $("doc-form").innerHTML = '<div class="panel"><h3>Bulk import</h3>' +
+    '<div class="meta" style="margin-bottom:10px">A JSON array of objects with title, content, and optionally category and language.</div>' +
+    '<div class="field"><input type="file" id="bulk-file" accept=".json"></div>' +
+    '<div class="field"><textarea id="bulk-json" placeholder=\'[{"title": "...", "content": "..."}]\'></textarea></div>' +
+    '<div class="tools"><button class="btn" id="bulk-go">Import</button>' +
+    '<button class="btn ghost" id="bulk-cancel">Cancel</button></div></div>';
+  $("bulk-file").onchange = function (e) {
+    var f = e.target.files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { $("bulk-json").value = r.result; };
+    r.readAsText(f);
+  };
+  $("bulk-cancel").onclick = function () { $("doc-form").innerHTML = ""; };
+  $("bulk-go").onclick = function () {
+    var parsed;
+    try { parsed = JSON.parse($("bulk-json").value); }
+    catch (err) { setStatus("That is not valid JSON: " + err.message); return; }
+    api("/documents/bulk", { method: "POST", headers: { "Content-Type": "application/json" },
+                             body: JSON.stringify({ documents: parsed }) })
+      .then(function (res) { setStatus("Imported " + res.created + " articles"); loadDocs(); })
+      .catch(function (e) { setStatus(e.message); });
+  };
+}
+
+/* ------------------------------------------------------------ gaps */
 function loadGaps() {
   api("/content-gaps").then(function (rows) {
-    state.gaps = rows;
-    var asked = rows.reduce(function (n, g) { return n + g.count; }, 0);
-    setStatus(rows.length + " distinct gaps across " + asked + " questions");
-    var head = rows.length
-      ? '<div class="hstate"><button onclick="exportGaps()">Export CSV</button></div>'
-      : "";
-    document.getElementById("main").innerHTML = head + (rows.length ? rows.map(function (g, i) {
-      var generic = g.reasons["answered_from_general_knowledge"] || 0;
-      var none = g.reasons["unanswered_question"] || 0;
-      return '<div class="card">' +
-        '<div class="meta">' +
-          '<span class="pill">asked ' + g.count + '\u00d7</span>' +
-          (none ? '<span class="pill open">' + none + ' unanswered</span>' : "") +
-          (generic ? '<span class="pill">' + generic + ' answered generically</span>' : "") +
-          g.last_asked.slice(0, 16).replace("T", " ") +
-        "</div>" +
-        "<h3>" + esc(g.examples[0] || g.signature) + "</h3>" +
-        (g.examples.length > 1
-          ? '<pre>also asked as: ' + g.examples.slice(1).map(esc).join(" | ") + "</pre>"
-          : "") +
-        '<div class="row"><button class="btn" onclick="writeAnswerFor(' + i + ')">Write an answer</button></div>' +
-        "</div>";
-    }).join("") : '<div class="empty">No content gaps yet. When customers ask something this bank has no content for, it is grouped and ranked here — the shortest path to knowing what to write next.</div>');
-  }).catch(function (e) { setStatus(e.message); });
+    $("main").innerHTML = '<div class="panel">' +
+      '<div class="meta" style="margin-bottom:12px">Questions customers asked that your published content did not answer.</div>' +
+      (rows.length ? "<table><thead><tr><th>Asked</th><th>Example question</th><th>Languages</th></tr></thead><tbody>" +
+        rows.map(function (g) {
+          return "<tr><td>" + g.count + "</td><td class='title'>" + esc(g.example) + "</td>" +
+            "<td>" + esc((g.languages || []).join(", ")) + "</td></tr>";
+        }).join("") + "</tbody></table>"
+        : '<div class="empty">No gaps recorded. Every question so far was answerable.</div>') + "</div>";
+  }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
-function closeHandoff(id) {
-  var field = document.getElementById("n-" + id);
-  var note = field ? field.value.trim() : "";
-  api("/handoffs/" + id + "/close", {
-    method: "POST",
-    body: JSON.stringify({ resolution: note || null })
-  }).then(loadHandoffs).catch(function (e) { setStatus(e.message); });
+/* ------------------------------------------------------------ team */
+function loadTeam() {
+  Promise.all([api("/users"), api("/roles")]).then(function (res) {
+    var users = res[0], rolesList = res[1];
+    var h = '<div class="tools"><button class="btn sm" id="new-user">Add person</button>' +
+      '<div style="flex:1"></div><span class="meta">' + users.length + " account" +
+      (users.length === 1 ? "" : "s") + "</span></div><div id=\"user-form\"></div>";
+
+    h += '<div class="panel"><table><thead><tr>' +
+      "<th>Person</th><th>Role</th><th>Status</th><th>Last signed in</th>" +
+      '<th style="text-align:right">Actions</th></tr></thead><tbody>' +
+      users.map(function (u) {
+        return "<tr><td class='title'>" + esc(u.display_name || u.email) +
+          (u.display_name ? '<div class="meta">' + esc(u.email) + "</div>" : "") +
+          (u.is_you ? '<div class="meta">that’s you</div>' : "") + "</td>" +
+          '<td><span class="pill">' + esc(u.role) + "</span></td>" +
+          '<td><span class="pill ' + (u.is_active ? "on" : "off") + '">' +
+            (u.is_active ? "Active" : "Disabled") + "</span></td>" +
+          '<td class="meta">' + (u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "never") + "</td>" +
+          '<td><div class="rowacts">' + (u.is_you
+            ? '<span class="meta">—</span>'
+            : '<button class="btn ghost sm" data-active="' + esc(u.id) + '" data-to="' +
+              (u.is_active ? "0" : "1") + '">' + (u.is_active ? "Disable" : "Restore") + "</button>") +
+          "</div></td></tr>";
+      }).join("") + "</tbody></table></div>";
+
+    /* The permission matrix, generated from the rows require() actually
+       checks. A matrix kept in a document drifts from the system; this one
+       cannot, because it is the system. */
+    h += '<div class="panel"><h3>What each role can do</h3>' +
+      rolesList.map(function (r) {
+        return '<div style="margin-bottom:14px"><strong>' + esc(r.name) + "</strong>" +
+          (r.is_builtin ? ' <span class="pill">built-in</span>' : "") +
+          (r.description ? '<div class="meta" style="margin:3px 0 7px">' + esc(r.description) + "</div>" : "") +
+          "<div>" + r.permissions.map(function (p) {
+            return '<span class="perm">' + esc(p) + "</span>"; }).join("") + "</div></div>";
+      }).join("") + "</div>";
+
+    $("main").innerHTML = h;
+    state.roleNames = rolesList.map(function (r) { return r.name; });
+    $("new-user").onclick = userForm;
+    wire("[data-active]", "active", function (id, el) {
+      setUserActive(id, el.getAttribute("data-to") === "1");
+    });
+  }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
-// Overview, matching the nav's default active tab — this said "docs",
-// so a reload landed on the knowledge base with Overview highlighted.
-if (state.slug && state.token) showTab("overview");
+function userForm() {
+  $("user-form").innerHTML = '<div class="panel"><h3>Add a person</h3>' +
+    '<div class="grid2"><div class="field"><label>Email</label><input id="u-email" type="email"></div>' +
+    '<div class="field"><label>Name (optional)</label><input id="u-name"></div></div>' +
+    '<div class="grid2"><div class="field"><label>Role</label><select id="u-role">' +
+    (state.roleNames || []).map(function (r) { return "<option>" + esc(r) + "</option>"; }).join("") +
+    "</select></div>" +
+    '<div class="field"><label>Temporary password</label><input id="u-pw" type="text" autocomplete="off"></div></div>' +
+    '<div class="meta" style="margin-bottom:12px">At least 12 characters. Until invitation emails are set up, ' +
+    'this password has to be given to them directly — which is why it is shown here rather than hidden.</div>' +
+    '<div class="tools"><button class="btn" id="u-save">Create</button>' +
+    '<button class="btn ghost" id="u-cancel">Cancel</button></div></div>';
+  $("u-cancel").onclick = function () { $("user-form").innerHTML = ""; };
+  $("u-save").onclick = function () {
+    api("/users", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: $("u-email").value.trim(), display_name: $("u-name").value.trim() || null,
+        role: $("u-role").value, password: $("u-pw").value
+      })
+    }).then(function () { setStatus("Account created"); loadTeam(); })
+      .catch(function (e) { setStatus(e.message); });
+  };
+  $("u-email").focus();
+}
+
+function setUserActive(id, active) {
+  if (!active && !confirm("Disable this account? They will be signed out immediately.")) return;
+  api("/users/" + id + "/active", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ is_active: active }) })
+    .then(function (r) {
+      setStatus(active ? "Account restored" : "Account disabled, " + r.sessions_revoked + " session(s) ended");
+      loadTeam();
+    }).catch(function (e) { setStatus(e.message); });
+}
+
+/* ------------------------------------------------------------ settings */
+function loadSettings() {
+  $("main").innerHTML =
+    '<div class="panel"><h3>Escalation webhook</h3>' +
+    '<div class="meta" style="margin-bottom:12px">Where escalations are delivered in your contact-centre tool. ' +
+    'Requests are signed, so the receiving system can verify they came from us. Leave empty to disconnect.</div>' +
+    '<div class="field"><input id="hw-url" placeholder="https://your-system.example/hooks/olink"></div>' +
+    '<button class="btn sm" id="hw-save">Save</button></div>' +
+    '<div class="panel"><h3>Telegram</h3>' +
+    '<div class="meta" style="margin-bottom:12px">Connect a bot so customers can reach the assistant on Telegram.</div>' +
+    '<div class="field"><input id="tg-token" placeholder="Bot token from @BotFather" type="password"></div>' +
+    '<button class="btn sm" id="tg-save">Connect</button></div>' +
+    (state.me ? '<div class="panel"><h3>Your password</h3>' +
+      '<div class="grid2"><div class="field"><label>Current</label><input id="pw-old" type="password"></div>' +
+      '<div class="field"><label>New (12+ characters)</label><input id="pw-new" type="password"></div></div>' +
+      '<div class="meta" style="margin-bottom:12px">Changing it signs out every other browser you are signed in on.</div>' +
+      '<button class="btn sm" id="pw-save">Change password</button></div>' : "");
+
+  $("hw-save").onclick = function () {
+    api("/handoff-webhook", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: $("hw-url").value.trim() || null }) })
+      .then(function (r) { setStatus(r.url ? "Webhook connected" : "Webhook disconnected"); })
+      .catch(function (e) { setStatus(e.message); });
+  };
+  $("tg-save").onclick = function () {
+    api("/telegram/connect", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bot_token: $("tg-token").value.trim() }) })
+      .then(function () { setStatus("Telegram connected"); })
+      .catch(function (e) { setStatus(e.message); });
+  };
+  if ($("pw-save")) {
+    $("pw-save").onclick = function () {
+      api("/me/password", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: $("pw-old").value, new_password: $("pw-new").value }) })
+        .then(function () { setStatus("Password changed. Other sessions were signed out."); $("pw-old").value = ""; $("pw-new").value = ""; })
+        .catch(function (e) { setStatus(e.message); });
+    };
+  }
+}
+
+/* ------------------------------------------------------------ theme
+   Dark is the default because that is what was asked for and what the rest of
+   the Olink products use. The choice is remembered per browser, and print
+   always uses the light palette regardless — see the print block. */
+function applyTheme(name) {
+  if (name === "light") document.documentElement.setAttribute("data-theme", "light");
+  else document.documentElement.removeAttribute("data-theme");
+  localStorage.setItem("ba_theme", name);
+  var g = $("theme-glyph");
+  if (g) g.textContent = name === "light" ? "☀" : "☾";
+}
+
+/* ------------------------------------------------------------ boot */
+applyTheme(localStorage.getItem("ba_theme") || "dark");
+$("theme-toggle").onclick = function () {
+  applyTheme(localStorage.getItem("ba_theme") === "light" ? "dark" : "light");
+};
+$("slug").value = state.slug;
+$("signin-btn").onclick = signInWithPassword;
+$("token-btn").onclick = signInWithToken;
+$("signout").onclick = signOut;
+$("to-token").onclick = function () { $("pw-mode").classList.add("hidden"); $("token-mode").classList.remove("hidden"); gateError(""); };
+$("to-pw").onclick = function () { $("token-mode").classList.add("hidden"); $("pw-mode").classList.remove("hidden"); gateError(""); };
+$("slug").onchange = function () { applyBrand($("slug").value.trim()); };
+["password", "email"].forEach(function (id) {
+  $(id).onkeydown = function (e) { if (e.key === "Enter") signInWithPassword(); };
+});
+$("token").onkeydown = function (e) { if (e.key === "Enter") signInWithToken(); };
+if (state.slug) applyBrand(state.slug);
+
+/* A session cookie may already be valid from a previous visit, so try to
+   resume before showing the sign-in screen. Failure is the normal case and is
+   silent — it just means signing in. */
+if (state.slug) {
+  fetch("/admin/api/" + encodeURIComponent(state.slug) + "/me", { credentials: "same-origin" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (me) { if (me) { state.me = me; enterApp(); } })
+    .catch(function () {});
+}
 </script>
 </body>
 </html>
