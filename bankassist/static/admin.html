@@ -334,6 +334,27 @@ main { padding: 20px 24px 40px; }
 .tip .d { color: var(--muted); font-size: 11px; }
 .tip.on { opacity: 1; }
 
+/* --------------------------------------------------------------- donut */
+.donutwrap { display: flex; gap: 18px; align-items: center; flex: 1; flex-wrap: wrap; }
+.donut { flex: none; }
+.donut .hole { font-size: 19px; font-weight: 650; fill: var(--ink); }
+.donut .holesub { font-size: 8px; fill: var(--muted); letter-spacing: .06em; }
+.donut path { transition: opacity .12s; cursor: default; }
+.donut path.clickable { cursor: pointer; }
+.donut path:hover { opacity: .82; }
+.legend { flex: 1; min-width: 140px; }
+.legend .row {
+  display: flex; align-items: center; gap: 9px; padding: 4px 0; font-size: 13px;
+  color: var(--body); background: none; border: none; width: 100%; text-align: left;
+  font-family: inherit;
+}
+.legend .row.clickable { cursor: pointer; }
+.legend .row.clickable:hover { color: var(--brand); }
+.legend .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.legend .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend .val { color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend .row.zero .lbl, .legend .row.zero .val { color: var(--faint); }
+
 /* --------------------------------------------------------- activity feed */
 /* Capped and scrolled rather than allowed to run. A feed is unbounded by
    nature, so left alone it sets the height of the whole right-hand column and
@@ -923,6 +944,69 @@ function bars(rows, total, labeller) {
   }).join("") + "</div>";
 }
 
+/* A donut, drawn from the same numbers the bars used.
+ *
+ * Shades of the tenant's own hue rather than a rainbow: a categorical palette
+ * would be five arbitrary colours that mean nothing, and on a white-label
+ * product it would also be five colours that are not the bank's. Ordering is
+ * by size, so the ramp reads as a ranking rather than as decoration.
+ *
+ * A slice of zero draws nothing but still gets a legend row — that is how
+ * "Tigrinya: 0" stays visible as coverage rather than vanishing into looking
+ * unsupported.
+ */
+function donut(rows, opts) {
+  opts = opts || {};
+  var total = rows.reduce(function (t, r) { return t + r.count; }, 0);
+  var size = 132, r = 52, cx = size / 2, cy = size / 2, thick = 20;
+  var shades = rows.map(function (_, i) {
+    // Evenly spaced from the brand hue toward the surface, so every slice is
+    // recognisably the same colour family and still separable.
+    var mix = 100 - Math.round((i / Math.max(rows.length - 1, 1)) * 62);
+    return "color-mix(in srgb, var(--brand) " + mix + "%, var(--surface))";
+  });
+
+  var angle = -Math.PI / 2;
+  var arcs = rows.map(function (row, i) {
+    if (!row.count || !total) return "";
+    var sweep = (row.count / total) * Math.PI * 2;
+    var x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+    angle += sweep;
+    var x2 = cx + r * Math.cos(angle), y2 = cy + r * Math.sin(angle);
+    // A single slice covering the whole circle cannot be drawn as one arc —
+    // start and end coincide and the path collapses to nothing.
+    if (rows.filter(function (x) { return x.count; }).length === 1) {
+      return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" ' +
+        'stroke="' + shades[i] + '" stroke-width="' + thick + '"><title>' +
+        esc(row.label + ": " + row.count) + "</title></circle>";
+    }
+    return '<path d="M' + x1.toFixed(2) + " " + y1.toFixed(2) +
+      " A" + r + " " + r + " 0 " + (sweep > Math.PI ? 1 : 0) + " 1 " +
+      x2.toFixed(2) + " " + y2.toFixed(2) + '" fill="none" stroke="' + shades[i] +
+      '" stroke-width="' + thick + '" stroke-linecap="butt"' +
+      (row.drill ? ' class="clickable" data-drill="' + row.drill + '"' : "") +
+      "><title>" + esc(row.label + ": " + row.count) + "</title></path>";
+  }).join("");
+
+  return '<div class="donutwrap"><svg class="donut" width="' + size + '" height="' + size +
+    '" viewBox="0 0 ' + size + " " + size + '" role="img" aria-label="' +
+    esc(opts.label || "breakdown") + '">' + arcs +
+    '<text class="hole" x="' + cx + '" y="' + (cy + 2) + '" text-anchor="middle">' +
+    num(total) + "</text>" +
+    '<text class="holesub" x="' + cx + '" y="' + (cy + 15) + '" text-anchor="middle">' +
+    esc((opts.unit || "TOTAL").toUpperCase()) + "</text></svg>" +
+    '<div class="legend">' + rows.map(function (row, i) {
+      return "<" + (row.drill ? "button" : "div") + ' class="row' +
+        (row.drill ? " clickable" : "") + (row.count ? "" : " zero") + '"' +
+        (row.drill ? ' data-drill="' + row.drill + '" type="button"' : "") + ">" +
+        '<span class="sw" style="background:' + (row.count ? shades[i] : "var(--line)") +
+        '"></span><span class="lbl">' + esc(row.label) + "</span>" +
+        '<span class="val">' + row.count +
+        (total ? " · " + Math.round((row.count / total) * 100) + "%" : "") + "</span>" +
+        "</" + (row.drill ? "button" : "div") + ">";
+    }).join("") + "</div></div>";
+}
+
 /* A real series from the analytics endpoint, with empty days present as zero.
    Drawn as inline SVG: no chart library, no CDN, and it prints. */
 function sparkArea(daily) {
@@ -1058,9 +1142,13 @@ function loadDashboard() {
         : "") +
       "</div>" +
       '<div class="panel"><h3>Channels</h3>' +
-      bars(a.channels, a.conversations, function (r) {
-        return [r.channel, "", can("conversations.read") && "convos:channel=" + r.channel];
-      }) + "</div>" +
+      donut(a.channels.map(function (r) {
+        return {
+          label: r.channel, count: r.count,
+          drill: r.count && can("conversations.read")
+            ? "convos:channel=" + r.channel : null
+        };
+      }), { unit: "conversations", label: "Conversations by channel" }) + "</div>" +
       "</div></div>";
 
     /* Row 2 — the two mid-weight lists, which measured within 12px of each
@@ -1097,10 +1185,13 @@ function loadDashboard() {
     /* Row 3 — coverage beside who did what. */
     h += '<div class="row row-half">' +
       '<div class="panel"><h3>Languages</h3>' +
-      bars(a.languages, langTotal, function (r) {
-        return [r.name || r.language, "",
-                can("conversations.read") && "convos:language=" + r.language];
-      }) + "</div>" +
+      donut(a.languages.map(function (r) {
+        return {
+          label: r.name || r.language, count: r.count,
+          drill: r.count && can("conversations.read")
+            ? "convos:language=" + r.language : null
+        };
+      }), { unit: "conversations", label: "Conversations by language" }) + "</div>" +
       '<div class="panel noprint" id="activity"><h3>Recent activity</h3>' +
       '<div class="empty">Loading…</div></div>' +
       "</div>";

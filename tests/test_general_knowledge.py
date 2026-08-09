@@ -221,3 +221,65 @@ def test_the_model_declining_raises_rather_than_leaking_the_sentinel(
     monkeypatch.setattr(httpx, "post", fake_post)
     with pytest.raises(llm.LLMDeclined):
         llm.answer_from_general_knowledge("What is your daily ATM limit?", "en", "Awash Bank")
+
+
+def test_a_general_knowledge_answer_puts_nobody_in_the_queue(
+    client: TestClient,
+    awash_bank: Any,
+    db_session: Session,
+    _bank_content_does_not_answer: None,
+    _answers: list[str],
+) -> None:
+    """The exact case a bank reported from its live dashboard.
+
+    A customer asked about service fees, got a complete answer, and left. The
+    dashboard counted them among "9 escalations waiting for someone" — with no
+    contact details, because the assistant had correctly not asked for any. An
+    operator opening that queue found most of it was nobody.
+
+    The row still exists: the bank having no published content on a subject
+    customers ask about is exactly what Content Gaps reports. What changed is
+    that it is no longer somebody's work.
+    """
+    from bankassist.models import Handoff
+
+    # A universally-answerable question the bank has published nothing on —
+    # the same shape as the reported case, but one Awash's seeded content does
+    # not already cover, so the general-knowledge path is actually taken.
+    resp = client.post(
+        "/chat/awash",
+        json={"message": "How do I use an ATM?", "language": "en"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    # The customer is answered, and promised no callback.
+    assert body["general_knowledge"] is True
+    assert body["handoff_created"] is False
+
+    row = db_session.execute(
+        select(Handoff).where(Handoff.reason == "answered_from_general_knowledge")
+    ).scalars().first()
+    assert row is not None, "the content signal must still be recorded"
+    assert row.needs_person is False
+
+    # The queue an operator opens does not contain them...
+    queue = client.get(
+        "/admin/api/awash/handoffs?status=open",
+        headers={"X-Admin-Token": awash_bank.admin_token},
+    ).json()
+    assert all(h["reason"] != "answered_from_general_knowledge" for h in queue)
+
+    # ...and the number on the dashboard agrees with the queue, which is the
+    # property that actually broke: a count the queue could not account for.
+    analytics = client.get(
+        "/admin/api/awash/analytics",
+        headers={"X-Admin-Token": awash_bank.admin_token},
+    ).json()
+    assert analytics["handoffs"]["open"] == len(queue)
+
+    # But Content Gaps still sees it — the row is the whole point there.
+    gaps = client.get(
+        "/admin/api/awash/content-gaps",
+        headers={"X-Admin-Token": awash_bank.admin_token},
+    ).json()
+    assert any("atm" in g["examples"][0].lower() for g in gaps)

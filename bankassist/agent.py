@@ -155,6 +155,8 @@ def _create_handoff(
     reason: str,
     detail: str,
     created: list[str],
+    *,
+    needs_person: bool = True,
 ) -> None:
     """File a handoff, and record its id in `created`.
 
@@ -169,6 +171,7 @@ def _create_handoff(
         conversation_id=conversation.id,
         reason=reason,
         detail=detail,
+        needs_person=needs_person,
         # Snapshot whatever we already know, so an operator working the queue
         # sees who to call without joining back to the conversation. Usually
         # null at this point — we only ask for contact details once a handoff
@@ -497,16 +500,28 @@ def handle_message(
             # none. Still filed as a handoff: the bank should see that customers
             # ask this and that it has no content of its own, which is exactly
             # the prompt to write some.
+            # Recorded, but NOT as somebody's work. The customer asked, got a
+            # complete answer and left; nobody is waiting for a callback, and
+            # the assistant correctly did not ask for their number. Filing it
+            # as an open escalation put people in a queue who were never in
+            # one — a bank opening that queue found nine rows with no contact
+            # details and no way to tell which were real.
+            #
+            # It still belongs in Content Gaps, which is what the row is for:
+            # customers ask this and the bank has nothing published on it.
             _create_handoff(
                 db, bank, conversation, REASON_GENERAL_KNOWLEDGE,
-                text[:2000], handoffs,
+                text[:2000], handoffs, needs_person=False,
             )
             reply = f"{general}\n\n{t(language, 'general_guidance', bank=bank.display_name)}"
             result = ChatResult(
                 reply,
                 intent,
                 language,
-                handoff_created=True,
+                # False: `handoff_created` is what channels use to say "someone
+                # will get back to you", and nobody will, because nothing needs
+                # them to. The row exists; the promise does not.
+                handoff_created=False,
                 general_knowledge=True,
                 outcome=GENERAL_GUIDANCE,
             )

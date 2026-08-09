@@ -1239,7 +1239,14 @@ def list_handoffs(
     if status not in {"open", "closed", "all"}:
         raise HTTPException(status_code=400, detail="status must be open, closed or all")
 
-    query = select(Handoff).where(Handoff.bank_id == bank.id)
+    # Only rows a person is expected to act on. A general-knowledge answer
+    # files a row so the bank can see it has no content on the subject, but the
+    # customer got a complete answer and left — those belong in Content Gaps,
+    # and putting them here told an operator that nine people were waiting when
+    # nobody was.
+    query = select(Handoff).where(
+        Handoff.bank_id == bank.id, Handoff.needs_person.is_(True)
+    )
     if status != "all":
         query = query.where(Handoff.status == status)
     order = Handoff.created_at.asc() if status == "open" else Handoff.created_at.desc()
@@ -1771,7 +1778,9 @@ def analytics(
     # --- the handoff queue, as work rather than history ---------------
     handoff_rows = db.execute(
         select(Handoff.status, Handoff.contact_phone)
-        .where(Handoff.bank_id == bank.id)
+        # Same filter as the queue, and it has to be the same or the dashboard
+        # would advertise a number of waiting customers the queue cannot show.
+        .where(Handoff.bank_id == bank.id, Handoff.needs_person.is_(True))
         .where(*_window(Handoff.created_at))
     ).all()
     open_handoffs = [h for h in handoff_rows if h.status == "open"]
