@@ -188,6 +188,18 @@ class Handoff(Base):
     contact_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="open")  # open | closed
+    # Whether a person is actually expected to do something about this.
+    #
+    # Not every row here is a customer waiting for a callback. When the
+    # assistant answers from general banking knowledge it files a row so the
+    # bank can see there is no content of its own on the subject — a real and
+    # useful signal — but the customer got a complete answer and went away.
+    # Those rows sat in the escalation queue as "open, no contact details",
+    # which told an operator that nine people were waiting when nobody was.
+    #
+    # The queue and the "waiting for someone" count filter on this. Content
+    # Gaps deliberately does not: for that report the row is the whole point.
+    needs_person: Mapped[bool] = mapped_column(Boolean, default=True)
     # What the operator did about it. Free text on purpose: a fixed set of
     # codes would have to be guessed before a single bank has worked the
     # queue, and the wrong vocabulary is harder to remove later than none.
