@@ -40,6 +40,7 @@ from .classifier import redact_contact
 from .config import get_settings
 from .db import get_db, get_engine, init_db
 from .i18n import LANGUAGE_NAMES, SUPPORTED_LANGUAGES
+from .i18n import t as translate
 from .llm import active_backend, credentials_ready
 from .logging_config import configure_logging, log_event
 from .models import (
@@ -565,12 +566,44 @@ async def telegram_webhook(
             Conversation.external_user_id == external_id,
         )
     ).scalar_one_or_none()
+    started = conversation is None
     if conversation is None:
         conversation = Conversation(
             bank_id=bank.id, channel="telegram", external_user_id=external_id
         )
         db.add(conversation)
         db.flush()
+
+    # The disclaimer leads the conversation, because Telegram has nowhere to
+    # put it permanently.
+    #
+    # In the widget it is a banner pinned above every message, and the widget
+    # only reaches someone already on a page the bank controls. A bot is the
+    # opposite on both counts: it is publicly discoverable by username, anyone
+    # can start a chat with it, and there is no persistent surface to hold a
+    # notice. For a prospect-demo tenant — a bot wearing a bank's name that the
+    # bank has not endorsed — an unlabelled first reply is the single most
+    # consequential thing this product could get wrong, so it is sent before
+    # the assistant says anything at all.
+    #
+    # Once per conversation, on the row being created. Repeating it on every
+    # message would train people to scroll past it.
+    if started and bank.disclaimer and bank.telegram_bot_token:
+        telegram.send_message(bank.telegram_bot_token, chat_id, bank.disclaimer)
+
+    # /start is Telegram's own "open the bot" command, not something a customer
+    # typed to ask a question. Feeding it to the agent produces an answer to a
+    # question nobody asked; it gets the greeting the widget opens with.
+    # Split, because Telegram appends a deep-link payload: "/start ref123".
+    if text.split(maxsplit=1)[0] == "/start":
+        db.commit()
+        if bank.telegram_bot_token:
+            telegram.send_message(
+                bank.telegram_bot_token,
+                chat_id,
+                translate(bank.default_language, "greeting", bank=bank.display_name),
+            )
+        return {"ok": True}
 
     result = handle_message(db, bank, conversation, text)
     if bank.telegram_bot_token:
