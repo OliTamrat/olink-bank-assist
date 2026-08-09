@@ -70,8 +70,59 @@
     color: var(--on-brand); font-weight: 700; font-size: 15px;
     letter-spacing: -.02em;
   }
-  /* A tenant-supplied logo replaces the initials when one is configured. */
+  /* A tenant-supplied logo replaces the initials when one is configured.
+
+     The tile stops being a square once there is one in it — see the longer
+     note in admin.html. Banks send both compact marks and full lockups under
+     the same field, and squeezing a 4:1 lockup into a 40px square letterboxes
+     it into a strip with bars above and below. Width follows the image at a
+     fixed height instead, so the plate hugs the artwork exactly.
+
+     White rather than the translucent wash the initials use: this sits on the
+     bank's own brand colour, and a logo drawn for paper disappears into it. */
   .mark img { width: 100%; height: 100%; object-fit: contain; }
+  /* No padding: a logo with its own background turns any inset into a visible
+     white frame, which is the letterboxing complaint in a different shape. */
+  /* Two maxima on the image, container hugging it — see the longer note in
+     admin.html for why a percentage height and object-fit both fail here.
+
+     `border: 0`, not a transparent border: the white plate paints under the
+     border box, so a see-through border renders as a 1px white ring around
+     the artwork on the bank's own brand colour. */
+  /* The white ground lives on the IMAGE, not on the tile behind it.
+
+     Painting it on the container stacks two rounded shapes: the background
+     antialiases white-to-transparent around the corner while the clipped
+     image antialiases artwork-to-transparent, and wherever the image's alpha
+     is below 1 the white shows through as a hairline arc. One element
+     painting both the ground and the content clips once and has no seam.
+
+     The ground still does its job — invisible behind an opaque logo, a full
+     white field behind a transparent one drawn for paper. */
+  /* The white ground is INSET by 1px behind the image, not painted on the
+     same box.
+
+     A rounded box that paints white and then draws the logo over it composites
+     twice at every partially-covered corner pixel — the result is white*a*(1-a),
+     a visible hairline arc that peaks at 25% white. Isolated by probe: the
+     artifact needs the background and the radius together, and drops either one
+     and it vanishes. Since neither is expendable, the ground moves off the
+     image's own edge instead. An opaque logo hides it completely; a
+     transparent one drawn for paper still gets a full white field. */
+  .mark.haslogo {
+    position: relative; width: auto; height: auto; max-width: 156px;
+    padding: 0; border: 0; background: none; display: block; overflow: visible;
+  }
+  .mark.haslogo::before {
+    content: ""; position: absolute; inset: 1px;
+    background: #fff; border-radius: 7px;
+  }
+  .mark.haslogo img {
+    position: relative; display: block; width: auto; height: auto;
+    max-width: 156px; max-height: 36px; border-radius: 8px;
+  }
+  /* A lockup already says the bank's name; the header would print it twice. */
+  header[data-logo="wide"] .who .name { display: none; }
   .who { min-width: 0; flex: 1; }
   /* Wrap to two lines rather than truncate — on a prospect demo the bank's
      own name is the one string that must never read "Commercial Bank of…". */
@@ -528,9 +579,24 @@
         // load, so a broken URL never leaves an empty tile in the header.
         var img = document.createElement("img");
         img.alt = cfg.name;
-        img.onerror = function () { mark.textContent = initials(cfg.name); };
+        img.onerror = function () {
+          mark.classList.remove("haslogo");
+          mark.textContent = initials(cfg.name);
+        };
+        // Measured rather than guessed: only the image knows whether the bank
+        // sent a compact mark or a full lockup, and the two need different
+        // layouts. Set on the header so the CSS can also drop the name beside
+        // a logo that already contains one.
+        img.onload = function () {
+          if (!img.naturalHeight) return;
+          var head = mark.closest("header") || mark;
+          head.setAttribute(
+            "data-logo", img.naturalWidth / img.naturalHeight >= 2 ? "wide" : "mark"
+          );
+        };
         img.src = cfg.logo_url;
         mark.textContent = "";
+        mark.classList.add("haslogo");
         mark.appendChild(img);
       } else {
         mark.textContent = initials(cfg.name);
