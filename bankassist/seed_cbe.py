@@ -403,6 +403,105 @@ _DOCS: list[dict[str, str]] = [
             "ማስተላለፍ ይችላሉ።"
         ),
     },
+    # The four below close gaps found by reading CBE's OWN live chatbot menu
+    # (combanketh.et, August 2026). Its service list is CBE's published
+    # statement of what its customers ask about, and four of its branches had
+    # no counterpart here: internet banking, international trade, exchange
+    # rates, and everyday bill payments.
+    {
+        "title": "Internet Banking",
+        "category": "how-to",
+        "language": "en",
+        "content": (
+            "CBE Internet Banking lets you bank from a web browser, 24 hours a "
+            "day, and is offered to both personal and corporate customers.\n\n"
+            "You must already hold a CBE account, and registration starts in "
+            "person: visit any branch and apply for internet banking. The "
+            "branch issues you a user ID and a security pocket token — a small "
+            "physical device that generates a one-time password.\n\n"
+            "To register the first time, open https://cbeib.cbe.com.et/ in a "
+            "web browser and choose the option for a new customer. You will be "
+            "asked for your user ID, the serial number printed on your token, "
+            "a memorable word, and a password of your choosing.\n\n"
+            "The token is used at every login and again to authorise a "
+            "transfer: switch it on, enter its PIN, and it displays a one-time "
+            "password. You can change the token's PIN yourself.\n\n"
+            "Internet banking covers most of what a branch counter does: "
+            "checking your balance, viewing a mini statement or full "
+            "transaction history, transferring funds, and paying bills. It is "
+            "separate from CBE Mobile Banking and from CBE Birr, and needs its "
+            "own registration."
+        ),
+    },
+    {
+        "title": "International Trade Services (Import, Export and Guarantees)",
+        "category": "products",
+        "language": "en",
+        "content": (
+            "CBE provides trade services for businesses importing and "
+            "exporting goods, handled through its trade services and "
+            "international banking teams rather than at an ordinary counter.\n\n"
+            "For imports, the available payment methods are the documentary "
+            "letter of credit (LC), advance payment (TT), documentary "
+            "collection (CAD), and Franco Valuta.\n\n"
+            "For exports, CBE handles letters of credit and trade finance, and "
+            "also supports documentary collection, advance payment and "
+            "consignment-basis payment.\n\n"
+            "CBE also issues guarantees used in tendering and contracting: bid "
+            "bonds, performance bonds, advance payment guarantees, loan "
+            "guarantees and retention guarantees.\n\n"
+            "Requirements, charges and processing times depend on the "
+            "instrument, the counterparty's bank and the goods involved, and "
+            "trade transactions are also subject to National Bank of Ethiopia "
+            "foreign-currency rules. Speak to the trade services desk at a "
+            "branch for the requirements that apply to a specific shipment."
+        ),
+    },
+    {
+        "title": "Foreign Exchange Rates",
+        "category": "general",
+        "language": "en",
+        "content": (
+            "CBE publishes foreign exchange rates for major currencies "
+            "including the US dollar, euro and pound sterling, and quotes "
+            "separate buying and selling rates, with cash rates quoted "
+            "separately from transactional rates.\n\n"
+            "Rates are updated at least once every business day, so the rate "
+            "that applies is the one published on the day of your "
+            "transaction. Check the current rate on the CBE website, in the "
+            "CBE Mobile Banking app, or at any branch.\n\n"
+            "The US dollar is the benchmark currency in Ethiopia's foreign "
+            "exchange market; rates for other currencies are generally derived "
+            "from the dollar rate.\n\n"
+            "This page deliberately does not quote a figure. An exchange rate "
+            "written down is out of date the following day, and a stale rate "
+            "is worse than no rate — always take the live figure from the app, "
+            "the website or a branch."
+        ),
+    },
+    {
+        "title": "Paying Bills — Utilities, DSTV, Traffic Fines and Airtime",
+        "category": "how-to",
+        "language": "en",
+        "content": (
+            "You can pay everyday bills through CBE without queueing at a "
+            "counter, using CBE Birr or CBE Mobile Banking.\n\n"
+            "Payments CBE collects include electricity (Ethiopian Electric "
+            "Utility), water, telecom bills, DSTV and other entertainment "
+            "subscriptions, and traffic fines for Addis Ababa. You can also "
+            "buy mobile airtime and pay for Ethiopian Airlines tickets.\n\n"
+            "From a smartphone, use the CBE Mobile Banking app or the CBE Birr "
+            "app. From any phone without internet, dial *889# for mobile "
+            "banking or *847# for CBE Birr and follow the menu.\n\n"
+            "Each biller has its own short code inside the payment menu. Pick "
+            "the biller from the list in the app or USSD menu rather than "
+            "typing a code from memory — the list is the authoritative one and "
+            "paying to the wrong code sends money to the wrong organisation.\n\n"
+            "You will need your customer or contract number for the utility "
+            "you are paying: the meter number for electricity, the contract "
+            "number for water, or the smartcard number for DSTV."
+        ),
+    },
 ]
 
 

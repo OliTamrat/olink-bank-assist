@@ -77,3 +77,48 @@ is included, since that's genuinely useful, bank-endorsed customer content.
 verified rate sheet through the admin panel, these gaps close immediately —
 this is exactly the "tool output is truth" behavior in action, not a flaw to
 paper over.
+
+## Added 2026-08-09 — gaps found from CBE's own chatbot
+
+CBE runs a menu-driven assistant ("Selam") on combanketh.et. Its service menu
+is CBE's **own published statement of what its customers ask about**, and four
+of its branches had no counterpart in this knowledge base. That is a better
+gap analysis than any guess about what to write next, so the four articles
+below were written to close them.
+
+| Fact | Source |
+|---|---|
+| Internet banking is a separate service needing branch registration | [newsaddis.com](https://newsaddis.com/how-to-activate-commercial-bank-of-ethiopia-internet-banking/) |
+| Security pocket token + user ID issued at a branch | newsaddis.com |
+| Portal is `https://cbeib.cbe.com.et/` | [cbeib.cbe.com.et](https://cbeib.cbe.com.et/) |
+| Registration fields: user ID, token serial, memorable word, password | newsaddis.com |
+| Token gives a one-time password for login and transfers; PIN changeable | newsaddis.com |
+| Scope (balance, mini statement, history, transfers, bills), 24/7, personal + corporate | [combanketh.et internet banking](https://www.combanketh.et/PaymentServices/InternetBanking.aspx) |
+| Import methods: LC, advance payment (TT), documentary collection (CAD), Franco Valuta | [combanketh.et/products/trade-services](https://combanketh.et/products/trade-services) |
+| Guarantees: bid bond, performance, advance payment, loan, retention | combanketh.et/products/trade-services |
+| Export: letters of credit, trade finance, consignment-basis payment | combanketh.et/products/trade-services |
+| FX: separate cash vs transactional buy/sell rates, updated at least daily | [engocha.com](https://engocha.com/ethiopian-birr-foreign-exchange/cbe), [exchange.addisfortune.news](https://exchange.addisfortune.news/bank/commercial-bank-of-ethiopia) |
+| USD is the benchmark; other rates derived from it | [kakupress.net](https://kakupress.net/commercial-bank-of-ethiopia-exchange-rate-today-latest-updates/) |
+| Bills: electricity, water, telecom, DSTV, traffic fines, airtime, ET tickets | [allaboutethio.com](https://allaboutethio.com/how-to-use-cbe-birr-to-pay-utilities-water-electricity-tele-dstv-traffic.html), [capitalethiopia.com](https://capitalethiopia.com/2019/07/08/utilities-can-be-paid-at-commercial-bank-of-ethiopia/) |
+
+### Deliberately NOT stated in these four
+
+- **Any exchange rate figure.** The FX article says outright that it does not
+  quote one. A rate written into a knowledge base is wrong the next day, and a
+  stale rate is worse than no rate — the article's job is to say where the
+  live number lives, not to be it.
+- **Biller short codes** (water / electricity / DSTV / traffic fines). One
+  secondary source, and the failure mode is a customer paying the wrong
+  organisation. The article tells people to pick the biller from the in-app
+  list instead.
+- **Trade-service charges, requirements and processing times.** These vary by
+  instrument and counterparty and are subject to NBE foreign-currency rules;
+  the article directs to the trade services desk.
+
+### Known retrieval miss, recorded rather than papered over
+
+"bid bond guarantee for a tender" retrieves nothing, even though the
+trade-services article names bid bonds explicitly. Lexical retrieval again:
+the query's wording and the document's do not overlap enough to clear the
+informativeness gate. Same class of problem as the account-opening miss, and
+the same fix applies — this is not something more content can solve.
