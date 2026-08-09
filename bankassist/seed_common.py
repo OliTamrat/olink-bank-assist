@@ -41,6 +41,10 @@ def seed_prospect_bank(
     # What the bank is actually called, when that differs from its registered
     # name. Left unset for a bank whose full name is what people say.
     short_name: str | None = None,
+    # The bank's mark, and it must be served from a host the bank controls.
+    # Anything else is a third party who can change or withdraw the image on
+    # the assistant's chat header and the operator panel without telling us.
+    logo_url: str | None = None,
     disclaimer: str,
     docs: list[dict[str, str]],
 ) -> tuple[Bank, bool]:
@@ -63,7 +67,8 @@ def seed_prospect_bank(
             db.commit()
             return existing, False
         bank = Bank(slug=slug, name=name, short_name=short_name,
-                    primary_color=primary_color, disclaimer=disclaimer)
+                    primary_color=primary_color, logo_url=logo_url,
+                    disclaimer=disclaimer)
         db.add(bank)
         db.flush()
         ensure_builtin_roles(db, bank.id)

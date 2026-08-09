@@ -10,6 +10,8 @@ target document densely in the query's own terms — see seed_cbe.py history.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -68,3 +70,27 @@ def test_guardrails_hold_with_real_bank_branding(client: TestClient, cbe_bank: A
         "/chat/cbe", json={"message": "Do you sponsor rocket launches?"}
     ).json()
     assert unknown["handoff_created"] is True
+
+
+def test_the_logo_is_served_from_a_host_the_bank_controls() -> None:
+    """A brand mark on a third party's server is theirs to withdraw.
+
+    The panel was hotlinking a logo-aggregator site, where nobody at CBE
+    controls the file. This is the mark that appears in the chat header on the
+    bank's own website, so the host has to be one the bank owns — otherwise an
+    unrelated company's takedown notice changes what CBE's customers see.
+
+    Asserted rather than left to a comment because the failure is invisible in
+    review: any URL ending in .png renders identically in a diff.
+    """
+    from urllib.parse import urlparse
+
+    from bankassist import seed_cbe
+
+    url = re.search(r'logo_url="([^"]+)"', Path(seed_cbe.__file__).read_text())
+    assert url, "the CBE seed no longer sets a logo_url"
+    parsed = urlparse(url.group(1))
+    assert parsed.scheme == "https", "a logo over http is a mixed-content warning"
+    assert parsed.netloc.endswith("combanketh.et"), (
+        f"CBE's logo is being served from {parsed.netloc}, which CBE does not control"
+    )

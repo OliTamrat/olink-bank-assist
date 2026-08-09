@@ -421,6 +421,16 @@ def seed() -> tuple[Bank, bool]:
         # panel in Settings lets CBE correct it without a deploy, which is why
         # a guess is acceptable here at all.
         primary_color="#722282",
+        # Served from combanketh.et — CBE's own host, which is the only kind of
+        # source this should point at. The panel had been hotlinking a
+        # logo-aggregator site, where nobody at CBE controls the file and a
+        # takedown would blank the mark in the chat header on the bank's own
+        # website.
+        #
+        # Still a hotlink rather than a copy we serve, so it inherits whatever
+        # uptime and hotlink policy that host has. Mirroring it behind our own
+        # domain is the durable fix; this is the right source in the meantime.
+        logo_url="https://combanketh.et/uploads/Logo_849ddbfbe1.jpg",
         disclaimer=prospect_disclaimer("CBE", CBE_NAME),
         docs=_DOCS,
     )
