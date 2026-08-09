@@ -28,6 +28,17 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _utc(value: datetime) -> datetime:
+    """A timezone-aware UTC datetime, whichever database it came from.
+
+    Postgres returns aware values from a `DateTime(timezone=True)` column;
+    SQLite returns naive ones, having no timezone type. Everything this
+    project writes is UTC, so a naive value is a UTC value that lost its
+    label — attaching it back is a correction, not an assumption.
+    """
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
 def new_token() -> str:
     return secrets.token_urlsafe(24)
 
@@ -445,14 +456,26 @@ class TellerSession(Base):
     resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     @property
-    def waited_seconds(self) -> int | None:
-        """How long the customer waited. None while still waiting.
+    def waited_seconds(self) -> int:
+        """How long this customer has been waiting, or waited in the end.
 
-        Counts to the claim for a served session and to the end for an
-        abandoned one, so an abandonment reports the wait the customer
-        actually experienced rather than nothing at all.
+        Counts to the claim for a session a teller took, to the end for one
+        that was abandoned, and TO NOW for one still in the queue.
+
+        That last case is the whole point and the first version of this got it
+        wrong by returning None while waiting — which is precisely when the
+        number matters. It rendered a queue where every waiting row showed a
+        blank where the wait should be, and the wait is the only thing that
+        tells a teller which customer to take next. A queue sorted oldest-first
+        with no visible ages is a list.
+
+        Both ends are coerced to UTC-aware before subtracting, because the two
+        databases disagree: Postgres returns timezone-aware values from a
+        `DateTime(timezone=True)` column and SQLite returns naive ones, having
+        no timezone type to store. Subtracting one from the other raises. That
+        makes this the worst shape of bug — it works in production and fails
+        in tests, so the natural reading is "the test is wrong" and the
+        natural fix is to weaken the test.
         """
-        end = self.claimed_at or self.ended_at
-        if end is None:
-            return None
-        return max(0, int((end - self.requested_at).total_seconds()))
+        end = self.claimed_at or self.ended_at or _now()
+        return max(0, int((_utc(end) - _utc(self.requested_at)).total_seconds()))
