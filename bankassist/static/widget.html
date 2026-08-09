@@ -1099,6 +1099,13 @@
   // guardrails that exist precisely because a human is the right answer.
   function shouldOfferTeller(data) {
     return tellerAvailable && !session && (
+      // Someone who asked for a person IN WORDS. Listed first because it is
+      // the one case where NOT offering is absurd — and it was missing.
+      // `human_request` files a handoff, so this rode in on
+      // `handoff_created`, which made an explicit request depend on a side
+      // effect rather than on itself. If the handoff ever stops being filed,
+      // the button still has to appear for this.
+      data.intent === "human_request" ||
       data.handoff_created ||
       data.outcome === "unanswered" ||
       data.intent === "account_specific" ||
