@@ -212,9 +212,85 @@ textarea { min-height: 170px; resize: vertical; }
 }
 /* When a bank supplies a logo it replaces the initials tile rather than
    sitting beside it. White behind it because most bank logos are drawn for
-   paper — CBE's is gold line-work, which disappears on a dark tile. */
-.side-mark.haslogo, .gate-mark.haslogo { background: #fff; }
-.side-mark img, .gate-mark img { width: 100%; height: 100%; object-fit: contain; }
+   paper — gold or navy line-work disappears on a dark tile.
+
+   THE TILE STOPS BEING A SQUARE once there is a logo in it. Banks supply two
+   different things under the word "logo": a compact mark, and a lockup — the
+   mark plus the wordmark, three or four times wider than it is tall. Forcing
+   a lockup into a 32px square and letting object-fit letterbox it produced
+   exactly what CBE's live panel showed: a thin strip of artwork with a white
+   bar above and below it, framing the logo's own background colour. The
+   contain was doing its job; the container was the wrong shape.
+
+   So the container takes its width from the image at a fixed height. The
+   white plate then hugs the artwork exactly — invisible behind an opaque
+   image, and still a readable ground behind a transparent one. */
+/* No padding. A logo with its own background — CBE's sits on purple — turns
+   any inset into a visible white frame around the artwork, which is the same
+   complaint as the letterboxing in a different shape. Zero inset means the
+   plate is exactly the image: nothing to see behind an opaque logo, and still
+   a full white ground behind a transparent one. */
+/* Sized by a max-width AND a max-height on the IMAGE, with the container
+   hugging whatever that comes to.
+
+   Not `height: 100%` on the image: the tile is a grid container whose row is
+   content-sized, so a percentage height has nothing to resolve against, falls
+   back to auto, and the image renders at its intrinsic size clipped by
+   overflow — which is how a square logo came out as a wide sliver.
+
+   Not `object-fit` inside a fixed box either: that reintroduces the
+   letterboxing, just on the other axis. Two maxima with auto dimensions let
+   the browser scale to fit both, so the box IS the artwork. */
+/* The white ground lives on the IMAGE, not on the tile behind it.
+
+ Painting it on the container stacks two rounded shapes: the background
+ antialiases white-to-transparent around the corner while the clipped
+ image antialiases artwork-to-transparent, and wherever the image's alpha
+ is below 1 the white shows through as a hairline arc. One element
+ painting both the ground and the content clips once and has no seam.
+
+ The ground still does its job — invisible behind an opaque logo, a full
+ white field behind a transparent one drawn for paper. */
+/* The white ground is INSET by 1px behind the image, not painted on the
+   same box.
+
+   A rounded box that paints white and then draws the logo over it composites
+   twice at every partially-covered corner pixel — the result is white*a*(1-a),
+   a visible hairline arc that peaks at 25% white. Isolated by probe: the
+   artifact needs the background and the radius together, and drops either one
+   and it vanishes. Since neither is expendable, the ground moves off the
+   image's own edge instead. An opaque logo hides it completely; a
+   transparent one drawn for paper still gets a full white field. */
+.side-mark.haslogo, .gate-mark.haslogo {
+  position: relative; background: none; display: block; padding: 0; border: 0;
+  width: auto; height: auto; max-width: 150px; overflow: visible;
+}
+.side-mark.haslogo::before, .gate-mark.haslogo::before {
+  content: ""; position: absolute; inset: 1px; background: #fff; border-radius: 5px;
+}
+.side-mark.haslogo img, .gate-mark.haslogo img {
+  position: relative; display: block; width: auto; height: auto;
+  max-width: 150px; max-height: 30px; border-radius: 6px;
+}
+/* A lockup is the brand block, not an item in a row beside one. Stacking it
+   gives the artwork the rail's full width instead of whatever is left over. */
+.side-brand[data-logo="wide"] {
+  flex-direction: column; align-items: flex-start; gap: 7px;
+}
+.side-brand[data-logo="wide"] .side-mark.haslogo,
+.side-brand[data-logo="wide"] .side-mark.haslogo img { max-width: 100%; }
+.side-brand[data-logo="wide"] .side-mark.haslogo img { max-height: 34px; }
+/* A lockup already carries the bank's name. Printing it again beside the
+   image is the same word twice, and on a 240px rail it is the thing that
+   pushes the logo down to a stamp. Applied only when the image measures wide
+   — a compact mark still needs the name next to it. */
+.side-brand[data-logo="wide"] .side-name { display: none; }
+/* Collapsed to icons there is no width to give a lockup, so it goes back to
+   fitting the icon column rather than overflowing it. */
+[data-rail="mini"] .side-mark.haslogo,
+[data-rail="mini"] .side-mark.haslogo img { max-width: 40px; }
+[data-rail="mini"] .side-mark.haslogo img { max-height: 40px; }
+[data-rail="mini"] .side-brand[data-logo="wide"] { align-items: center; }
 .side-name { font-size: 13.5px; font-weight: 600; color: #fff; line-height: 1.25;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-sub { font-size: 11px; color: #6f7b93; }
@@ -906,6 +982,17 @@ function applyBrand(slug) {
         img.onerror = function () {
           el.classList.remove("haslogo");
           el.textContent = initials || "BA";
+        };
+        // Measured, not guessed. A bank sends either a compact mark or a full
+        // lockup under the same field, and the two need different layouts —
+        // but only the image itself knows which it is. Set on the container
+        // so the CSS can also drop the wordmark beside a logo that already
+        // contains one.
+        img.onload = function () {
+          if (!img.naturalHeight) return;
+          var wide = img.naturalWidth / img.naturalHeight >= 2;
+          var host = el.closest(".side-brand") || el;
+          host.setAttribute("data-logo", wide ? "wide" : "mark");
         };
         img.src = b.logo_url;
         el.appendChild(img);

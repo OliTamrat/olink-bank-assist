@@ -61,3 +61,34 @@ def test_the_embed_loader_parses() -> None:
     site, attributed to us.
     """
     _check((STATIC / "embed.js").read_text(), "embed.js")
+
+
+def test_the_logo_layout_hook_targets_an_element_that_exists() -> None:
+    """A `closest()` for a selector nothing matches fails silently.
+
+    The widget's rule was written as `.head[data-logo="wide"]` against markup
+    whose element is a bare `<header>`. Nothing errored — `closest` returned
+    null, the attribute landed on the tile instead, and a bank's name simply
+    stayed printed twice beside a logo that already contained it. The CSS
+    selector and the JS lookup have to name the same thing, and that thing has
+    to be in the document.
+    """
+    import re
+    from pathlib import Path
+
+    from bankassist import agent
+
+    static = Path(agent.__file__).parent / "static"
+    for name, marker in (("widget.html", "header"), ("admin.html", "side-brand")):
+        src = (static / name).read_text()
+        hooks = set(re.findall(r'closest\("([^"]+)"\)', src))
+        assert hooks, f"{name} no longer measures the logo's shape"
+        for sel in hooks:
+            bare = sel.lstrip(".")
+            assert (f'class="{bare}"' in src or f"<{bare}" in src
+                    or f'class="{bare} ' in src or f' {bare}"' in src), (
+                f"{name}: closest({sel!r}) matches nothing in the markup"
+            )
+        assert f'{marker}[data-logo=' in src or f'.{marker}[data-logo=' in src, (
+            f"{name}: the data-logo rule no longer hangs off {marker}"
+        )
