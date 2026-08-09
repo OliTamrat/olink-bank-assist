@@ -582,6 +582,30 @@ def embed_script() -> FileResponse:
     )
 
 
+@app.get("/vendor/livekit-client.umd.js")
+def livekit_sdk() -> FileResponse:
+    """The LiveKit browser SDK, served from our own origin.
+
+    Vendored rather than loaded from a CDN, deliberately. This script runs on
+    a BANK'S OWN PAGE — a third-party CDN there is a script tag their security
+    review has to justify, a Content-Security-Policy entry they have to widen,
+    and an outage nobody in this project can fix. The file is in the repo,
+    pinned, auditable, and served from the same origin as everything else.
+
+    Apache 2.0, licence alongside it in static/vendor. Already minified as
+    shipped (~141 KB gzipped), so there is no build step — which matters in a
+    repo that deliberately has none.
+
+    Cached hard: it is immutable for a given release and every customer who
+    opens a call fetches it.
+    """
+    return FileResponse(
+        _STATIC / "vendor" / "livekit-client.umd.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/widget")
 def widget_page() -> FileResponse:
     return FileResponse(_STATIC / "widget.html", media_type="text/html", headers=_NO_STORE)

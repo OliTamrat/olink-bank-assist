@@ -452,6 +452,77 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ------------------------------------------------- the call */
+  /* Full-screen rather than a panel in the sheet. A call is the only thing
+     happening while it is happening, and a video tile competing with a chat
+     thread behind it is how someone taps the wrong control mid-sentence. */
+  .call {
+    position: fixed; inset: 0; z-index: 30; display: none;
+    flex-direction: column; background: #0a0c10; color: #fff;
+  }
+  .call.open { display: flex; }
+  .call .stage {
+    flex: 1; position: relative; min-height: 0;
+    display: grid; place-items: center; overflow: hidden;
+  }
+  /* The teller. object-fit: cover rather than contain — a letterboxed face
+     in a phone-shaped frame wastes most of the screen. */
+  .call .stage video {
+    width: 100%; height: 100%; object-fit: cover; background: #0a0c10;
+  }
+  /* Self-view, small and in the corner. Mirrored, because an un-mirrored
+     self-view reads as someone else's camera and people move the wrong way. */
+  .call .self {
+    position: absolute; right: 14px; bottom: 14px;
+    width: 96px; height: 128px; border-radius: 12px; overflow: hidden;
+    background: #14171d; border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 8px 24px -10px rgba(0,0,0,.8);
+  }
+  .call .self video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .call .who2 {
+    position: absolute; left: 0; right: 0; top: 0;
+    padding: 14px 16px calc(14px + env(safe-area-inset-top));
+    background: linear-gradient(rgba(10,12,16,.75), transparent);
+    font-size: 14px; font-weight: 600;
+  }
+  .call .who2 small {
+    display: block; font-weight: 400; font-size: 11.5px;
+    color: rgba(255,255,255,.72); margin-top: 2px;
+  }
+  /* Shown until a remote track arrives. Audio-only calls never get one, so
+     this is the normal state outside Addis rather than an error. */
+  .call .placeholder { text-align: center; padding: 20px; }
+  .call .placeholder .av {
+    width: 78px; height: 78px; border-radius: 50%; margin: 0 auto 14px;
+    background: color-mix(in srgb, var(--brand) 70%, #000);
+    display: grid; place-items: center; font-size: 26px; font-weight: 600;
+  }
+  .call .placeholder p { font-size: 13.5px; color: rgba(255,255,255,.72); }
+
+  .call .controls {
+    display: flex; justify-content: center; gap: 16px;
+    padding: 18px 16px calc(20px + env(safe-area-inset-bottom));
+    background: #0a0c10;
+  }
+  .call .controls button {
+    width: 54px; height: 54px; border-radius: 50%; border: 0; cursor: pointer;
+    display: grid; place-items: center; color: #fff;
+    background: rgba(255,255,255,.13);
+    transition: background .15s, transform .15s;
+  }
+  .call .controls button:hover { transform: translateY(-1px); }
+  .call .controls button svg { width: 21px; height: 21px; }
+  /* Muted/camera-off is a WHITE button, not a red one. Red reads as "this
+     control is dangerous"; the danger is forgetting you are muted, so the
+     off state is the one that has to be unmissable at a glance. */
+  .call .controls button.off { background: #fff; color: #0a0c10; }
+  .call .controls button.hang { background: #dc2626; }
+  .call .controls button.hang:hover { background: #ef4444; }
+  .call .note2 {
+    text-align: center; font-size: 11px; color: rgba(255,255,255,.5);
+    padding: 0 16px 10px; background: #0a0c10;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .ring { animation: none; }
     .bubble, .meta, .suggest, .teller-offer, .sheet, .sheet .panel { animation: none; }
@@ -492,6 +563,23 @@
 
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
   <div class="panel" id="sheetPanel"></div>
+</div>
+
+<div class="call" id="call" role="dialog" aria-modal="true" aria-label="Call with a teller">
+  <div class="stage" id="stage">
+    <div class="placeholder" id="placeholder">
+      <div class="av" id="callInitials">·</div>
+      <p id="callStatus">Connecting…</p>
+    </div>
+    <div class="who2" id="callWho"></div>
+    <div class="self" id="selfView" style="display:none"><video id="selfVideo" autoplay muted playsinline></video></div>
+  </div>
+  <div class="controls">
+    <button type="button" id="btnMic" title="Mute" aria-label="Mute"></button>
+    <button type="button" id="btnCam" title="Camera" aria-label="Camera"></button>
+    <button type="button" id="btnHang" class="hang" title="End call" aria-label="End call"></button>
+  </div>
+  <div class="note2">This teller cannot move money. Never share your PIN or password.</div>
 </div>
 
 <script>
@@ -1041,18 +1129,8 @@
     }
     if (session.state === "active") {
       stopTicking();
-      // The media layer mounts here. Until it does, this state is only
-      // reachable on a tenant with `teller_enabled` switched on by hand —
-      // which is exactly why that flag defaults to off.
-      openSheet(
-        '<h2 id="sheetTitle">A teller has joined</h2>' +
-        '<p class="lede">' + bankName + ' has picked up your request and is ' +
-        'connecting to you now. Please have your Fayda ID to hand.</p>' +
-        '<div class="actions">' +
-          '<button type="button" class="btn-quiet" id="tClose">Close</button>' +
-        '</div>'
-      );
-      document.getElementById("tClose").addEventListener("click", closeSheet);
+      closeSheet();
+      joinCall();
       return;
     }
     // Terminal. The session is over however it ended; drop it so the customer
@@ -1130,6 +1208,219 @@
     // with offers the queue again on its own.
     addBot("You've left the queue. I'm here if there's anything else I can help with.", false);
   }
+
+  // ------------------------------------------------------------- the call
+  //
+  // Joining is deliberately a separate step from being claimed: the token is
+  // only issued once a teller is actually in the session, so there is never a
+  // live media credential sitting in a browser through a ten-minute wait.
+
+  var room = null;              // the LiveKit Room, while connected
+  var joined = false;           // have we ever actually been in the room?
+  var sdkLoading = null;        // in-flight load, so two calls share one
+  var callEl = document.getElementById("call");
+
+  var CALL_ICONS = {
+    mic:    '<path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 19v3"/>',
+    micoff: '<path d="M15 9V5a3 3 0 0 0-5.9-.7M9 9v2a3 3 0 0 0 5 2.2"/><path d="M19 10v1a7 7 0 0 1-11 5.7M5 10v1a7 7 0 0 0 2 4.9M12 19v3"/><path d="M2 2l20 20"/>',
+    cam:    '<path d="M23 7l-7 5 7 5z"/><rect x="1" y="5" width="15" height="14" rx="2"/>',
+    camoff: '<path d="M16 16v2a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2m5 0h4a2 2 0 0 1 2 2v2l6-4v10"/><path d="M2 2l20 20"/>',
+    hang:   '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/><path d="M23 1L1 23"/>'
+  };
+  function callIcon(name) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round">' + CALL_ICONS[name] + '</svg>';
+  }
+
+  // Served from our own origin, never a CDN — see the route's docstring. One
+  // shared promise so a reconnect does not fetch 560 KB again.
+  function loadSdk() {
+    if (window.LivekitClient) return Promise.resolve(window.LivekitClient);
+    if (sdkLoading) return sdkLoading;
+    sdkLoading = new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = api + "/vendor/livekit-client.umd.js";
+      s.onload = function () {
+        window.LivekitClient ? resolve(window.LivekitClient)
+                             : reject(new Error("sdk"));
+      };
+      s.onerror = function () { sdkLoading = null; reject(new Error("sdk")); };
+      document.head.appendChild(s);
+    });
+    return sdkLoading;
+  }
+
+  function callStatus(text) {
+    var el2 = document.getElementById("callStatus");
+    if (el2) el2.textContent = text;
+  }
+
+  function joinCall() {
+    if (room || !session) return;
+    callEl.classList.add("open");
+    document.getElementById("callInitials").textContent = initials(bankName);
+    document.getElementById("callWho").innerHTML =
+      "<span></span><small>Verify your identity before discussing your account</small>";
+    callEl.querySelector(".who2 span").textContent = bankName + " teller";
+    callStatus("Connecting…");
+    paintControls();
+
+    var wantVideo = session.media === "video";
+    var sid = session.id;
+
+    Promise.all([
+      loadSdk(),
+      fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" + sid + "/token")
+        .then(function (r) {
+          if (!r.ok) { var e = new Error("token"); e.status = r.status; throw e; }
+          return r.json();
+        })
+    ]).then(function (both) {
+      var LK = both[0], grant = both[1];
+      var r = new LK.Room({ adaptiveStream: true, dynacast: true });
+      room = r;
+
+      r.on(LK.RoomEvent.TrackSubscribed, function (track) {
+        attachRemote(LK, track);
+      });
+      r.on(LK.RoomEvent.TrackUnsubscribed, function (track) { track.detach(); });
+      // The teller hung up, or dropped. Either way the call is over for the
+      // customer — leaving the panel open with a frozen frame is worse than
+      // closing it and saying so.
+      //
+      // Guarded on `joined`, because a FAILED first connect also fires this.
+      // Unguarded it tore the panel down and said "the call has ended" about
+      // a call that never started, discarding the message in the catch below
+      // that actually told the customer what to do. Observed, not theorised:
+      // a blocked WebSocket produced exactly that.
+      r.on(LK.RoomEvent.Disconnected, function () {
+        if (joined) endCall("The call has ended.");
+      });
+      r.on(LK.RoomEvent.ParticipantDisconnected, function () {
+        callStatus("The teller has left the call.");
+      });
+
+      return r.connect(grant.url, grant.token).then(function () {
+        joined = true;
+        callStatus("Waiting for the teller…");
+        // Microphone always; camera only if they chose video. Asking for a
+        // camera on an audio call is a permission prompt for hardware the
+        // customer deliberately declined.
+        return r.localParticipant.setMicrophoneEnabled(true).then(function () {
+          return wantVideo ? r.localParticipant.setCameraEnabled(true) : null;
+        });
+      }).then(function () {
+        showSelfView(LK, r);
+        paintControls();
+      });
+    }).catch(function (err) {
+      // Distinguish the three failures that need different actions from the
+      // customer: no permission (fix it in the browser), no teller yet (wait),
+      // everything else (try again).
+      var name = err && err.name;
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        callStatus("Microphone access was blocked. Allow it in your browser, then try again.");
+      } else if (err && err.status === 409) {
+        callStatus("The teller is not connected yet.");
+      } else {
+        callStatus("Couldn't connect. Please check your connection and try again.");
+      }
+    });
+  }
+
+  function attachRemote(LK, track) {
+    if (track.kind === LK.Track.Kind.Video) {
+      var stage = document.getElementById("stage");
+      var existing = stage.querySelector("video.remote");
+      if (existing) existing.remove();
+      var v = track.attach();
+      v.className = "remote";
+      v.setAttribute("playsinline", "");
+      document.getElementById("placeholder").style.display = "none";
+      stage.insertBefore(v, stage.firstChild);
+    } else {
+      // Audio is attached but never shown. On an audio-only call the
+      // placeholder stays, which is the normal state outside Addis rather
+      // than a failure — so the status line says connected, not "waiting".
+      var a = track.attach();
+      a.style.display = "none";
+      document.body.appendChild(a);
+      callStatus("Connected");
+    }
+  }
+
+  function showSelfView(LK, r) {
+    var pub = r.localParticipant.getTrackPublication(LK.Track.Source.Camera);
+    if (!pub || !pub.track) return;
+    var holder = document.getElementById("selfView");
+    var v = pub.track.attach();
+    v.setAttribute("playsinline", "");
+    var slot = document.getElementById("selfVideo");
+    if (slot) slot.remove();
+    holder.innerHTML = "";
+    holder.appendChild(v);
+    holder.style.display = "block";
+  }
+
+  function paintControls() {
+    // `hasCam` comes from what the customer CHOSE, not from whether a room
+    // exists yet. Reading it off `room` hid the camera button for the whole
+    // connect on a video call — the control was missing exactly while the
+    // customer was watching the screen waiting for something to happen.
+    var hasCam = !!session && session.media === "video";
+    var micOn = true, camOn = hasCam;
+    if (room) {
+      micOn = room.localParticipant.isMicrophoneEnabled;
+      camOn = room.localParticipant.isCameraEnabled;
+    }
+    var mic = document.getElementById("btnMic");
+    mic.innerHTML = callIcon(micOn ? "mic" : "micoff");
+    mic.classList.toggle("off", !micOn);
+    mic.title = micOn ? "Mute" : "Unmute";
+
+    var cam = document.getElementById("btnCam");
+    cam.style.display = hasCam ? "grid" : "none";
+    cam.innerHTML = callIcon(camOn ? "cam" : "camoff");
+    cam.classList.toggle("off", !camOn);
+
+    document.getElementById("btnHang").innerHTML = callIcon("hang");
+  }
+
+  document.getElementById("btnMic").addEventListener("click", function () {
+    if (!room) return;
+    room.localParticipant
+      .setMicrophoneEnabled(!room.localParticipant.isMicrophoneEnabled)
+      .then(paintControls);
+  });
+  document.getElementById("btnCam").addEventListener("click", function () {
+    if (!room) return;
+    room.localParticipant
+      .setCameraEnabled(!room.localParticipant.isCameraEnabled)
+      .then(paintControls);
+  });
+  document.getElementById("btnHang").addEventListener("click", function () {
+    endCall("You ended the call.");
+  });
+
+  function endCall(message) {
+    if (room) { try { room.disconnect(); } catch (e) {} room = null; }
+    joined = false;
+    callEl.classList.remove("open");
+    var stage = document.getElementById("stage");
+    var v = stage.querySelector("video.remote");
+    if (v) v.remove();
+    document.getElementById("placeholder").style.display = "";
+    document.getElementById("selfView").style.display = "none";
+    stopPolling(); stopTicking();
+    session = null;
+    if (message) addBot(message, false);
+  }
+
+  // A call in progress must not survive the tab closing without LiveKit being
+  // told — otherwise the teller sits looking at a participant who is gone.
+  window.addEventListener("pagehide", function () {
+    if (room) { try { room.disconnect(); } catch (e) {} }
+  });
 
   // Closing the tab is the commonest way a queue is abandoned, and a session
   // nobody cancels sits in the teller's queue as a customer who is not there.
