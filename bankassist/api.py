@@ -33,6 +33,8 @@ from . import (
     permissions,
     roles,
     telegram,
+    teller,
+    verification,
 )
 from . import agent as agent_module
 from .agent import handle_message
@@ -51,6 +53,7 @@ from .models import (
     Handoff,
     Message,
     Role,
+    TellerSession,
     User,
     UserCredential,
     new_token,
@@ -320,6 +323,8 @@ NeedsDocumentsWrite = Depends(require(permissions.Perm.DOCUMENTS_WRITE))
 NeedsIntegrationsManage = Depends(require(permissions.Perm.INTEGRATIONS_MANAGE))
 NeedsAuditRead = Depends(require(permissions.Perm.AUDIT_READ))
 NeedsUsersManage = Depends(require(permissions.Perm.USERS_MANAGE))
+NeedsSessionsRead = Depends(require(permissions.Perm.SESSIONS_READ))
+NeedsTellerServe = Depends(require(permissions.Perm.TELLER_SERVE))
 
 
 # ---------------------------------------------------------------- schemas
@@ -1969,3 +1974,346 @@ def reopen_handoff(
            actor=principal.audit_actor)
     db.commit()
     return {"status": "open"}
+
+
+# ------------------------------------------------------------ teller sessions
+#
+# The HTTP surface for tier 3. See docs/video-teller.md.
+#
+# The media layer is deliberately absent: no channel is minted, no token is
+# issued, and `channel` stays null. That is not an oversight — LiveKit
+# credentials do not exist yet, and a token-minting path validated against a
+# mock is exactly how a security-critical integration ships broken. What is
+# here is everything the media layer will hang off: who asked, who is waiting,
+# who claimed it, and what they verified.
+
+
+class SessionRequestIn(BaseModel):
+    conversation_id: str = Field(min_length=1, max_length=36)
+    # audio | video. Audio is the default deliberately — outside Addis it is
+    # the common case, and a default of video would quietly make the product
+    # worse for the customers with the worst connections.
+    media: str = Field(default="audio")
+
+
+class SessionVerifyIn(BaseModel):
+    checks: list[str] = Field(default_factory=list)
+    # The number the teller read off the ID. Only its last four digits are
+    # kept — see verification.tail — so this field is transient by design.
+    fayda_number: str | None = Field(default=None, max_length=40)
+
+
+class SessionEndIn(BaseModel):
+    resolution: str | None = Field(default=None, max_length=4000)
+
+
+def _session_public(session: TellerSession) -> dict[str, Any]:
+    """What the CUSTOMER may see about their own session.
+
+    Deliberately not the teller's user id and not the verification reference.
+    A customer needs to know where they are in the process and what the person
+    they are about to speak to can help with; everything else on the row is
+    the bank's internal record.
+    """
+    return {
+        "id": session.id,
+        "state": session.state,
+        "scope": session.scope,
+        "media": session.media,
+        # What this session can actually cover, so the customer is told the
+        # boundary BEFORE they wait rather than after. Someone who queues for
+        # ten minutes to ask for a transfer and is refused live has had a
+        # worse experience than the assistant refusing instantly.
+        "can_help_with": teller.capabilities(session.scope),
+    }
+
+
+def _session_admin(db: Session, session: TellerSession) -> dict[str, Any]:
+    """What a teller or supervisor sees. Adds the internal record."""
+    data = _session_public(session)
+    # The language the customer has been chatting in. A teller opening a
+    # session needs to know whether to greet in Amharic or Afaan Oromoo before
+    # they speak, not after — and the conversation already knows.
+    conversation = db.get(Conversation, session.conversation_id)
+    data.update(
+        {
+            "language": conversation.language if conversation is not None else None,
+            "conversation_id": session.conversation_id,
+            "handoff_id": session.handoff_id,
+            "teller_user_id": session.teller_user_id,
+            "verified_method": session.verified_method,
+            "verified_ref": session.verified_ref,
+            "waited_seconds": session.waited_seconds,
+            "requested_at": session.requested_at.isoformat(),
+            "resolution": session.resolution,
+        }
+    )
+    return data
+
+
+@app.post("/chat/{slug}/teller-session", status_code=201)
+def request_teller_session(
+    slug: str, payload: SessionRequestIn, request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """A customer asking to speak to a person.
+
+    THE ONLY WAY A SESSION COMES INTO EXISTENCE, and it is called by the
+    customer's own chat. There is deliberately no route that creates a session
+    addressed at a customer: if people are trained to accept incoming calls
+    "from the bank", that becomes a fraud vector pointed at exactly the
+    customers least able to spot it. See docs/video-teller.md §2.
+
+    Unauthenticated, like /chat itself — the customer has no account with us.
+    Rate limited on the same limiter for the same reason.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    limiter: SlidingWindowLimiter = request.app.state.ip_limiter
+    if not limiter.allow(f"{slug}:{client_ip}"):
+        raise HTTPException(status_code=429, detail="Too many requests, please slow down")
+
+    bank = _get_bank(db, slug)
+    conversation = db.get(Conversation, payload.conversation_id)
+    # Tenancy: a conversation id from another bank must not open a session here.
+    if conversation is None or conversation.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown conversation")
+
+    # One live session per conversation. Without this, a customer tapping the
+    # button twice — or a flaky connection retrying — puts two of them in the
+    # queue and two tellers answer the same person.
+    existing = db.execute(
+        select(TellerSession).where(
+            TellerSession.conversation_id == conversation.id,
+            TellerSession.state.notin_(tuple(teller.TERMINAL)),
+        )
+    ).scalars().first()
+    if existing is not None:
+        return _session_public(existing)
+
+    session = TellerSession(
+        bank_id=bank.id,
+        conversation_id=conversation.id,
+        media="video" if payload.media == "video" else "audio",
+        # Straight to queued. Verification happens on the call with the teller
+        # — see verification.py — so there is no automated check to wait for.
+        # The `verifying` state stays in the machine for the Fayda OIDC path,
+        # which will occupy it.
+        state=teller.QUEUED,
+        scope=teller.UNVERIFIED,
+    )
+    db.add(session)
+    _audit(
+        db, bank, "teller_session_requested", "teller_session", session.id,
+        {"media": session.media}, actor="customer",
+    )
+    db.commit()
+    return _session_public(session)
+
+
+@app.get("/chat/{slug}/teller-session/{session_id}")
+def poll_teller_session(
+    slug: str, session_id: str, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Where am I in the queue? Polled by the customer's own chat."""
+    bank = _get_bank(db, slug)
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    data = _session_public(session)
+    if session.state == teller.QUEUED:
+        # Position, counted from sessions that arrived earlier and are still
+        # waiting. A number beats a spinner: someone told they are third will
+        # wait; someone shown a spinner leaves.
+        data["ahead"] = db.execute(
+            select(func.count())
+            .select_from(TellerSession)
+            .where(
+                TellerSession.bank_id == bank.id,
+                TellerSession.state == teller.QUEUED,
+                TellerSession.requested_at < session.requested_at,
+            )
+        ).scalar_one()
+    return data
+
+
+@app.delete("/chat/{slug}/teller-session/{session_id}")
+def abandon_teller_session(
+    slug: str, session_id: str, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """The customer gave up, or closed the tab.
+
+    Recorded rather than left to expire, because queue abandonment is the most
+    useful number this feature produces and the one that justifies staffing.
+    A session that simply goes quiet tells a bank nothing.
+    """
+    bank = _get_bank(db, slug)
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    if session.state in teller.TERMINAL:
+        return {"state": session.state}
+    session.state = teller.move(session.state, teller.ABANDONED)
+    session.ended_at = datetime.now(UTC)
+    _audit(
+        db, bank, "teller_session_abandoned", "teller_session", session.id,
+        {"waited_seconds": session.waited_seconds}, actor="customer",
+    )
+    db.commit()
+    return {"state": session.state}
+
+
+@app.get("/admin/api/{slug}/teller/queue")
+def teller_queue(
+    principal: Principal = NeedsSessionsRead, db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """Who is waiting, oldest first.
+
+    Oldest first is not a preference — anything else means the person who has
+    waited longest keeps losing, which is how a queue produces the abandonment
+    it was built to prevent.
+    """
+    bank = principal.bank
+    rows = db.execute(
+        select(TellerSession)
+        .where(
+            TellerSession.bank_id == bank.id,
+            TellerSession.state.in_((teller.QUEUED, teller.ACTIVE)),
+        )
+        .order_by(TellerSession.requested_at)
+    ).scalars().all()
+    return [_session_admin(db, s) for s in rows]
+
+
+@app.post("/admin/api/{slug}/teller/sessions/{session_id}/claim")
+def claim_teller_session(
+    session_id: str,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """A teller taking the next customer.
+
+    Requires `teller.serve`, which operators deliberately do not hold: working
+    a queue after the fact and appearing live as the bank are different jobs.
+
+    The state machine is what stops two tellers claiming the same person —
+    `move()` raises on active -> active rather than quietly succeeding, which
+    in a boolean world would look like both of them got it.
+    """
+    bank = principal.bank
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    if principal.user is None:
+        # The break-glass admin token has no person behind it, and a live
+        # customer call must be answerable to a named employee.
+        raise HTTPException(
+            status_code=403, detail="Sign in as a person to take a session"
+        )
+    try:
+        session.state = teller.move(session.state, teller.ACTIVE)
+    except teller.InvalidTransition:
+        raise HTTPException(
+            status_code=409, detail="That session is no longer waiting"
+        ) from None
+    session.teller_user_id = principal.user.id
+    session.claimed_at = datetime.now(UTC)
+    _audit(
+        db, bank, "teller_session_claimed", "teller_session", session.id,
+        {"waited_seconds": session.waited_seconds}, actor=principal.audit_actor,
+    )
+    db.commit()
+    return _session_admin(db, session)
+
+
+@app.post("/admin/api/{slug}/teller/sessions/{session_id}/verify")
+def verify_teller_session(
+    session_id: str,
+    payload: SessionVerifyIn,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The teller attests that this is the account holder.
+
+    The bar is enforced in `verification.attest`, not here and not in the UI —
+    a teller ticking a box having asked nothing is not verification, and a
+    scheme that cannot tell the difference is decoration.
+    """
+    bank = principal.bank
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    if session.state != teller.ACTIVE:
+        raise HTTPException(
+            status_code=409, detail="Only a session you are in can be verified"
+        )
+    if principal.user is None or session.teller_user_id != principal.user.id:
+        # Only the teller on the call. Someone reading the queue has not seen
+        # the ID and has not asked anything — their attestation would be a
+        # statement about something they did not witness.
+        raise HTTPException(
+            status_code=403, detail="Only the teller on this session can verify it"
+        )
+    try:
+        attestation = verification.attest(
+            checks=set(payload.checks),
+            teller_user_id=principal.user.id,
+            fayda_number=payload.fayda_number,
+        )
+    except verification.AttestationRejected as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    session.scope = teller.VERIFIED
+    session.verified_method = attestation.method
+    session.verified_ref = attestation.reference
+    session.verified_at = datetime.now(UTC)
+    # WHAT was checked, not just that something was. A dispute needs to know
+    # what the teller looked at, and `metadata` is the only place that
+    # survives. The Fayda number is not here and never reaches the log.
+    _audit(
+        db, bank, "teller_session_verified", "teller_session", session.id,
+        {"method": attestation.method, "checks": sorted(attestation.checks)},
+        actor=principal.audit_actor,
+    )
+    db.commit()
+    return _session_admin(db, session)
+
+
+@app.post("/admin/api/{slug}/teller/sessions/{session_id}/end")
+def end_teller_session(
+    session_id: str,
+    payload: SessionEndIn | None = None,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Finish, with a note about what was done.
+
+    The note is written to the session AND to the handoff it belongs to, when
+    there is one — the session is the record of the encounter, the handoff is
+    the record of the work, and a supervisor reading either should not have to
+    open the other.
+    """
+    bank = principal.bank
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    try:
+        session.state = teller.move(session.state, teller.ENDED)
+    except teller.InvalidTransition:
+        raise HTTPException(status_code=409, detail="That session is not active") from None
+    session.ended_at = datetime.now(UTC)
+    if payload is not None and payload.resolution:
+        session.resolution = payload.resolution.strip() or None
+    if session.handoff_id and session.resolution:
+        handoff = db.get(Handoff, session.handoff_id)
+        if handoff is not None and handoff.bank_id == bank.id:
+            handoff.resolution = session.resolution
+            handoff.status = "closed"
+            handoff.resolved_at = session.ended_at
+            handoff.resolved_by = session.teller_user_id
+    _audit(
+        db, bank, "teller_session_ended", "teller_session", session.id,
+        {"had_resolution": bool(session.resolution), "scope": session.scope},
+        actor=principal.audit_actor,
+    )
+    db.commit()
+    return _session_admin(db, session)

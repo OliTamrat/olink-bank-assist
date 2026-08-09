@@ -61,7 +61,7 @@ def _signed_in(client: TestClient, bank: Any, role: str) -> TestClient:
 # ------------------------------------------------------------------ the roles
 
 
-def test_every_tenant_is_seeded_with_both_builtin_roles(
+def test_every_tenant_is_seeded_with_every_builtin_role(
     db_session: Session, demo_bank: Any
 ) -> None:
     names = {
@@ -70,7 +70,7 @@ def test_every_tenant_is_seeded_with_both_builtin_roles(
             select(Role).where(Role.bank_id == demo_bank.id)
         ).scalars()
     }
-    assert names == {"operator", "admin"}
+    assert names == set(permissions.BUILTIN_ROLES)
 
 
 def test_seeding_is_idempotent_and_does_not_undo_a_banks_own_edit(
@@ -107,7 +107,7 @@ def test_seeding_is_idempotent_and_does_not_undo_a_banks_own_edit(
                 ).scalars()
             ]
         )
-        == 2
+        == len(permissions.BUILTIN_ROLES)
     ), "seeding twice must not create duplicate roles"
 
 
@@ -435,3 +435,51 @@ def test_every_permission_is_held_by_at_least_one_builtin_role(
         if permission in perms
     ]
     assert holders, f"{permission} is unreachable for every signed-in person"
+
+
+# ------------------------------------------------- the live-facing role split
+
+
+def test_an_operator_cannot_join_a_live_customer_call() -> None:
+    """The reason `teller` exists as a role at all.
+
+    Working an escalation queue after the fact and appearing on video as the
+    bank are different jobs with different training. Adding `teller.serve` to
+    `operator` would have been the convenient default — a bank certifying a
+    handful of staff to face customers live would find that everyone who
+    answers escalations already had it.
+
+    Asserted rather than left to the role definitions being read carefully,
+    because the failure is invisible: nothing breaks, the permission simply
+    reaches further than anyone decided.
+    """
+    operator = set(permissions.BUILTIN_ROLES[permissions.OPERATOR])
+    assert permissions.Perm.TELLER_SERVE not in operator
+    assert permissions.Perm.SESSIONS_READ not in operator
+
+
+def test_a_teller_sees_the_conversation_and_not_the_business() -> None:
+    """Narrower than operator, not wider.
+
+    A teller needs the transcript of the call they are joining and the ability
+    to close it out. They do not need the analytics page — a bank should not
+    have to hand over its dashboard to certify someone for video.
+    """
+    teller_role = set(permissions.BUILTIN_ROLES[permissions.TELLER])
+    assert permissions.Perm.TELLER_SERVE in teller_role
+    assert permissions.Perm.CONVERSATIONS_READ in teller_role
+    for withheld in (
+        permissions.Perm.ANALYTICS_READ,
+        permissions.Perm.DOCUMENTS_WRITE,
+        permissions.Perm.INTEGRATIONS_MANAGE,
+        permissions.Perm.AUDIT_READ,
+        permissions.Perm.USERS_MANAGE,
+    ):
+        assert withheld not in teller_role, withheld
+
+
+def test_the_new_permissions_are_in_the_registry() -> None:
+    """A permission missing from ALL is one no role can be granted through the
+    admin panel, and one the exported matrix silently omits."""
+    assert permissions.Perm.TELLER_SERVE in permissions.ALL
+    assert permissions.Perm.SESSIONS_READ in permissions.ALL

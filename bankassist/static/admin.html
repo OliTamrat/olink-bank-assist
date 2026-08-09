@@ -595,6 +595,8 @@ main { padding: 20px 24px 40px; }
 }
 /* Live and merely-connectable must not look alike: one is a channel sitting
    quiet, the other is work nobody has done yet. */
+.chan.q { grid-template-columns: 10px 1fr auto auto; }
+.chan.q .n { min-width: 62px; text-align: right; }
 .chan .pill.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
 .chan .pill.next { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
 
@@ -884,6 +886,10 @@ td.title { color: var(--ink); font-weight: 550; }
 var PAGES = [
   { id: "dashboard", label: "Dashboard",     perm: "analytics.read",     load: loadDashboard },
   { id: "handoffs",  label: "Escalations",   perm: "handoffs.read",      load: loadHandoffs, badge: true },
+  // Directly under Escalations, because it is the same work in a different
+  // tense: the queue of people waiting NOW rather than the queue of people
+  // to call back. A teller lives on this page all day.
+  { id: "teller",    label: "Live queue",    perm: "sessions.read",      load: loadTellerQueue },
   { id: "convos",    label: "Conversations", perm: "conversations.read", load: loadConvos },
   { id: "docs",      label: "Knowledge Base",perm: "documents.read",     load: loadDocs },
   { id: "gaps",      label: "Content Gaps",  perm: "gaps.read",          load: loadGaps },
@@ -904,6 +910,7 @@ var ICONS = {
   docs:      '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5M8 13h8M8 17h5"/>',
   gaps:      '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M11 8v3M11 14h.01"/>',
   audit:     '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/><path d="M8 12l2.5 2.5L16 9"/>',
+  teller:    '<path d="M15 10l5-3v10l-5-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/>',
   team:      '<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M17 11.2A3.2 3.2 0 1 0 17 5M18 20h3.5a5.5 5.5 0 0 0-3-4.9"/>',
   settings:  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.500 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>',
   channels:  '<path d="M4 6h9M4 12h16M4 18h6"/><circle cx="17" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/>',
@@ -2579,6 +2586,118 @@ function wireChannelForms(cfg) {
       .then(function () { setStatus("Telegram connected"); loadChannels(); })
       .catch(function (e) { setStatus(e.message); });
   };
+}
+
+/* ------------------------------------------------------- live teller queue
+ *
+ * The page a teller sits on all day, so it is built for one thing: see who is
+ * waiting and take them, without reading. Waiting time is the headline on
+ * every row because it is the only number that decides which one to take next.
+ *
+ * Polled rather than pushed. A websocket would be better and is not worth its
+ * failure modes yet — a poll that misses a beat shows a stale queue for four
+ * seconds, where a dropped socket shows an empty one indefinitely and looks
+ * like nobody needs help.
+ */
+var TELLER_POLL_MS = 4000;
+var tellerTimer = null;
+
+function stopTellerPolling() {
+  if (tellerTimer) { clearInterval(tellerTimer); tellerTimer = null; }
+}
+
+/* Waiting time, in the shape a person reads at a glance. Seconds up to a
+   minute, because the difference between 8s and 50s is the difference between
+   "take it now" and "take it now". */
+function waited(sec) {
+  if (sec == null) return "";
+  if (sec < 60) return sec + "s";
+  var m = Math.floor(sec / 60);
+  return m < 60 ? m + "m " + (sec % 60) + "s" : Math.floor(m / 60) + "h " + (m % 60) + "m";
+}
+
+function loadTellerQueue() {
+  stopTellerPolling();
+  renderTellerQueue(null);
+  var draw = function () {
+    api("/teller/queue").then(renderTellerQueue).catch(function (e) {
+      stopTellerPolling();
+      $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
+    });
+  };
+  draw();
+  tellerTimer = setInterval(function () {
+    // Stop the moment the operator navigates away, otherwise every page they
+    // visit is quietly polling this one behind it.
+    if (state.page !== "teller") { stopTellerPolling(); return; }
+    draw();
+  }, TELLER_POLL_MS);
+}
+
+function renderTellerQueue(rows) {
+  if (rows === null) { $("main").innerHTML = '<div class="empty">Loading…</div>'; return; }
+  var canServe = can("teller.serve");
+  var waiting = rows.filter(function (r) { return r.state === "queued"; });
+  var live = rows.filter(function (r) { return r.state === "active"; });
+
+  var h = '<div class="row row-half">' +
+    '<div class="panel"><h3>Waiting</h3>' +
+    (waiting.length
+      ? '<div class="chanlist">' + waiting.map(function (r) {
+          return '<div class="chan q">' +
+            '<span class="dot" style="background:var(--warn)"></span>' +
+            '<span class="cname">' + esc(LANG_NAME[r.language] || "Waiting") +
+            '<div class="meta">' + esc(r.media === "video" ? "Video" : "Audio") +
+            " · " + esc(r.scope === "verified" ? "Identified" : "Not yet identified") +
+            "</div></span>" +
+            '<span class="n">' + esc(waited(r.waited_seconds)) + "</span>" +
+            (canServe
+              ? '<button class="btn sm" data-claim="' + esc(r.id) + '">Take</button>'
+              : "") +
+            "</div>";
+        }).join("") + "</div>"
+      : '<div class="empty">Nobody is waiting.</div>') +
+    (waiting.length
+      ? '<div class="note">Oldest first. The longest wait is the one to take.</div>'
+      : "") +
+    "</div>" +
+    '<div class="panel"><h3>In progress</h3>' +
+    (live.length
+      ? '<div class="chanlist">' + live.map(function (r) {
+          return '<div class="chan q">' +
+            '<span class="dot" style="background:var(--ok)"></span>' +
+            '<span class="cname">' +
+            esc(r.scope === "verified" ? "Identified" : "Not yet identified") +
+            '<div class="meta">' + esc(r.media === "video" ? "Video" : "Audio") +
+            (r.verified_ref ? " · Fayda ••••" + esc(r.verified_ref) : "") +
+            "</div></span>" +
+            '<span class="n">' + esc(waited(r.waited_seconds)) + " wait</span>" +
+            "</div>";
+        }).join("") + "</div>"
+      : '<div class="empty">No session in progress.</div>') +
+    "</div></div>";
+
+  // The boundary, on the page rather than in a training deck. A teller who
+  // has to remember what they may not do will eventually not remember.
+  h += '<div class="panel"><h3>What a session covers</h3>' +
+    '<div class="meta">Before someone is identified: general questions about ' +
+    "products, eligibility and how to apply. Once you have checked their Fayda " +
+    "ID against the account and asked something only the account holder could " +
+    "answer: their own application, documents and disputes.</div>" +
+    '<div class="note" style="color:var(--bad)">Never, at any point and for ' +
+    "anyone: deposits, withdrawals or transfers. Those do not happen on a " +
+    "call.</div></div>";
+
+  $("main").innerHTML = h;
+  Array.prototype.forEach.call(document.querySelectorAll("[data-claim]"), function (b) {
+    b.onclick = function () {
+      b.disabled = true;   // a double-tap would 409, and the second looks broken
+      api("/teller/sessions/" + b.getAttribute("data-claim") + "/claim",
+          { method: "POST" })
+        .then(function () { setStatus("Session taken"); loadTellerQueue(); })
+        .catch(function (e) { b.disabled = false; setStatus(e.message); loadTellerQueue(); });
+    };
+  });
 }
 
 /* ------------------------------------------------------------ settings */

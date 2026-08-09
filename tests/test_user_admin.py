@@ -163,7 +163,7 @@ def test_the_role_table_is_generated_from_what_is_enforced(
     """
     admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
     rows = {r["name"]: r for r in admin.get("/admin/api/demo/roles").json()}
-    assert set(rows) == {"operator", "admin"}
+    assert set(rows) == set(permissions.BUILTIN_ROLES)
     assert set(rows["admin"]["permissions"]) == set(permissions.ALL)
     assert permissions.Perm.DOCUMENTS_WRITE not in rows["operator"]["permissions"]
     assert rows["operator"]["is_builtin"] is True
