@@ -92,6 +92,27 @@ class Perm:
     likely to ask for it, and exactly what permissions-as-data is for.
     """
 
+    SESSIONS_READ: Final = "sessions.read"
+    """Teller sessions: who spoke to whom, when, and what was concluded.
+
+    Separate from serving them, because the people who most want this view —
+    a supervisor sizing the queue, a compliance officer reviewing an
+    interaction — are precisely the people who should not be able to join a
+    live call with a customer.
+    """
+
+    TELLER_SERVE: Final = "teller.serve"
+    """Claim a queued session and represent the bank to a customer, live.
+
+    Deliberately not part of the operator role. Working a queue asynchronously
+    and appearing on video as the bank are different jobs with different
+    training, and a bank should be able to certify one set of people for the
+    second without also handing it to everyone who answers escalations.
+
+    This is the permission that decides who a customer sees when they ask for
+    help, which makes it the one most worth granting narrowly.
+    """
+
     USERS_MANAGE: Final = "users.manage"
     """Create, disable and re-role colleagues.
 
@@ -112,6 +133,8 @@ ALL: Final[tuple[str, ...]] = (
     Perm.DOCUMENTS_WRITE,
     Perm.INTEGRATIONS_MANAGE,
     Perm.AUDIT_READ,
+    Perm.SESSIONS_READ,
+    Perm.TELLER_SERVE,
     Perm.USERS_MANAGE,
 )
 
@@ -124,23 +147,47 @@ _READ_ONLY: Final[tuple[str, ...]] = (
 )
 
 OPERATOR: Final = "operator"
+TELLER: Final = "teller"
 ADMIN: Final = "admin"
 
 BUILTIN_ROLES: Final[dict[str, tuple[str, ...]]] = {
     # Everything readable, plus the queue work they are employed to do. An
     # operator can resolve a customer's escalation and cannot change what the
     # assistant tells the next customer.
+    #
+    # Note what is NOT here: teller.serve. An operator works the queue after
+    # the fact; a teller faces a customer live. Adding it would have been the
+    # convenient default and it is the wrong one.
     OPERATOR: (*_READ_ONLY, Perm.HANDOFFS_RESOLVE),
+    # The live-facing role, and deliberately narrower than operator rather
+    # than wider. A teller needs the transcript of the conversation they are
+    # about to join and the ability to close it out — they do not need the
+    # analytics page, and a bank certifying staff to appear on video as the
+    # bank should not have to hand over its dashboard to do it.
+    TELLER: (
+        Perm.CONVERSATIONS_READ,
+        Perm.HANDOFFS_READ,
+        Perm.HANDOFFS_RESOLVE,
+        Perm.DOCUMENTS_READ,
+        Perm.SESSIONS_READ,
+        Perm.TELLER_SERVE,
+    ),
     # Deliberately every permission, listed rather than computed. `ALL` would
     # silently grant each new permission to this role the moment it is added,
     # which is the wrong default for the role that already has the most reach —
     # the grant should be a decision someone made, visible in a diff.
+    #
+    # teller.serve is included because an administrator can grant it to
+    # themselves anyway (users.manage is equivalent to holding everything), so
+    # withholding it here would be theatre rather than a control.
     ADMIN: (
         *_READ_ONLY,
         Perm.HANDOFFS_RESOLVE,
         Perm.DOCUMENTS_WRITE,
         Perm.INTEGRATIONS_MANAGE,
         Perm.AUDIT_READ,
+        Perm.SESSIONS_READ,
+        Perm.TELLER_SERVE,
         Perm.USERS_MANAGE,
     ),
 }
@@ -148,5 +195,7 @@ BUILTIN_ROLES: Final[dict[str, tuple[str, ...]]] = {
 BUILTIN_DESCRIPTIONS: Final[dict[str, str]] = {
     OPERATOR: "Works the escalation queue. Reads everything, changes nothing "
     "the assistant says.",
+    TELLER: "Speaks to customers live. Sees the conversation they are joining "
+    "and nothing else.",
     ADMIN: "Manages content, integrations and colleagues.",
 }

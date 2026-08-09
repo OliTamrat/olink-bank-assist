@@ -368,3 +368,91 @@ class AdminSession(Base):
     created_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class TellerSession(Base):
+    """A customer asking to speak to a person, and what happened next.
+
+    Distinct from `Handoff` rather than a column on it, because the two answer
+    different questions. A handoff is a piece of work in a queue — durable,
+    async, closed at some point by somebody. A session is a live encounter with
+    a clock on it: it can be abandoned while nobody is looking, it holds a
+    media channel open, and its most valuable field is the one nobody has to
+    act on (how long the customer waited before giving up).
+
+    Both exist for the same conversation, and the session points at the
+    handoff so a teller's resolution lands in the queue everyone already reads.
+
+    See `docs/video-teller.md`.
+    """
+
+    __tablename__ = "teller_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    bank_id: Mapped[str] = mapped_column(String(36), index=True)
+    conversation_id: Mapped[str] = mapped_column(String(36), index=True)
+    # Set once a teller claims it, so the resolution they write has somewhere
+    # to go. Null while queued: a session may be abandoned before any work
+    # exists to file.
+    handoff_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+
+    # One of teller.STATES. A plain string rather than an enum for the same
+    # reason the permission strings are: it is what a bank's own reporting
+    # will group by, so the wire format is the thing that matters.
+    state: Mapped[str] = mapped_column(String(16), default="requested", index=True)
+    # One of teller.SCOPES. Decides what the teller may do — see teller.allows.
+    scope: Mapped[str] = mapped_column(String(16), default="unverified")
+
+    # How the customer was identified, and against what. Deliberately NOT the
+    # identity document itself: we store that a check passed and its reference,
+    # never the underlying record. Holding a copy of a national ID would make
+    # this table the most sensitive thing in the product for no gain — the
+    # bank's own system is the system of record.
+    verified_method: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    verified_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # The teller who claimed it. A user id, so a session survives someone
+    # leaving the bank — the audit row still resolves.
+    teller_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    # The media channel, when one exists. The NAME only: tokens are minted per
+    # join, short-lived, and never stored. A durable token in a database row
+    # is a durable way into a customer's banking call.
+    channel: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # audio | video. Recorded because it is the number that decides whether
+    # video is worth what it costs, and nobody can reconstruct it afterwards.
+    media: Mapped[str] = mapped_column(String(8), default="audio")
+
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    # Nullable and separate rather than one "closed_at": the gap between them
+    # IS the queue wait, which is the single most useful number this feature
+    # produces and the one that justifies staffing.
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # What the teller concluded. Mirrors Handoff.resolution deliberately — the
+    # session is the record of the encounter, the handoff is the record of the
+    # work, and a supervisor reading either should not have to open the other.
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    @property
+    def waited_seconds(self) -> int | None:
+        """How long the customer waited. None while still waiting.
+
+        Counts to the claim for a served session and to the end for an
+        abandoned one, so an abandonment reports the wait the customer
+        actually experienced rather than nothing at all.
+        """
+        end = self.claimed_at or self.ended_at
+        if end is None:
+            return None
+        return max(0, int((end - self.requested_at).total_seconds()))
