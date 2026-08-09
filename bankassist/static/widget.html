@@ -1098,7 +1098,21 @@
   // the text: an explicit handoff, an admitted knowledge gap, and the two
   // guardrails that exist precisely because a human is the right answer.
   function shouldOfferTeller(data) {
-    return tellerAvailable && !session && (
+    // Availability comes from THIS turn's response, not from what /public
+    // said when the page loaded. A customer who opened the chat before anyone
+    // came on duty was pinned to "no teller" for the whole conversation — the
+    // offer could never appear, however long they stayed or however many
+    // tellers signed in afterwards. Reported from the live demo, where the
+    // queue page read "Customers can reach a teller now" and the widget in
+    // the next window still would not offer one.
+    //
+    // Availability is a fact about this minute, so it is read in the minute
+    // it is used. The boot value stays as the fallback, for a response from
+    // an older deployment that does not carry the field.
+    var available = (typeof data.teller_available === "boolean")
+      ? data.teller_available
+      : tellerAvailable;
+    return available && !session && (
       // Someone who asked for a person IN WORDS. Listed first because it is
       // the one case where NOT offering is absurd — and it was missing.
       // `human_request` files a handoff, so this rode in on

@@ -308,3 +308,58 @@ def test_switching_off_does_not_drop_people_already_waiting(
     still = client.get(f"/chat/demo/teller-session/{sid}").json()
     assert still["state"] == teller.QUEUED
     assert db_session.get(TellerSession, sid).state == teller.QUEUED
+
+
+# ------------------------------------------- availability on the chat itself
+
+
+def test_every_reply_carries_whether_a_teller_can_be_reached_now(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """Reported from the live demo: the queue page read "Customers can reach a
+    teller now" while the widget in the next window still would not offer one.
+
+    The widget read availability once, from /public at page load, and never
+    again — so a customer who opened the chat before anyone came on duty was
+    pinned to "no teller" for the whole conversation. This is the fix: the
+    fact travels on the turn where it is used.
+    """
+    # Exactly the reported sequence. The customer is already chatting.
+    first = client.post("/chat/demo", json={"message": "Hello"})
+    assert first.json()["teller_available"] is False
+
+    # A teller signs in and opens the queue — after the customer's page loaded.
+    _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
+    assert client.get("/admin/api/demo/teller/queue").status_code == 200
+
+    later = client.post(
+        "/chat/demo",
+        json={
+            "message": "Can I speak to a live agent?",
+            "conversation_id": first.json()["conversation_id"],
+        },
+    )
+    assert later.json()["teller_available"] is True, (
+        "the reply does not know a teller arrived, so the widget cannot either"
+    )
+
+
+def test_the_reply_stops_offering_when_the_last_teller_leaves(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """The same staleness in the other direction: a customer who opened the
+    chat while somebody was on duty must not be offered a call after everyone
+    has gone home."""
+    user = _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
+    client.get("/admin/api/demo/teller/queue")
+    assert client.post("/chat/demo", json={"message": "Hello"}).json()[
+        "teller_available"
+    ] is True
+
+    db_session.get(User, user.id).teller_seen_at = (
+        datetime.now(UTC) - api_module.TELLER_PRESENCE_WINDOW - timedelta(seconds=5)
+    )
+    db_session.commit()
+    assert client.post("/chat/demo", json={"message": "Hello again"}).json()[
+        "teller_available"
+    ] is False

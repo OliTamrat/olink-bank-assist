@@ -278,3 +278,33 @@ def test_a_live_agent_request_gets_no_unrelated_suggestions(
     assert body["intent"] == classifier.HUMAN_REQUEST
     assert not body.get("suggestions")
     assert "verified information" not in body["reply"]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Reported from the demo exactly like this: a phone keyboard split
+        # "agent" into "a gent" and the noun list could not match half a word.
+        "Can I speak to a live a gent",
+        "Can I speak to a live agnet",
+        "speak to a live gent",
+        "chat with a live operater",
+        "talk to a real advisor",
+    ],
+)
+def test_a_mistyped_noun_after_live_still_escalates(message: str) -> None:
+    """Chasing individual typos is endless. What carries the meaning is
+    "live" inside a speak-to construction, whatever noun follows — so the
+    rule matches on that pair instead of on a spelling."""
+    assert classifier.classify_intent(message) == classifier.HUMAN_REQUEST
+
+
+def test_live_on_its_own_is_not_a_request_for_a_person() -> None:
+    """Both halves are required. A bank publishes live rates and live feeds,
+    and matching "live" alone would turn those questions into escalations."""
+    for message in (
+        "Do you have a live rate feed?",
+        "Are your exchange rates live?",
+        "Is the live chat available at night?",
+    ):
+        assert classifier.classify_intent(message) == classifier.QUESTION, message

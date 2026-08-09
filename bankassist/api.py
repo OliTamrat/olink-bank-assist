@@ -352,6 +352,15 @@ class ChatResponse(BaseModel):
     # The reply asked how to reach this customer; the next message is expected
     # to be their name and number. Channels use it to prompt for exactly that.
     awaiting_contact: bool = False
+    # Whether a live teller can be reached RIGHT NOW.
+    #
+    # On every turn, not just at page load. The widget read this once from
+    # /banks/{slug}/public when it booted and never again — so a customer who
+    # opened the chat before anyone came on duty was frozen on "no teller"
+    # for the whole conversation, and the offer never appeared however long
+    # they stayed. Availability is a fact about this minute; the moment it
+    # matters is the moment a reply is being decided, which is here.
+    teller_available: bool = False
     # What this turn actually did — agent's outcome vocabulary. Exposed because
     # intent alone mislabels every turn that isn't answering a question: storing
     # a customer's phone number was displayed as "Product guidance", inherited
@@ -553,6 +562,7 @@ def chat(
         general_knowledge=result.general_knowledge,
         awaiting_contact=result.awaiting_contact,
         outcome=result.outcome,
+        teller_available=_teller_available(db, bank),
     )
 
 
