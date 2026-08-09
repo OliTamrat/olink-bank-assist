@@ -158,3 +158,69 @@ def capabilities(scope: str) -> tuple[str, ...]:
 # Analytics filter on `role == "assistant"` explicitly, so this role is
 # counted in neither the assistant's tallies nor the customer's.
 MESSAGE_ROLE: Final = "teller"
+
+
+# ------------------------------------------------------------------ routing
+#
+# Which waiting customer a given teller should take next.
+#
+# The rule this file already states is that a queue is worked oldest-first,
+# because anything else means the person who has waited longest keeps losing.
+# Language routing bends that, and the bending has to be bounded:
+#
+# - A teller who speaks the customer's language serves them better than one
+#   who does not, so matches come first.
+# - A customer whose language nobody has declared must not wait forever behind
+#   an endless supply of matched ones. Past `PATIENCE` their wait outranks
+#   everybody's language match.
+# - Nothing is ever HIDDEN. A teller can always take any session; routing
+#   changes the order it is offered in, not what is permitted. A hard filter
+#   would strand the one customer nobody can serve, which is the opposite of
+#   what routing them is for.
+
+PATIENCE: Final = 180  # seconds before waiting time outranks a language match
+
+
+def speaks(languages: list[str] | None, language: str | None) -> bool:
+    """Can this teller hold the conversation?
+
+    An undeclared teller (None or empty) speaks everything. Every teller
+    starts undeclared, so the opposite reading would empty every queue on the
+    day this ships. Declaring narrows what reaches you first; it never takes
+    work away from a bank that has not filled the field in.
+
+    A session with no detected language yet matches anybody — there is nothing
+    to route on, and holding it back would be worse than offering it.
+    """
+    if not languages:
+        return True
+    if not language:
+        return True
+    return language in languages
+
+
+def queue_order(
+    sessions: list[tuple[str | None, int]], languages: list[str] | None
+) -> list[int]:
+    """Indexes of `(language, waited_seconds)` in the order to offer them.
+
+    Returns indexes rather than reordering, so the caller keeps whatever row
+    objects it has and this stays free of the database.
+
+    Two tiers. Past PATIENCE, language stops mattering ENTIRELY and the
+    longest wait wins; below it a match comes first, with the longest wait
+    breaking ties inside each group so the queue stays oldest-first there.
+
+    Language is deliberately absent from the starving tier's key. Leaving it
+    in re-sorted the starving customers by language as well, so an Oromo
+    speaker who had waited past patience still lost to an Amharic one who had
+    waited less — precisely the starvation this tier exists to end. Caught by
+    a test rather than by reading it back.
+    """
+    def key(i: int) -> tuple[int, int, int]:
+        language, waited = sessions[i]
+        if waited >= PATIENCE:
+            return (0, 0, -waited)
+        return (1, 0 if speaks(languages, language) else 1, -waited)
+
+    return sorted(range(len(sessions)), key=key)

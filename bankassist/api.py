@@ -2475,6 +2475,49 @@ def abandon_teller_session(
     return {"state": session.state}
 
 
+class TellerLanguagesIn(BaseModel):
+    languages: list[str] = Field(default_factory=list)
+
+
+@app.put("/admin/api/{slug}/teller/languages")
+def set_teller_languages(
+    payload: TellerLanguagesIn,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Which languages this teller can hold a conversation in. Their own.
+
+    `teller.serve` and self-only — not `users.manage`. Whether you can talk to
+    a customer in Afaan Oromoo is a fact about you, and the person who knows
+    it is you. Routing a customer to a teller because a manager once ticked a
+    box produces a call where neither party can proceed.
+
+    An empty list clears it, which reads as "not declared" and routes
+    everything to them — the same as a teller who never filled it in.
+    """
+    if principal.user is None:
+        raise HTTPException(
+            status_code=403, detail="Sign in as a person to set your languages"
+        )
+    unknown = [c for c in payload.languages if c not in SUPPORTED_LANGUAGES]
+    if unknown:
+        # Refused rather than quietly dropped. An ignored code would leave a
+        # teller believing they are routed work they will never be offered.
+        raise HTTPException(
+            status_code=422, detail=f"Unsupported language: {', '.join(unknown)}"
+        )
+    # De-duplicated and in a stable order, so two tellers who picked the same
+    # set store the same value.
+    chosen = [c for c in SUPPORTED_LANGUAGES if c in set(payload.languages)]
+    principal.user.teller_languages = chosen or None
+    _audit(
+        db, principal.bank, "teller_languages_updated", "user", principal.user.id,
+        {"languages": chosen}, actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"languages": chosen}
+
+
 class TellerSettingsIn(BaseModel):
     enabled: bool
 
@@ -2495,6 +2538,15 @@ def get_teller_settings(
         "enabled": bank.teller_enabled,
         "available": _teller_available(db, bank),
         "presence_window_seconds": int(TELLER_PRESENCE_WINDOW.total_seconds()),
+        # This teller's own declared languages, so the page can show them
+        # without a second request. Null for the break-glass token, which is
+        # nobody in particular.
+        "languages": (
+            principal.user.teller_languages if principal.user is not None else None
+        ),
+        "all_languages": [
+            {"code": c, "name": LANGUAGE_NAMES[c]} for c in SUPPORTED_LANGUAGES
+        ],
     }
 
 
@@ -2558,7 +2610,26 @@ def teller_queue(
         )
         .order_by(TellerSession.requested_at)
     ).scalars().all()
-    return [_session_admin(db, s) for s in rows]
+    out = [_session_admin(db, s) for s in rows]
+
+    # Language routing, computed per teller rather than stored on the queue:
+    # the same queue is a different order for an Amharic speaker than for an
+    # Afaan Oromoo one, so there is no single correct order to persist.
+    #
+    # Only the waiting ones are reordered. An active session belongs to
+    # whoever is already on it, and shuffling somebody else's live call around
+    # the list is noise.
+    mine = principal.user.teller_languages if principal.user is not None else None
+    for row in out:
+        row["speaks"] = teller.speaks(mine, row["language"])
+    waiting = [i for i, r in enumerate(out) if r["state"] == teller.QUEUED]
+    order = teller.queue_order(
+        [(out[i]["language"], out[i]["waited_seconds"]) for i in waiting], mine
+    )
+    return (
+        [out[waiting[j]] for j in order]
+        + [r for r in out if r["state"] != teller.QUEUED]
+    )
 
 
 @app.post("/admin/api/{slug}/teller/sessions/{session_id}/claim")

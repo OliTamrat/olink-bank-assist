@@ -2881,7 +2881,28 @@ function renderTellerQueue(rows) {
         ? '<button class="btn sm" id="teller-toggle">' +
           (on ? "Switch off" : "Switch on") + "</button>"
         : "") +
-      "</div></div></div>";
+      "</div></div>";
+
+    // Which languages this teller speaks. Their own to set — whether you can
+    // hold a conversation in Afaan Oromoo is a fact about you, and routing a
+    // customer to somebody because a manager ticked a box produces a call
+    // where neither party can proceed.
+    if (canServe && tellerSettings.all_languages) {
+      var mine = tellerSettings.languages || [];
+      h += '<div class="meta" style="margin-top:14px">I can hold a conversation in:</div>' +
+        '<div class="tools" style="margin-top:8px" id="lang-pills">' +
+        tellerSettings.all_languages.map(function (l) {
+          var picked = mine.indexOf(l.code) !== -1;
+          return '<button class="btn sm' + (picked ? "" : " ghost") +
+            '" data-lang="' + esc(l.code) + '">' + esc(l.name) + "</button>";
+        }).join("") + "</div>" +
+        '<div class="note">' + (mine.length
+          ? "Customers writing in these reach you first. Everyone else still " +
+            "reaches you — after a short wait, so nobody is stranded."
+          : "Nothing selected, so every waiting customer is offered to you in " +
+            "plain oldest-first order.") + "</div>";
+    }
+    h += "</div>";
   }
 
   h += '<div class="row row-half">' +
@@ -2891,6 +2912,12 @@ function renderTellerQueue(rows) {
           return '<div class="chan q">' +
             '<span class="dot" style="background:var(--warn)"></span>' +
             '<span class="cname">' + esc(LANG_NAME[r.language] || "Waiting") +
+            // Only flagged when it does NOT match, and only once the teller
+            // has declared something. A green tick on every matching row is
+            // noise; the row worth a second look is the one you may not be
+            // able to talk to.
+            (r.speaks === false
+              ? ' <span class="pill">not your language</span>' : "") +
             '<div class="meta">' + esc(r.media === "video" ? "Video" : "Audio") +
             " · " + esc(r.scope === "verified" ? "Identified" : "Not yet identified") +
             "</div></span>" +
@@ -2902,7 +2929,15 @@ function renderTellerQueue(rows) {
         }).join("") + "</div>"
       : '<div class="empty">Nobody is waiting.</div>') +
     (waiting.length
-      ? '<div class="note">Oldest first. The longest wait is the one to take.</div>'
+      // The note has to match what the list is actually doing. With languages
+      // declared it is no longer plain oldest-first, and leaving that claim up
+      // would have a teller reading the order as a bug.
+      ? '<div class="note">' + (
+          (tellerSettings && (tellerSettings.languages || []).length)
+            ? "Your languages first, longest wait within each. Anyone waiting " +
+              "too long moves to the top whatever they speak."
+            : "Oldest first. The longest wait is the one to take."
+        ) + "</div>"
       : "") +
     "</div>" +
     '<div class="panel"><h3>In progress</h3>' +
@@ -2952,6 +2987,26 @@ function renderTellerQueue(rows) {
         .catch(function (e) { toggle.disabled = false; setStatus(e.message); });
     };
   }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-lang]"), function (b) {
+    b.onclick = function () {
+      var code = b.getAttribute("data-lang");
+      var mine = (tellerSettings.languages || []).slice();
+      var at = mine.indexOf(code);
+      if (at === -1) { mine.push(code); } else { mine.splice(at, 1); }
+      b.disabled = true;
+      api("/teller/languages", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ languages: mine })
+      }).then(function (res) {
+        tellerSettings.languages = res.languages;
+        setStatus("Languages updated");
+        // Redraw from the server's answer, not the optimistic local copy —
+        // it normalises order and drops duplicates, and a list that disagrees
+        // with what routing uses is worse than no list.
+        loadTellerQueue();
+      }).catch(function (e) { b.disabled = false; setStatus(e.message); });
+    };
+  });
   Array.prototype.forEach.call(document.querySelectorAll("[data-claim]"), function (b) {
     b.onclick = function () {
       b.disabled = true;   // a double-tap would 409, and the second looks broken

@@ -346,6 +346,15 @@ class User(Base):
     teller_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Which languages this person can actually hold a conversation in, as a
+    # list of codes from i18n.SUPPORTED_LANGUAGES.
+    #
+    # EMPTY MEANS "NOT DECLARED", AND IS TREATED AS "CAN TAKE ANYTHING" — not
+    # as "speaks nothing". Every teller starts empty, so failing closed would
+    # empty every queue on the day this ships and make the feature look like
+    # an outage. Declaring languages narrows what is routed to you first; it
+    # never takes work away from a bank that has not filled it in.
+    teller_languages: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     @property
