@@ -83,7 +83,24 @@ def detect_language(text: str) -> str | None:
 # ---------------------------------------------------------------- intent
 
 GREETING = "greeting"
+# Asking for a VALUE only core banking holds — a balance, a transaction, an
+# account number, whether a payment landed. We do not have it and will not
+# guess it. Refused, and offered a verified teller who does have it.
 ACCOUNT_SPECIFIC = "account_specific"
+# Asking HOW to do something that happens to involve their account — block a
+# lost card, reset a PIN, close an account, see a statement. The answer is on
+# every bank's public website and is exactly what this assistant is for.
+#
+# The split exists because the rule underneath used to key on whether a
+# message MENTIONED an account, which is not the question. "What is my
+# balance" and "how do I check my balance" both say "my balance"; we cannot
+# tell them the number and we absolutely can tell them how to see it.
+# Measured on twenty ordinary procedural questions, nine were refused —
+# including "my card is lost, what should I do", whose answer was sitting in
+# the knowledge base the whole time. A customer whose card has just been
+# stolen was getting a lecture about data privacy instead of the number to
+# call.
+ACCOUNT_PROCEDURE = "account_procedure"
 INVESTMENT_ADVICE = "investment_advice"
 COMPLAINT = "complaint"
 COMPARISON = "comparison"  # "is X better than us?" — answer confidently, never via retrieval
@@ -294,6 +311,140 @@ _FORGOT = re.compile(r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|�
 _CONDITIONAL = re.compile(r"\byoon?\b", re.IGNORECASE)
 
 
+# ------------------------------------------------- value or procedure?
+#
+# Everything below decides which side of the account line a message falls on.
+# Read the three rules together: procedural markers say "this is a how-to",
+# and the other two are vetoes, because a false PROCEDURE is a security
+# failure while a false VALUE is only an unnecessary refusal that still
+# offers a teller. When they disagree, the refusal wins.
+
+# "How do I…". The marker has to be an actual request for a method, not the
+# word "how" anywhere in the sentence — "how much is my balance" is a value
+# request wearing a how.
+_PROCEDURAL_RE = re.compile(
+    r"\bhow (do|can|could|would|should|to) \w*\s*(i|we|you)?\b|"
+    r"\bhow (do|does) (it|this|that) work\b|"
+    r"\bwhat (should|do|can|must) i do\b|"
+    r"\bwhat happens (if|when)\b|"
+    r"\bwhat (is|are) the (steps|process|procedure|requirements?)\b|"
+    r"\bwhere (do|can) i\b|\bwhen (do|can|should) i\b|"
+    r"\b(steps|process|procedure) (to|for)\b|"
+    r"\bis it possible to\b|\bam i able to\b|"
+    # A bare "can I …" is a how-to in practice: "can I close my account",
+    # "can I change my account type". It is not a request to be told a value.
+    r"\bcan i \w+\b|"
+    # …and the plainest phrasings of an emergency, which almost never arrive
+    # with a question word at all: "my card is lost", "someone stole my card",
+    # "my card was swallowed by the ATM".
+    r"\bmy (card|atm card|debit card) (is|was|got|has been)\b|"
+    r"\b(lost|stolen|blocked|swallowed|retained|expired|damaged|not working)\b|"
+    r"\bi (forgot|forget|can'?t remember|need to (change|reset|update|block))\b|"
+    # Amharic "how" (እንዴት) and "what should I do" (ምን ማድረግ አለብኝ).
+    r"እንዴት|ምን ማድረግ|ምን ላድርግ|ብረሳ|ከጠፋ|ቢጠፋ|"
+    # Afaan Oromoo. akkamitti/attamitti/akkamiin are unambiguous; the bare
+    # "akkam" is a greeting and is deliberately NOT here.
+    r"akkamitti|attamitti|akkamiin|maal gochuu|maal godha|yoo .*(bade|banne)|"
+    # Tigrinya "how" (ብኸመይ) and Somali "how" (sidee).
+    r"ብኸመይ|ከመይ ጌረ|\bsidee\b|\bmaxaan sameeyaa\b",
+    re.IGNORECASE,
+)
+
+# A request to be told a NUMBER, however politely it is phrased. This vetoes
+# the procedural marker, because "how much is my balance" and "show me my last
+# five transactions" are core-banking reads with a how-to shape.
+#
+# "how much" alone is deliberately NOT enough. "How much is the fee on my
+# account?" is a tariff question the bank publishes and must keep answering,
+# so the pattern requires "how much" to be pointed at the customer's own
+# money — "how much is in my", "how much do I owe" — rather than at a price.
+_VALUE_ASK_RE = re.compile(
+    r"\bhow much (is|are) (in )?(my|the money in my)\b|"
+    r"\bhow much (do|does) i(t)? (owe|have|remain)|"
+    r"\bhow much do i (owe|have)\b|"
+    r"\bhow much money (do i have|is (in|left))\b|"
+    r"\bhow many birr (do i|is|are)\b|"
+    r"\bwhat('| i)?s my (balance|account number)\b|"
+    r"\bwhat is my (balance|account number)\b|"
+    r"\b(show|list|display|read out|read me|pull up|look up|tell me|send me) "
+    r"(me )?(my|her|his|their)\b|"
+    # Somebody else's, asked as an ordinary question. "Can I get my brother's
+    # statement" carries no give-me verb, so the disclosure rule below never
+    # saw it — and the answer is no regardless of how politely it is asked.
+    r"\b(get|see|view|access|obtain|find out|know|check) "
+    r"((my|the) )?(\w+'s|her|his|their|someone else'?s) "
+    rf"(\w+ ){{0,2}}{_ACCOUNT_NOUN}|"
+    # The same request with the possessive after the noun — "the balance of my
+    # wife", "the account of my brother". English lets you say it either way
+    # and every rule we had only understood one of them, so this phrasing
+    # reached retrieval as an ordinary question.
+    # "of", never "for". "Open an account FOR my wife" and "a savings account
+    # for my daughter" are people buying a product for a relative — the most
+    # ordinary traffic a bank has — and an earlier draft of this line refused
+    # both of them.
+    rf"\b{_ACCOUNT_NOUN}s? (of|belonging to) (my |the )?"
+    r"(wife|husband|spouse|brother|sister|mother|father|son|daughter|friend|"
+    r"colleague|neighbou?r|client|her|him|them|someone|somebody)\b|"
+    # "Did my salary arrive?" — a core-banking read that names no account word
+    # at all, which is why it escaped every rule we had.
+    r"\b(did|has|have|when did|when will|why (was|were|did))\b[^.?!]{0,40}"
+    r"\b(salary|payment|transfer|deposit|pension|remittance|money)\b",
+    re.IGNORECASE,
+)
+
+# Somebody else's account. A procedural shape must never unlock this: "how do
+# I check my wife's balance" is the same request as "tell me my wife's
+# balance" with a politer opening.
+_THIRD_PARTY_EN = re.compile(
+    r"\b(her|his|their|someone|somebody|another person)\b|"
+    r"\b(wife|husband|spouse|brother|sister|mother|father|son|daughter|"
+    r"friend|colleague|neighbou?r|client)('s)?\b|"
+    r"\belse'?s\b",
+    re.IGNORECASE,
+)
+
+# Facts the bank PUBLISHES, which mention an account only because that is what
+# they are about. A daily withdrawal limit, the fee on a transfer, the minimum
+# balance, what documents you need — every one of these is on the bank's own
+# website, and none of them requires looking anybody up.
+#
+# Without this, "how much is the fee on my account?" was refused for saying
+# "my account", which is the tariff question a bank most wants answered.
+_PUBLISHED_FACT_RE = re.compile(
+    r"\b(fee|fees|charge|charges|cost|costs|price|tariff|commission|"
+    r"rate|rates|interest|limit|limits|minimum|maximum|"
+    r"requirements?|documents?|eligibility|criteria|penalty|"
+    r"how long|working hours|opening hours)\b|"
+    r"ክፍያ|ወለድ|ገደብ|ዝቅተኛ|መስፈርት|"
+    r"\bkaffaltii\b|\bdhala\b|\bdaangaa\b",
+    re.IGNORECASE,
+)
+
+
+def answerable_without_core_banking(text: str) -> bool:
+    """For a message that looks account-related: can we answer it from what
+    the bank publishes, or does it need a value only core banking holds?
+
+    Only ever consulted inside the account branch, so its blast radius is that
+    branch alone — an ordinary product question never reaches it.
+
+    **The order is the safety property.** The two vetoes run FIRST and are
+    absolute; the positive signals cannot override them. Being wrong towards
+    the refusal costs a customer one extra step to a verified teller. Being
+    wrong the other way is the assistant discussing an account it cannot see,
+    which is the whole thing this product promises not to do.
+    """
+    # Veto 1 — a request to be told a number, however it is dressed up.
+    if _VALUE_ASK_RE.search(text):
+        return False
+    # Veto 2 — somebody else's account. A polite opening is not authority:
+    # "how do I check my wife's balance" is "tell me my wife's balance".
+    if _THIRD_PARTY_EN.search(text) or asks_for_someone_elses_account(text):
+        return False
+    # Then, and only then: is this a how-to, or a published fact?
+    return bool(_PROCEDURAL_RE.search(text) or _PUBLISHED_FACT_RE.search(text))
+
+
 def asks_for_someone_elses_account(text: str) -> bool:
     """True when a message asks to be told someone's account data.
 
@@ -502,8 +653,21 @@ def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
 
     if _COMPLAINT_RE.search(text):
         return COMPLAINT
-    if _ACCOUNT_RE.search(text) or asks_for_someone_elses_account(text):
-        return ACCOUNT_SPECIFIC
+    if (
+        _ACCOUNT_RE.search(text)
+        or _VALUE_ASK_RE.search(text)
+        or asks_for_someone_elses_account(text)
+    ):
+        # Inside the account branch, and only here, decide which kind it is.
+        # `_VALUE_ASK_RE` joins the entry condition as well as the veto: it
+        # catches the reads that name no account word at all — "did my salary
+        # arrive", "show me my last five transactions" — which used to sail
+        # past every rule and reach retrieval as ordinary questions.
+        return (
+            ACCOUNT_PROCEDURE
+            if answerable_without_core_banking(text)
+            else ACCOUNT_SPECIFIC
+        )
     if _ADVICE_RE.search(text):
         return INVESTMENT_ADVICE
     if _comparison_re(bank_aliases).search(text):
@@ -524,7 +688,15 @@ def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
 # The auto-answer allowlist, same doctrine as Olink Dispatch: only intents
 # named here are answered autonomously; everything else routes to a human
 # path or a safety template.
-AUTO_ANSWER_INTENTS = frozenset({GREETING, QUESTION, INVESTMENT_ADVICE, COMPARISON})
+#
+# ACCOUNT_PROCEDURE belongs here and ACCOUNT_SPECIFIC never will. The line is
+# not "does this touch an account" — it is whether answering needs a value
+# only core banking holds. A procedure is published information like any
+# other, answered from the bank's own documents with sources attached; a
+# value is not ours to know.
+AUTO_ANSWER_INTENTS = frozenset({
+    GREETING, QUESTION, INVESTMENT_ADVICE, COMPARISON, ACCOUNT_PROCEDURE,
+})
 
 
 # --------------------------------------------------------------- name

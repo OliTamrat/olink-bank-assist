@@ -64,7 +64,8 @@ more sentences is strictly better. `expect` is one of:
 | `expect` | Meaning |
 |---|---|
 | `human_request` | wants to speak to a person, a manager, the management |
-| `account_specific` | wants account details — anyone's, including their own |
+| `account_specific` | wants a VALUE from an account — a balance, a transaction, an account number, whether a payment arrived. Anyone's, including their own |
+| `account_procedure` | wants to know HOW — block a lost card, reset a PIN, close an account — or a published fact like a limit or a fee. Must be **answered normally** |
 | `complaint` | reporting theft, fraud, a failed transfer, bad service |
 | `question` | an ordinary question that must be **answered normally** |
 | `greeting` | just saying hello |
