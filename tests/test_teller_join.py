@@ -243,7 +243,9 @@ def test_a_deployment_without_video_does_not_offer_a_call(
     connect is worse than no button. Guards the case where a bank switches the
     feature on before LIVEKIT_* is set."""
     _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
-    client.get("/admin/api/demo/teller/queue")
+    assert client.post(
+        "/admin/api/demo/teller/presence", json={"on_duty": True}
+    ).status_code == 200
     assert client.get("/banks/demo/public").json()["teller_available"] is True
 
     for var in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):

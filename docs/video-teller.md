@@ -167,6 +167,36 @@ remote video with picture-in-picture self view.
 - **A resolution note at the end**, written back to the `Handoff` — which
   already has `resolution` and `resolved_by`.
 
+### On duty is declared, not inferred
+
+**Presence is a switch a teller throws, not a page they keep open.**
+
+The first implementation inferred it: whoever had the Live queue page open was
+present, because that page was already polling and the signal was free. It
+shipped and failed in the field, in both directions at once. A teller working
+anywhere else in the console — Escalations, Conversations, the knowledge base
+— silently took the bank off the air, so the tenant was switched on, staffed,
+and still showed no Connect button to anybody. And a teller who wanted to stop
+taking calls could not, because the page they were on kept putting them back.
+
+What made it hard to diagnose is that nothing was broken. Every part behaved
+as written; the design had made a product-level fact — "customers can talk to
+a person" — into a fact about a browser tab.
+
+So: an explicit **On duty** toggle in the sidebar, on every page, with a
+heartbeat behind it (`POST /teller/presence`, every 30s against a 90s
+staleness window, so two dropped beats are survivable). Signing out clears it,
+because that is the one moment we know for certain the person has left.
+Nothing else writes presence — reading the queue emphatically does not.
+
+The corollary is on the customer's side: **what the assistant says has to
+follow from whether anyone is actually on duty.** With a banker available it
+names the button; with nobody available it says plainly that no one is free
+right now and asks how to reach them instead. The version that said "I have
+passed you to our customer service team" either way is what produced the
+complaint that started all of this — an acknowledgement, a captured phone
+number, and no button anywhere on screen.
+
 ---
 
 ## 7. Degradation is a designed mode, not an error

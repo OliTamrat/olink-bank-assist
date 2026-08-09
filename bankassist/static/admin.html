@@ -199,6 +199,30 @@ textarea { min-height: 170px; resize: vertical; }
 .railtoggle:hover { background: var(--side-2); color: #fff; }
 [data-rail="mini"] .railtoggle { justify-content: center; padding: 10px 0; }
 [data-rail="mini"] .railtoggle .label { display: none; }
+
+/* On duty / off duty. Sits in the sidebar, on every page, because that is
+   what it now means — presence follows the person around the console instead
+   of living on one screen they have to keep open. */
+.dutytoggle {
+  background: var(--side-2); border: 1px solid transparent; color: var(--side-text);
+  cursor: pointer; padding: 9px 11px; border-radius: 10px; width: 100%;
+  display: flex; align-items: center; gap: 10px; font-size: 13.5px;
+  margin-bottom: 8px; text-align: left;
+}
+.dutytoggle:hover { border-color: rgba(255, 255, 255, 0.18); color: #fff; }
+.dutytoggle .lamp {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: var(--faint); box-shadow: none;
+}
+/* Lit, and visibly so. This is the one indicator that says a customer can
+   reach you; a grey-on-grey dot for "off" and a slightly different grey for
+   "on" would be a state nobody reads at a glance. */
+.dutytoggle[aria-pressed="true"] { color: #fff; }
+.dutytoggle[aria-pressed="true"] .lamp {
+  background: var(--ok); box-shadow: 0 0 0 3px rgba(34, 168, 105, 0.22);
+}
+[data-rail="mini"] .dutytoggle { justify-content: center; padding: 10px 0; }
+[data-rail="mini"] .dutytoggle .label { display: none; }
 .side {
   background: var(--side); color: var(--side-text);
   display: flex; flex-direction: column; padding: 16px 12px;
@@ -971,6 +995,13 @@ td.title { color: var(--ink); font-weight: 550; }
     </div>
     <nav id="nav"></nav>
     <div class="side-foot">
+      <!-- Only shown to someone who can actually take a call. Hidden entirely
+           for everybody else rather than disabled: a control you may never use
+           is clutter in the one part of the screen that is on every page. -->
+      <button class="dutytoggle" id="duty" hidden aria-pressed="false">
+        <span class="lamp" id="duty-lamp"></span>
+        <span class="label" id="duty-text">On duty</span>
+      </button>
       <button class="railtoggle" id="rail-toggle" title="Collapse or expand the sidebar">
         <span id="rail-glyph">‹‹</span><span class="label">Collapse</span>
       </button>
@@ -1249,6 +1280,10 @@ function signInWithToken() {
 }
 
 function signedOut(msg) {
+  // Before anything else: stop beating. A heartbeat that outlives the session
+  // would keep 401ing every thirty seconds forever, and on the expired-session
+  // path it would re-enter signedOut() from a timer nobody can see.
+  stopDuty();
   state.token = ""; state.me = null; state.page = null;
   $("shell").classList.add("hidden");
   $("gate").classList.remove("hidden");
@@ -1290,6 +1325,104 @@ function enterApp() {
   go(landing);
   refreshBadge();
   loadChannelNav();
+  startDuty();
+}
+
+/* ------------------------------------------------------------------ on duty
+ *
+ * Whether a customer is offered a live banker used to depend on a teller
+ * keeping the Live queue page open, because the heartbeat lived inside that
+ * page's poll. Opening Reports took the bank off the air, and nothing said so.
+ * That is a product-level switch hidden inside a browser tab.
+ *
+ * Presence is now a declaration with a heartbeat behind it, running from the
+ * shell on every page. Two states, both explicit:
+ *
+ *   ON  — heartbeat every HEARTBEAT_MS; customers see the Connect button.
+ *   OFF — cleared server-side immediately; the button goes away.
+ *
+ * The choice is remembered per browser so a reload does not silently put
+ * somebody back on the air, and it is confirmed against the server on sign-in
+ * so a second device shows the truth rather than its own default.
+ */
+var DUTY_KEY = "ba_on_duty";
+var HEARTBEAT_MS = 30000;   // corrected from the server's own heartbeat_seconds
+var dutyTimer = null;
+var dutyOn = false;
+
+function dutyStored() {
+  // Default ON for anyone who can serve. Signing in to the console IS turning
+  // up for work, and the alternative default has a failure mode we have
+  // already lived through: everybody appears offline, no button appears
+  // anywhere, and nothing on screen explains why. Off is one click away and
+  // is remembered.
+  try {
+    return localStorage.getItem(DUTY_KEY) !== "0";
+  } catch (e) {
+    return true;   // private mode, or storage denied. Being on is the useful one.
+  }
+}
+
+function beat() {
+  // Fire-and-forget. A dropped beat costs at most a slice of the staleness
+  // window, and surfacing a red banner for one failed background request
+  // would train people to ignore banners.
+  api("/teller/presence", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ on_duty: dutyOn })
+  })
+    .then(function (r) {
+      if (r && r.heartbeat_seconds) {
+        // The server owns the interval; it is the half that has to match the
+        // staleness window. If they ever disagree, the server wins.
+        var ms = r.heartbeat_seconds * 1000;
+        if (ms !== HEARTBEAT_MS) { HEARTBEAT_MS = ms; scheduleBeat(); }
+      }
+    })
+    .catch(function () {});
+}
+
+function scheduleBeat() {
+  if (dutyTimer) { clearInterval(dutyTimer); dutyTimer = null; }
+  if (dutyOn) dutyTimer = setInterval(beat, HEARTBEAT_MS);
+}
+
+function paintDuty() {
+  var b = $("duty");
+  b.setAttribute("aria-pressed", dutyOn ? "true" : "false");
+  $("duty-text").textContent = dutyOn ? "On duty" : "Off duty";
+  b.title = dutyOn
+    ? "Customers can ask to speak to you. Click to stop taking calls."
+    : "Customers are not offered a live session with you. Click to start taking calls.";
+}
+
+function setDuty(on) {
+  dutyOn = on;
+  try { localStorage.setItem(DUTY_KEY, on ? "1" : "0"); } catch (e) {}
+  paintDuty();
+  beat();          // immediately, in both directions — going off duty must
+  scheduleBeat();  // take effect now, not at the next tick.
+  // The Live queue strip states whether customers can reach anyone, which has
+  // just changed. Repaint it rather than leave a stale sentence up.
+  if (state.page === "teller") loadTellerQueue();
+}
+
+function startDuty() {
+  if (!can("teller.serve")) return;   // stays hidden for everyone else
+  var b = $("duty");
+  b.hidden = false;
+  b.onclick = function () { setDuty(!dutyOn); };
+  dutyOn = dutyStored();
+  paintDuty();
+  beat();
+  scheduleBeat();
+}
+
+function stopDuty() {
+  if (dutyTimer) { clearInterval(dutyTimer); dutyTimer = null; }
+  dutyOn = false;
+  $("duty").hidden = true;
 }
 
 /* Where this person starts.
@@ -2808,16 +2941,26 @@ function loadTellerQueue() {
   renderTellerQueue(null);
   var ticks = 0;
 
-  // AFTER the queue call, never beside it. Reading availability in parallel
-  // with the first poll asks "is anyone watching?" before this teller's own
-  // poll has recorded that they are — so the page greeted them with "nobody
-  // is watching the queue" while they sat looking at it, and stayed wrong
-  // until they navigated away and back.
+  // Read alongside the queue now that presence no longer depends on this
+  // page. It used to have to come after the first queue poll, because that
+  // poll was what recorded the teller as present — asking "is anyone
+  // watching?" first greeted them with "nobody is watching" while they sat
+  // looking at it. The shell's heartbeat has already fired by the time any
+  // page renders, so the ordering constraint is gone.
+  var lastRows = null;
   var settings = function () {
     // The queue still renders if this fails. A settings read going down must
     // not take the page away from a teller with customers waiting on it.
     api("/teller/settings")
-      .then(function (s) { tellerSettings = s; })
+      .then(function (s) {
+        tellerSettings = s;
+        // Repaint on arrival rather than waiting for the next 4s poll. The
+        // Live sessions strip and the language pills are both driven by this
+        // response, so without it the page's whole top half is missing for
+        // the first few seconds of every visit — long enough to read as
+        // "this bank has no live sessions".
+        if (state.page === "teller" && lastRows !== null) renderTellerQueue(lastRows);
+      })
       .catch(function () {});
   };
 
@@ -2825,6 +2968,7 @@ function loadTellerQueue() {
     api("/teller/queue").then(function (rows) {
       if (ticks % TELLER_SETTINGS_EVERY === 0) settings();
       ticks += 1;
+      lastRows = rows;
       renderTellerQueue(rows);
     }).catch(function (e) {
       stopTellerPolling();
@@ -2846,36 +2990,41 @@ function renderTellerQueue(rows) {
   var waiting = rows.filter(function (r) { return r.state === "queued"; });
   var live = rows.filter(function (r) { return r.state === "active"; });
 
-  // On duty, and what that means. The non-obvious fact about this page is
-  // that WATCHING IT is what puts the "Speak to a teller" button in front of
-  // customers — close the tab and the offer disappears within ninety seconds.
-  // A teller who does not know that will close it at lunch and wonder why the
-  // afternoon was quiet, so it is said here rather than in an induction deck.
+  // Whether customers can reach a person, and — when they cannot — the one
+  // fact that fixes it. Three distinct causes, and lumping them into "not
+  // available" is what left a bank switched on, staffed, and silent with
+  // nothing on screen naming which of the three was wrong.
   var h = "";
   if (tellerSettings) {
     var on = tellerSettings.enabled;
     var live_ = tellerSettings.available;
-    var mins = Math.round((tellerSettings.presence_window_seconds || 90) / 30) / 2;
+    var iAmOn = tellerSettings.on_duty;
     // `chanlist rich` rather than a bare row: this line carries a sentence of
-    // explanation, and the plain row ellipsises it — the truncated half was
-    // the half that says closing the tab takes the button away.
+    // explanation, and the plain row ellipsises it — the truncated half is
+    // the half that says what to do about it.
     h += '<div class="panel"><h3>Live sessions</h3>' +
       '<div class="chanlist rich"><div class="chan q">' +
       '<span class="dot" style="background:var(' +
         (live_ ? "--ok" : on ? "--warn" : "--faint") + ')"></span>' +
       '<span class="cname">' +
         (!on ? "Switched off for this bank"
-             : live_ ? "Customers can reach a teller now"
-                     : "Switched on — but nobody is watching the queue") +
+             : live_ ? (canServe && !iAmOn
+                          ? "Customers can reach a colleague — you are off duty"
+                          : "Customers can reach a teller now")
+                     : "Switched on — but nobody is on duty") +
       '<div class="meta">' +
         (!on
           ? "No “Speak to a teller” button appears in your widget."
           : canServe
-            ? "This page is what keeps you visible. Leave it open while you are on " +
-              "duty — the offer disappears from your widget about " + mins +
-              " minute" + (mins === 1 ? "" : "s") + " after the last teller closes it."
-            : "A colleague with permission to take calls has to have this page " +
-              "open before customers are offered one.") +
+            ? (iAmOn
+                ? "You are on duty, so waiting customers can be routed to you. " +
+                  "Go off duty from the sidebar when you step away — you stay " +
+                  "on the air anywhere in the console until you do."
+                : "Switch On duty in the sidebar to start taking calls. It " +
+                  "follows you across every page, so you no longer have to " +
+                  "keep this one open.")
+            : "A colleague with permission to take calls has to be on duty " +
+              "before customers are offered one.") +
       "</div></span>" +
       (can("integrations.manage")
         ? '<button class="btn sm" id="teller-toggle">' +

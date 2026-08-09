@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import classifier
+from . import classifier, presence
 from .i18n import t
 from .llm import (
     LLMDeclined,
@@ -252,6 +252,39 @@ def _request_contact(
     return f"{reply}\n\n{t(language, 'ask_contact')}"
 
 
+def _volunteered_contact(
+    db: Session, bank: Bank, conversation: Conversation
+) -> bool:
+    """Should we read this message for contact details we did not just ask for?
+
+    Only while someone is waiting on an open handoff and we still have no way
+    to reach them. Both halves matter.
+
+    The gap this closes: contact capture ran ONLY while `awaiting_contact` was
+    true, so a customer who declined twice, thought better of it and typed
+    their number a few turns later was answered as if they had asked a
+    question about the number. Nothing was stored, and the operator working
+    the escalation still had no way to call them — the one thing the customer
+    had just tried to fix.
+
+    It is a narrow window on purpose. With no open handoff there is nobody to
+    hand a number to, and with a number already on file a second one is more
+    likely a branch's phone number quoted back at us than a correction. The
+    validator underneath is narrow too: Ethiopian mobile shapes or an explicit
+    country code, so an account or reference number cannot be mistaken for a
+    way to reach somebody.
+    """
+    if conversation.contact_phone:
+        return False
+    return db.execute(
+        select(Handoff.id).where(
+            Handoff.bank_id == bank.id,
+            Handoff.conversation_id == conversation.id,
+            Handoff.status == "open",
+        ).limit(1)
+    ).first() is not None
+
+
 def _capture_contact(
     db: Session, bank: Bank, conversation: Conversation, text: str, language: str
 ) -> str | None:
@@ -354,7 +387,7 @@ def handle_message(
     # running it through retrieval would answer details we asked for with
     # "I don't have information about that".
     contact_ack: str | None = None
-    if conversation.awaiting_contact:
+    if conversation.awaiting_contact or _volunteered_contact(db, bank, conversation):
         contact_ack = _capture_contact(db, bank, conversation, text, language)
         name = conversation.customer_name
 
@@ -421,10 +454,21 @@ def handle_message(
         # can see the difference between people who are unhappy and people who
         # simply want a human.
         _create_handoff(db, bank, conversation, REASON_HUMAN_REQUESTED, text[:2000], handoffs)
-        ack = t(language, "human_request_ack")
+        # What the widget is ABOUT to do decides what we say. The widget shows
+        # the Connect card only when a teller is genuinely on duty, so reading
+        # the same fact here is what keeps the sentence and the screen telling
+        # one story. They used to disagree: the assistant said "I've passed you
+        # to a person" while no button appeared, and the customer sat waiting
+        # for a call that was never coming.
+        live = presence.teller_available(db, bank)
+        ack = t(language, "human_request_live" if live else "human_request_ack")
         if name:
             ack = f"{t(language, 'ack_named', name=name)} {ack}"
-        ack = _request_contact(db, bank, conversation, language, ack)
+        if not live:
+            # Contact details are asked for ONLY when the answer is a callback.
+            # With a banker one press away, harvesting a phone number is
+            # friction in front of the thing the customer actually asked for.
+            ack = _request_contact(db, bank, conversation, language, ack)
         result = ChatResult(
             ack,
             intent,
