@@ -92,26 +92,3 @@ def test_the_logo_layout_hook_targets_an_element_that_exists() -> None:
         assert f'{marker}[data-logo=' in src or f'.{marker}[data-logo=' in src, (
             f"{name}: the data-logo rule no longer hangs off {marker}"
         )
-
-
-def test_the_opening_screen_is_cleared_when_a_conversation_starts() -> None:
-    """The welcome block is built once and removed by `ask()`.
-
-    If a new entry point forgets to clear it — or the class is renamed on one
-    side only — nothing errors. The opening screen simply stays pinned above
-    the thread, so every reply appears underneath a greeting and three
-    still-tappable openers. It looks like a layout quirk rather than a bug,
-    which is exactly why it would survive review.
-    """
-    import re
-    from pathlib import Path
-
-    from bankassist import agent
-
-    src = (Path(agent.__file__).parent / "static" / "widget.html").read_text()
-    assert 'el("div", "welcome")' in src, "the opening screen is gone"
-
-    removals = re.findall(r'querySelectorAll\("([^"]*)"\)', src)
-    assert any("welcome" in sel for sel in removals), (
-        "nothing removes .welcome — the opening screen would stay above the thread"
-    )

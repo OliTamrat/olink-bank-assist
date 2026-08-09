@@ -145,22 +145,13 @@
     70%  { box-shadow: 0 0 0 6px rgba(74,222,128,0); }
     100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
   }
-  /* Compact on purpose. Auto-detection is the default and the right answer
-     almost always, so this is an override that should be findable rather than
-     prominent — at 118px of native select it was the loudest thing in the
-     header, competing with the bank's own name. */
   select#lang {
-    border: 1px solid color-mix(in srgb, var(--on-brand) 26%, transparent);
+    border: 1px solid color-mix(in srgb, var(--on-brand) 30%, transparent);
     border-radius: 9px; flex: none;
-    max-width: 96px; padding: 6px 7px; font-size: 11.5px; font-family: inherit;
-    background: color-mix(in srgb, var(--on-brand) 12%, transparent);
+    max-width: 118px; padding: 7px 8px; font-size: 12px; font-family: inherit;
+    background: color-mix(in srgb, var(--on-brand) 14%, transparent);
     color: var(--on-brand);
     cursor: pointer; outline-color: var(--on-brand);
-    transition: background .15s, border-color .15s;
-  }
-  select#lang:hover {
-    background: color-mix(in srgb, var(--on-brand) 20%, transparent);
-    border-color: color-mix(in srgb, var(--on-brand) 40%, transparent);
   }
   /* Native dropdown lists render on the OS surface, not the brand field. */
   select#lang option { background: var(--surface); color: var(--text); }
@@ -182,83 +173,7 @@
     flex: 1; overflow-y: auto; padding: 22px 18px 8px;
     display: flex; flex-direction: column; gap: 4px;
     scroll-behavior: smooth;
-    /* The default bar is a wide grey slab against a tinted panel and is the
-       one piece of chrome a bank cannot brand. Firefox honours these two;
-       WebKit takes the ::-webkit- rules below. */
-    scrollbar-width: thin;
-    scrollbar-color: var(--line) transparent;
   }
-  #chat::-webkit-scrollbar { width: 7px; }
-  #chat::-webkit-scrollbar-track { background: transparent; }
-  #chat::-webkit-scrollbar-thumb {
-    background: var(--line); border-radius: 99px;
-  }
-  #chat::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
-
-  /* ------------------------------------------------- opening screen */
-  /* The greeting used to be an ordinary bot bubble with three pills under it,
-     which left roughly two thirds of the panel as empty grey — the first thing
-     a customer, or a bank evaluating this, ever saw. It is the one screen
-     guaranteed to be looked at, so it gets composed rather than inherited:
-     the bank's mark, a greeting, and the openings as full-width rows.
-     It is removed the moment a real conversation starts. */
-  .welcome {
-    flex: 1; display: flex; flex-direction: column; justify-content: center;
-    align-items: center; text-align: center; padding: 8px 2px 20px; gap: 3px;
-    animation: rise .4s cubic-bezier(.2,.7,.3,1) both;
-  }
-  .welcome .wmark {
-    width: 54px; height: 54px; border-radius: 17px; margin-bottom: 15px;
-    display: grid; place-items: center; overflow: hidden;
-    background: var(--brand); color: #fff;
-    font-weight: 700; font-size: 19px; letter-spacing: -.02em;
-    box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--brand) 70%, transparent);
-  }
-  /* Same reasoning as the header tile: a bank sends either a compact mark or
-     a full lockup under one field, and a lockup squeezed into a square gets
-     letterboxed. Width follows the artwork; the white ground is inset so the
-     rounded corner composites once. */
-  .welcome .wmark.haslogo {
-    position: relative; width: auto; height: auto; max-width: 190px;
-    background: none; box-shadow: none; padding: 0; display: block;
-  }
-  .welcome .wmark.haslogo::before {
-    content: ""; position: absolute; inset: 1px; background: #fff; border-radius: 13px;
-  }
-  .welcome .wmark.haslogo img {
-    position: relative; display: block; width: auto; height: auto;
-    max-width: 190px; max-height: 46px; border-radius: 14px;
-  }
-  .welcome h1 {
-    font-size: 19px; font-weight: 640; letter-spacing: -.02em; line-height: 1.3;
-  }
-  .welcome p {
-    font-size: 13px; line-height: 1.55; color: var(--text-2);
-    max-width: 30ch; margin-top: 7px;
-  }
-  .welcome .starts {
-    display: flex; flex-direction: column; gap: 7px;
-    width: 100%; margin-top: 22px;
-  }
-  /* Rows, not pills. Three pills of wildly different widths read as ragged
-     debris; equal-width rows read as a menu — and a menu is what this is. */
-  .start {
-    display: flex; align-items: center; gap: 10px; width: 100%;
-    font-family: inherit; font-size: 13.5px; font-weight: 500; text-align: left;
-    padding: 13px 14px; border-radius: 13px; cursor: pointer;
-    background: var(--surface); color: var(--text);
-    border: 1px solid var(--line); box-shadow: var(--shadow);
-    transition: border-color .16s, transform .16s, background .16s;
-    animation: rise .4s cubic-bezier(.2,.7,.3,1) both;
-  }
-  .start span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .start svg { width: 15px; height: 15px; flex: none; color: var(--text-3); transition: color .16s, transform .16s; }
-  .start:hover {
-    border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
-    background: color-mix(in srgb, var(--brand) 4%, var(--surface));
-    transform: translateY(-1px);
-  }
-  .start:hover svg { color: var(--accent); transform: translateX(2px); }
 
   .turn { display: flex; flex-direction: column; margin-bottom: 14px; }
   .turn.user { align-items: flex-end; }
@@ -269,39 +184,16 @@
     white-space: pre-wrap; word-break: break-word;
     animation: rise .28s cubic-bezier(.2,.7,.3,1) both;
   }
-  /* A real answer from a bank's knowledge base is several paragraphs — three
-     savings products with balances, rates and fees. Rendered as one pre-wrap
-     blob the blank lines became double-height gaps and the whole thing read as
-     a wall. Splitting into paragraphs makes the spacing a deliberate 11px
-     instead of whatever two line-heights happen to add up to. */
-  .bubble .para { margin: 0; }
-  .bubble .para + .para { margin-top: 11px; }
-  /* The bank's own content is written "Regular Savings Account: minimum
-     opening balance 50 birr…" — a label and a description. Weighting the label
-     is what lets someone comparing three products find the one they want
-     without reading all three. It changes no words. */
-  .bubble .para b { font-weight: 620; }
   @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
   .user .bubble {
-    /* A hair of gradient rather than a flat fill. On the deep, near-black
-       brands common here (CBE's maroon) a flat block reads as a hole in the
-       page; the lift gives it a surface. */
-    background: linear-gradient(
-      160deg, color-mix(in srgb, var(--brand) 88%, #fff) 0%, var(--brand) 62%);
-    color: #fff;
-    border-radius: 17px 17px 6px 17px;
-    box-shadow: 0 4px 14px -8px color-mix(in srgb, var(--brand) 80%, transparent);
+    background: var(--brand); color: #fff;
+    border-radius: 16px 16px 5px 16px;
   }
   .bot .bubble {
     background: var(--surface); color: var(--text);
     border: 1px solid var(--line);
-    border-radius: 17px 17px 17px 6px;
+    border-radius: 16px 16px 16px 5px;
     box-shadow: var(--shadow);
-    /* A bank's real answer runs to several paragraphs — three savings
-       products with balances and rates. At 1.55 it arrived as a wall. The
-       extra leading is what makes a long answer scannable, and long answers
-       are the ones that matter. */
-    line-height: 1.62;
   }
 
   /* Assistant row: small spark mark beside the reply so the AI turn reads
@@ -428,15 +320,10 @@
   button#send:disabled { opacity: .35; cursor: default; }
   button#send svg { width: 17px; height: 17px; }
 
-  /* One line, not three. The old wording ran to three dense grey lines under
-     every screen — as much vertical space as a message, for a standing
-     disclaimer nobody rereads. The substance is unchanged: answers are the
-     bank's own and cited, and this is not personal advice. */
   .notice {
-    text-align: center; font-size: 10.5px; line-height: 1.45;
-    color: var(--text-3); padding: 9px 16px 0;
+    text-align: center; font-size: 10.5px; line-height: 1.4;
+    color: var(--text-3); padding: 8px 16px 0;
   }
-  .notice b { font-weight: 600; color: var(--text-2); }
 
   /* ------------------------------------------------- talk to a teller */
   /* Offered in the thread, at the turn where a person would actually have
@@ -600,7 +487,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
     </button>
   </form>
-  <div class="notice"><b>Answers are cited from official information.</b> General guidance, not personal advice.</div>
+  <div class="notice">Answers are drawn from this bank's official information and cited. General education only — not personal investment advice.</div>
 </div>
 
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
@@ -747,45 +634,6 @@
     scroll();
   }
 
-  // A reply, broken on blank lines. Single newlines stay inside a paragraph —
-  // `white-space: pre-wrap` still renders them — so only real paragraph breaks
-  // become real gaps.
-  function split(text) {
-    var parts = String(text).split(/\n[ \t]*\n+/).filter(function (s) {
-      return s.trim().length;
-    });
-    return parts.length ? parts : [String(text)];
-  }
-
-  function newPara(host) {
-    var p = el("p", "para");
-    host.appendChild(p);
-    return p;
-  }
-
-  function paragraphs(host, text) {
-    host.textContent = "";
-    return split(text).map(function (chunk) {
-      var p = newPara(host);
-      p.textContent = text ? chunk : "";
-      return p;
-    });
-  }
-
-  // There is deliberately no "bold the label before the colon" pass here.
-  //
-  // It was built and removed. A colon-prefix rule reads "Regular Savings
-  // Account: minimum opening balance 50 birr" as a label — and reads "To open
-  // any savings account you need: a valid ID" as one too, which it is not.
-  // Tightening it to Title Case fixes the English case and then bolds Amharic
-  // sentence clauses instead, because Ethiopic has no capitals for the rule to
-  // fail on: the emphasis would be wrong only in Amharic, which is precisely
-  // where nobody testing in English would see it.
-  //
-  // Emphasis the bank did not write is the assistant putting words in its
-  // mouth, in a product sold on never doing that. The paragraph rhythm below
-  // carries the readability; the guessing is not worth the risk.
-
   // `done` fires when the text has finished revealing — not when the request
   // returned. Anything appended below the reply has to wait for that, or it
   // sits under a half-written sentence looking like it interrupted.
@@ -799,26 +647,15 @@
     turn.appendChild(row);
     chat.appendChild(turn);
 
-    if (!reveal) { paragraphs(b, text); scroll(); if (done) done(); return turn; }
+    if (!reveal) { b.textContent = text; scroll(); if (done) done(); return turn; }
 
     // Progressive reveal. The response arrives complete from a single POST —
     // this is a presentation choice, not true token streaming. It reads as
     // live generation, which is what a prospect expects from an AI product.
-    //
-    // Written into the last paragraph rather than one growing text node, so
-    // the structure is right while it is still arriving rather than snapping
-    // into shape at the end.
-    var nodes = paragraphs(b, "");
-    var chunks = split(text), pi = 0;
-    var words = chunks.length ? chunks[0].split(/(\s+)/) : [], i = 0;
+    var words = text.split(/(\s+)/), i = 0;
     (function step() {
-      if (i >= words.length) {
-        pi += 1;
-        if (pi >= chunks.length) { scroll(); if (done) done(); return; }
-        nodes.push(newPara(b));
-        words = chunks[pi].split(/(\s+)/); i = 0;
-      }
-      nodes[nodes.length - 1].textContent += words[i++];
+      if (i >= words.length) { scroll(); if (done) done(); return; }
+      b.textContent += words[i++];
       scroll();
       setTimeout(step, words[i - 1] && words[i - 1].trim() ? 16 : 8);
     })();
@@ -866,68 +703,6 @@
       tog.addEventListener("click", function () { cites.classList.toggle("open"); scroll(); });
     }
     scroll();
-  }
-
-  // The opening screen. Composed rather than assembled out of a bot bubble
-  // and three pills — see the note on `.welcome`. Everything in it is a real
-  // affordance: the mark is the bank's, the greeting names them, and each row
-  // asks a question the knowledge base can actually answer.
-  function addWelcome(cfg) {
-    var w = el("div", "welcome");
-
-    var mark = el("div", "wmark");
-    if (cfg.logo_url) {
-      var img = document.createElement("img");
-      img.alt = cfg.name;
-      // Same fallback as the header: a broken URL must leave initials, never
-      // an empty tile at 54px in the middle of the opening screen.
-      img.onerror = function () {
-        mark.classList.remove("haslogo");
-        mark.textContent = initials(cfg.name);
-      };
-      img.src = cfg.logo_url;
-      mark.classList.add("haslogo");
-      mark.appendChild(img);
-    } else {
-      mark.textContent = initials(cfg.name);
-    }
-    w.appendChild(mark);
-
-    w.appendChild(el("h1", null, "Selam — how can we help?"));
-    // Language auto-detection is the single most persuasive capability for an
-    // Ethiopian bank, so it is stated on the screen everyone sees rather than
-    // discovered by a customer who happens to type Amharic.
-    //
-    // textContent, because the bank's display name is interpolated and the
-    // widget has no escaping helper. Reaching for innerHTML here would put a
-    // tenant-controlled string into markup on the bank's own page.
-    var lede = el("p");
-    lede.textContent =
-      "Ask " + cfg.name + " about accounts, transfers, loans or saving. " +
-      "Write in English or አማርኛ — we follow your language automatically.";
-    w.appendChild(lede);
-
-    var arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-      'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-      '<path d="M5 12h14M13 6l6 6-6 6"/></svg>';
-    var starts = el("div", "starts");
-    [
-      "How do I open an account?",
-      "What do I need for a loan?",
-      "ሰላም፣ የሞባይል ባንኪንግ እንዴት እጠቀማለሁ?"
-    ].forEach(function (q, i) {
-      var b = el("button", "start", "<span></span>" + arrow);
-      b.type = "button";
-      // textContent, not innerHTML — these are literals today, but the row is
-      // the obvious place to later drop in a bank's own configured openers.
-      b.firstChild.textContent = q;
-      b.style.animationDelay = (0.06 + i * 0.05) + "s";
-      b.addEventListener("click", function () { ask(q); });
-      starts.appendChild(b);
-    });
-    w.appendChild(starts);
-
-    chat.appendChild(w);
   }
 
   function addSuggestions(list) {
@@ -1013,7 +788,12 @@
         langSel.appendChild(o);
       });
 
-      addWelcome(cfg);
+      addBot("Selam! I'm " + cfg.name + "'s AI assistant. Ask me about accounts, transfers, loans or saving — in English or አማርኛ, I'll follow your language automatically.", false);
+      addSuggestions([
+        "How do I open an account?",
+        "What do I need for a loan?",
+        "ሰላም፣ የሞባይል ባንኪንግ እንዴት እጠቀማለሁ?"
+      ]);
     })
     .catch(function () {
       document.getElementById("bankName").textContent = "Bank not found";
@@ -1027,7 +807,7 @@
     // history — a stale set left pinned above the thread reads as clutter
     // and invites taps that no longer relate to what's on screen.
     Array.prototype.forEach.call(
-      chat.querySelectorAll(".suggest, .welcome"), function (n) { n.remove(); });
+      chat.querySelectorAll(".suggest"), function (n) { n.remove(); });
     addUser(text);
     input.value = "";
     send.disabled = true;
