@@ -264,6 +264,18 @@ def seed() -> tuple[Bank, bool]:
         if existing is not None:
             # See seed_common.ensure_bank — self-healing, and idempotent.
             ensure_builtin_roles(db, existing.id)
+            # Self-healed too, and this one was learned the hard way. Setting
+            # it only in the create branch below meant it was never set
+            # ANYWHERE that matters: every real deployment already has a demo
+            # bank, so migration 0018 backfilled the flag to false and this
+            # early return sailed straight past it. The showcase tenant
+            # shipped with its flagship feature switched off, and nothing
+            # failed — the button simply never appeared.
+            #
+            # Forced on rather than only-if-null: demo is our own tenant and
+            # this is what it is for. A bank's own tenant is never touched
+            # here.
+            existing.teller_enabled = True
             db.commit()
             return existing, False
         bank = Bank(
