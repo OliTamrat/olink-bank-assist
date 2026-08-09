@@ -106,9 +106,22 @@ _NOTES: dict[str, str] = {
         "service. Sympathy first, then the promise that a person will follow up."
     ),
     "human_request_ack": (
-        "For a customer who asked to speak to a person, a manager or the "
-        "management. NOT an apology and NOT a refusal — the request is being "
-        "granted. Warm and brief; the contact request follows it."
+        "For a customer who asked to speak to a person, when NOBODY is on duty "
+        "to take the call. NOT a refusal — the request is being granted, just "
+        "not this second. It must say plainly that no one is free right now: "
+        "an earlier version implied a person was standing by, the customer "
+        "waited for a call that could not come, and that is the failure this "
+        "wording exists to prevent. Warm and brief; the contact request "
+        "follows it."
+    ),
+    "human_request_live": (
+        "The same request, when a banker IS on duty and the chat is about to "
+        "show a card with a Connect button on it. Keep the word 'Connect' in "
+        "Latin script exactly as written — it is the label printed on the "
+        "button, which is not translated, and a customer told to press a word "
+        "they cannot find on screen is worse off than one told nothing. No "
+        "contact details are asked for after this one: the button IS the "
+        "answer."
     ),
     "advice_disclaimer": (
         "Legal boundary on any investment question: education, never personal "

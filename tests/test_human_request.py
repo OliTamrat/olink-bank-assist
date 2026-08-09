@@ -308,3 +308,126 @@ def test_live_on_its_own_is_not_a_request_for_a_person() -> None:
         "Is the live chat available at night?",
     ):
         assert classifier.classify_intent(message) == classifier.QUESTION, message
+
+
+# ------------------------------------------------- what we promise them next
+#
+# Reported from the live demo, and the sharpest complaint of the lot: "I
+# requested a live agent assistance — the bot acknowledged and got my name and
+# number, however nothing happened, there is no option to connect."
+#
+# Both halves were wrong at once. The assistant said "I've passed you to our
+# customer service team so a person can help you directly" whether or not a
+# person existed, and it collected a phone number even when a banker was one
+# button away. What we say has to follow from what the widget is about to do,
+# because the customer reads them as one sentence.
+
+
+@pytest.fixture
+def _livekit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Availability needs a media layer as well as a person."""
+    monkeypatch.setenv("LIVEKIT_URL", "wss://test.livekit.cloud")
+    monkeypatch.setenv("LIVEKIT_API_KEY", "APItest")
+    monkeypatch.setenv("LIVEKIT_API_SECRET", "s" * 32)
+
+
+def _teller_on_duty(client: TestClient, db_session: Session, bank: Any) -> None:
+    from bankassist import passwords, permissions
+    from bankassist.models import Role, User, UserCredential
+
+    role = db_session.execute(
+        select(Role).where(Role.bank_id == bank.id, Role.name == permissions.TELLER)
+    ).scalar_one()
+    user = User(
+        bank_id=bank.id, email="duty@bank.et", display_name="Duty", role_id=role.id
+    )
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(
+        UserCredential(
+            user_id=user.id, kind="password",
+            secret_hash=passwords.hash_password("CorrectHorse9!x"),
+        )
+    )
+    db_session.commit()
+    assert client.post(
+        f"/admin/api/{bank.slug}/login",
+        json={"email": "duty@bank.et", "password": "CorrectHorse9!x"},
+    ).status_code == 200
+    assert client.post(
+        f"/admin/api/{bank.slug}/teller/presence", json={"on_duty": True}
+    ).status_code == 200
+    # The teller's cookie must not follow the customer into the chat below.
+    client.cookies.clear()
+
+
+def test_with_nobody_on_duty_it_says_so_instead_of_implying_a_person_is_waiting(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The reported failure. No teller is on duty, so no Connect button will
+    appear — and the sentence has to match that, or the customer waits for
+    something that is not coming."""
+    data = _ask(client, "I want to speak to a real person")
+    assert data["teller_available"] is False
+    assert t(data["language"], "human_request_ack") in data["reply"]
+    assert t(data["language"], "human_request_live") not in data["reply"]
+    # And it still does the thing that DOES help: get a way to reach them.
+    assert t(data["language"], "ask_contact") in data["reply"]
+    assert data["awaiting_contact"] is True
+
+
+def test_with_a_teller_on_duty_it_points_at_the_button(
+    client: TestClient, demo_bank: Any, db_session: Session, _livekit: None
+) -> None:
+    """The other half. A banker is one press away, so the reply names the
+    press — and does not spend the turn collecting a phone number for a
+    callback nobody needs."""
+    _teller_on_duty(client, db_session, demo_bank)
+
+    data = _ask(client, "I want to speak to a real person")
+    assert data["teller_available"] is True, "the widget will show the card"
+    assert t(data["language"], "human_request_live") in data["reply"]
+    assert t(data["language"], "human_request_ack") not in data["reply"]
+    assert t(data["language"], "ask_contact") not in data["reply"], (
+        "asking for a phone number in front of a live banker is friction "
+        "before the thing they asked for"
+    )
+    assert data["awaiting_contact"] is False
+
+
+def test_the_handoff_is_filed_either_way(
+    client: TestClient, demo_bank: Any, db_session: Session, _livekit: None
+) -> None:
+    """A customer who is offered a banker and never presses Connect must still
+    show up as somebody who asked for help. Making the record conditional on
+    the happy path is how the people who gave up become invisible."""
+    _teller_on_duty(client, db_session, demo_bank)
+    data = _ask(client, "Can I talk to a human?")
+    assert data["handoff_created"] is True
+    assert db_session.execute(
+        select(Handoff).where(Handoff.bank_id == demo_bank.id)
+    ).scalars().first() is not None
+
+
+def test_the_two_answers_are_actually_different_in_every_language(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """A mutation guard with a translation job behind it.
+
+    If a reviewer ever collapses these to the same sentence, the tests above
+    keep passing — `x in reply` and `y not in reply` are both satisfiable by
+    one string only while the strings differ. This is the assertion that
+    fails when the distinction is lost.
+    """
+    from bankassist.i18n import SUPPORTED_LANGUAGES
+
+    for lang in SUPPORTED_LANGUAGES:
+        offline = t(lang, "human_request_ack")
+        live = t(lang, "human_request_live")
+        assert offline and live, lang
+        assert offline != live, lang
+        assert offline not in live and live not in offline, lang
+        # The live sentence names a button whose label is not translated.
+        # Telling somebody to press a word that is not on screen is worse than
+        # telling them nothing.
+        assert "Connect" in live, lang

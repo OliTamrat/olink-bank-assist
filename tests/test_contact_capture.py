@@ -614,3 +614,97 @@ def test_the_note_is_not_shown_once_we_can_actually_reach_them(
     ).json()
     assert t("en", "no_contact_yet") not in again["reply"]
     assert "0911223344" in again["reply"]
+
+
+# ------------------------------------------- details offered without an ask
+#
+# Capture used to run ONLY while `awaiting_contact` was true. That is the turn
+# right after we ask — so a customer who said no, thought better of it and
+# typed their number three turns later was answered as though the number were
+# a question. Nothing was stored, and the operator working their escalation
+# still had no way to call them, which is precisely what the customer had just
+# tried to fix.
+
+
+def test_a_number_offered_later_is_still_captured(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """The gap. They decline, keep talking, then change their mind."""
+    first = _ask(client, "demo", UNANSWERABLE)
+    convo = first["conversation_id"]
+    assert first["awaiting_contact"] is True
+
+    # Declining, then carrying on. Whether the assistant asks a second time is
+    # decided elsewhere; what matters here is that by the last turn it is no
+    # longer waiting on an answer, so the capture below is genuinely unprompted.
+    _ask(client, "demo", "No thanks, I'd rather not", convo)
+    hours = _ask(client, "demo", "What are your branch opening hours?", convo)
+    assert hours["awaiting_contact"] is False, (
+        "precondition: nothing is expecting contact details on the next turn"
+    )
+
+    later = _ask(client, "demo", "Actually you can reach me on 0911234567", convo)
+    assert "0911234567" in later["reply"], "the number has to be acknowledged"
+
+    db_session.expire_all()
+    row = db_session.get(Conversation, convo)
+    assert row is not None and row.contact_phone == "0911234567"
+    # And it reaches the escalation, which is the only reason to hold it.
+    handoff = db_session.execute(
+        select(Handoff).where(Handoff.conversation_id == convo)
+    ).scalars().first()
+    assert handoff is not None and handoff.contact_phone == "0911234567"
+
+
+def test_a_number_typed_with_nothing_waiting_on_it_is_not_captured(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """The guard. With no open escalation there is nobody to hand a number to,
+    and quietly storing personal data nobody asked for and nobody will use is
+    not a favour — it is a record we have no reason to hold."""
+    data = _ask(client, "demo", "Is 0911234567 one of your branch numbers?")
+    assert data["handoff_created"] is False, "precondition: nothing is waiting"
+
+    db_session.expire_all()
+    row = db_session.get(Conversation, data["conversation_id"])
+    assert row is not None and row.contact_phone is None
+
+
+def test_a_second_number_does_not_overwrite_the_first(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """Once we hold a number, a later one in the same conversation is more
+    likely a branch's number quoted back at us than a correction — and
+    silently repointing an operator's callback at the wrong number is worse
+    than making them ask."""
+    first = _ask(client, "demo", UNANSWERABLE)
+    convo = first["conversation_id"]
+    _ask(client, "demo", "Oli 0911234567", convo)
+
+    _ask(client, "demo", "My friend's number is 0922222222", convo)
+    db_session.expire_all()
+    row = db_session.get(Conversation, convo)
+    assert row is not None and row.contact_phone == "0911234567"
+
+
+def test_the_ask_cap_no_longer_means_the_door_is_shut(
+    client: TestClient, demo_bank: Any, db_session: Session
+) -> None:
+    """The two changes fit together.
+
+    Once we have asked as often as we are willing to, the assistant says
+    plainly that it cannot promise a call back. That sentence is only honest
+    if a number offered afterwards is actually taken — otherwise we stop
+    asking AND stop listening, and the customer's last attempt to be reachable
+    goes nowhere.
+    """
+    first = _ask(client, "demo", UNANSWERABLE)
+    convo = first["conversation_id"]
+    for _ in range(4):
+        _ask(client, "demo", "I'd rather not say", convo)
+
+    later = _ask(client, "demo", "Fine — 0911234567", convo)
+    assert "0911234567" in later["reply"]
+    db_session.expire_all()
+    row = db_session.get(Conversation, convo)
+    assert row is not None and row.contact_phone == "0911234567"

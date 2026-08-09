@@ -1,11 +1,19 @@
 """Whether a customer is offered a live teller at all.
 
-Two independent facts have to hold: the tenant has switched the feature on,
-and somebody is actually watching the queue this minute. The tests here are
-mostly about the second one, because it is the one a reasonable implementation
-skips — and skipping it produces a button that queues a customer behind nobody
-at 22:00, watches a counter climb, and loses them. That is worse than the
-assistant saying plainly that it cannot help.
+Three independent facts have to hold: the tenant has switched the feature on,
+a media layer is configured, and somebody has declared themselves on duty this
+minute. The tests here are mostly about the third, because it is the one a
+reasonable implementation skips — and skipping it produces a button that
+queues a customer behind nobody at 22:00, watches a counter climb, and loses
+them. That is worse than the assistant saying plainly that it cannot help.
+
+Presence used to be inferred from polling the queue page. That shipped, and it
+failed in the field for a reason no test could have caught while the two were
+the same thing: a teller who navigated to any other screen went off the air
+silently, so the bank was staffed and the Connect button still never appeared.
+Duty is now DECLARED at /teller/presence and nowhere else, which is why several
+tests below assert the negative — that reading the queue does not, by itself,
+put anybody on the air.
 """
 
 from __future__ import annotations
@@ -67,6 +75,18 @@ def _staff(
     return user
 
 
+def _on_duty(client: TestClient, on: bool = True, slug: str = "demo") -> Any:
+    """Declare duty, the way the console's heartbeat does.
+
+    Every test that needs a present teller goes through here rather than
+    through some direct write to `teller_seen_at`, so the route stays the only
+    way presence is established — including in the tests.
+    """
+    resp = client.post(f"/admin/api/{slug}/teller/presence", json={"on_duty": on})
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
 def _set_enabled(db_session: Any, slug: str, value: bool) -> None:
     """Flip the tenant flag through the session that owns the row.
 
@@ -110,7 +130,7 @@ def test_a_teller_watching_the_queue_turns_the_offer_on(
     actually answer."""
     _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
     assert _available(client) is False, "signing in is not being at the desk"
-    assert client.get("/admin/api/demo/teller/queue").status_code == 200
+    assert _on_duty(client)["available"] is True
     assert _available(client) is True
 
 
@@ -124,7 +144,7 @@ def test_presence_goes_stale(
     worst combination.
     """
     user = _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
-    client.get("/admin/api/demo/teller/queue")
+    _on_duty(client)
     assert _available(client) is True
 
     stale = datetime.now(UTC) - api_module.TELLER_PRESENCE_WINDOW - timedelta(seconds=5)
@@ -173,14 +193,17 @@ def test_a_supervisor_watching_is_not_a_teller_answering(
 
     assert client.get("/admin/api/demo/teller/queue").status_code == 200
     assert _available(client) is False
-    # And the reason is that the poll did not count as presence, not merely
-    # that the availability query filters them out later.
-    #
+    # Refused outright rather than accepted and filtered out later. A watcher
+    # who could record presence and simply not appear in the availability
+    # query would be one join away from lighting the button with nobody
+    # behind it; the route is the place to say no.
+    assert client.post(
+        "/admin/api/demo/teller/presence", json={"on_duty": True}
+    ).status_code == 403
+
     # `expire_all` first: this session has the row cached from the write above
     # with `expire_on_commit=False`, so `get()` would hand back that stale copy
-    # and report None no matter what the request actually wrote. Verified by
-    # mutation — without the expire, removing the permission check from the
-    # queue route leaves this assertion still passing.
+    # and report None no matter what the request actually wrote.
     db_session.expire_all()
     assert db_session.get(User, user.id).teller_seen_at is None
 
@@ -190,7 +213,7 @@ def test_a_disabled_teller_is_not_available(
 ) -> None:
     """Someone who has left the bank must not hold the queue open."""
     user = _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
-    client.get("/admin/api/demo/teller/queue")
+    _on_duty(client)
     assert _available(client) is True
 
     db_session.get(User, user.id).disabled_at = datetime.now(UTC)
@@ -202,7 +225,7 @@ def test_switching_the_feature_off_takes_the_offer_away(
     client: TestClient, demo_bank: Any, db_session: Any
 ) -> None:
     _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
-    client.get("/admin/api/demo/teller/queue")
+    _on_duty(client)
     assert _available(client) is True
 
     _set_enabled(db_session, "demo", False)
@@ -215,7 +238,7 @@ def test_presence_does_not_leak_across_tenants(
     """A teller at one bank must not light another bank's button."""
     _set_enabled(db_session, "cbe", True)
     _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
-    client.get("/admin/api/demo/teller/queue")
+    _on_duty(client)
     assert _available(client, "demo") is True
     assert _available(client, "cbe") is False
 
@@ -330,7 +353,7 @@ def test_every_reply_carries_whether_a_teller_can_be_reached_now(
 
     # A teller signs in and opens the queue — after the customer's page loaded.
     _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
-    assert client.get("/admin/api/demo/teller/queue").status_code == 200
+    _on_duty(client)
 
     later = client.post(
         "/chat/demo",
@@ -351,7 +374,7 @@ def test_the_reply_stops_offering_when_the_last_teller_leaves(
     chat while somebody was on duty must not be offered a call after everyone
     has gone home."""
     user = _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
-    client.get("/admin/api/demo/teller/queue")
+    _on_duty(client)
     assert client.post("/chat/demo", json={"message": "Hello"}).json()[
         "teller_available"
     ] is True
@@ -363,3 +386,162 @@ def test_the_reply_stops_offering_when_the_last_teller_leaves(
     assert client.post("/chat/demo", json={"message": "Hello again"}).json()[
         "teller_available"
     ] is False
+
+
+# ------------------------------------------------------------------- on duty
+#
+# The section that exists because the first design of this shipped and failed.
+# Presence was a side effect of the Live queue page polling, which meant the
+# product-level fact "customers can talk to a person" was really the fact
+# "somebody has one particular browser tab in front of them". The bank was
+# switched on, a teller was signed in, and the Connect button never appeared.
+
+
+def test_duty_survives_leaving_the_queue_page(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """THE REGRESSION. A teller on duty stays on the air while working
+    anywhere else in the console.
+
+    The heartbeat now runs from the shell, so the only thing that ends duty is
+    ending it. Expressed here as: presence is established, the queue is never
+    read again, and the offer stays up.
+    """
+    _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
+    _on_duty(client)
+
+    # Working elsewhere. Any authenticated request that is not the queue —
+    # `/me` is the one every signed-in person can make regardless of role, so
+    # this test does not quietly become a permissions test.
+    assert client.get("/admin/api/demo/me").status_code == 200
+    assert _available(client) is True
+
+
+def test_reading_the_queue_does_not_put_anyone_on_duty(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """The other half of the same correction, and the one that stops the old
+    behaviour creeping back.
+
+    While polling was presence, a teller who had deliberately gone OFF duty
+    was put straight back on by their own page's next poll — the switch could
+    not be honoured by the screen it lived on. Duty is a declaration; reading
+    a list is not one.
+    """
+    _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
+    assert client.get("/admin/api/demo/teller/queue").status_code == 200
+    assert _available(client) is False
+
+
+def test_going_off_duty_takes_the_offer_away_at_once(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """Not after the staleness window — immediately.
+
+    Waiting 90s to honour "I am leaving" would queue customers behind somebody
+    who has already stood up, which is the exact experience the whole presence
+    check exists to prevent.
+    """
+    user = _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
+    _on_duty(client)
+    assert _available(client) is True
+
+    assert _on_duty(client, False)["available"] is False
+    assert _available(client) is False
+    # Cleared, not backdated. NULL is a statement — "not taking calls" — where
+    # an old timestamp merely says they were once here.
+    db_session.expire_all()
+    assert db_session.get(User, user.id).teller_seen_at is None
+
+
+def test_signing_out_takes_you_off_the_air(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """The one moment we know for certain the person has left.
+
+    Leaving presence set here would hold the button lit for the rest of the
+    staleness window with nobody behind it — the failure the window bounds,
+    arriving by the one route where it is entirely avoidable.
+    """
+    _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
+    _on_duty(client)
+    assert _available(client) is True
+
+    assert client.post("/admin/api/demo/logout").status_code == 200
+    assert _available(client) is False
+
+
+def test_the_break_glass_token_cannot_go_on_duty(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The shared token is nobody in particular, and a customer cannot be
+    routed to nobody in particular. Presence is a claim about a person."""
+    resp = client.post(
+        "/admin/api/demo/teller/presence",
+        json={"on_duty": True},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    assert resp.status_code == 403, resp.text
+
+
+def test_duty_reports_what_the_customer_will_see(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """Going on duty in a tenant that has the feature switched off must say so.
+
+    Otherwise a teller flips the switch, sees it turn green, and waits all
+    afternoon for calls that were never going to be offered — with the real
+    cause two screens away.
+    """
+    _set_enabled(db_session, "demo", False)
+    _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
+    body = _on_duty(client)
+    assert body["on_duty"] is True
+    assert body["available"] is False, "on duty, but the tenant offers nothing"
+
+
+def test_the_heartbeat_is_faster_than_the_staleness_window(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """A heartbeat at or slower than the window means every teller flickers
+    off between beats. Both numbers are served to the browser precisely so
+    they cannot drift apart; this asserts the relationship itself."""
+    _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
+    beat = _on_duty(client)["heartbeat_seconds"]
+    window = client.get("/admin/api/demo/teller/settings").json()[
+        "presence_window_seconds"
+    ]
+    assert beat * 2 <= window, (
+        "at least two beats must fit inside the window, or one dropped request "
+        "takes the bank off the air"
+    )
+
+
+def test_going_on_and_off_duty_is_audited_but_the_heartbeat_is_not(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """Auditing every beat would write 2,880 rows a day per teller and bury
+    the events an auditor reads. The edges are the event; still being there is
+    not."""
+    from bankassist.models import AuditLog
+
+    def rows() -> int:
+        return len(
+            db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.action.in_(("teller_on_duty", "teller_off_duty"))
+                )
+            ).scalars().all()
+        )
+
+    _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
+    _on_duty(client)
+    after_first = rows()
+    assert after_first == 1
+
+    _on_duty(client)   # the heartbeat, repeatedly
+    _on_duty(client)
+    assert rows() == after_first, "a heartbeat is not an event"
+
+    _on_duty(client, False)
+    assert rows() == after_first + 1

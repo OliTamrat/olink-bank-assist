@@ -32,6 +32,7 @@ from . import (
     livekit,
     passwords,
     permissions,
+    presence,
     roles,
     telegram,
     teller,
@@ -54,7 +55,6 @@ from .models import (
     Handoff,
     Message,
     Role,
-    RolePermission,
     TellerSession,
     User,
     UserCredential,
@@ -413,48 +413,12 @@ def health(response: Response) -> HealthOut:
     )
 
 
-# How stale a teller's last queue poll may be before we stop counting them as
-# present. The queue page polls every 4s, so this tolerates a laptop sleeping
-# through a coffee break's worth of stalls without the button flickering on and
-# off — while still going dark within a minute and a half of the last person
-# closing the tab.
-TELLER_PRESENCE_WINDOW = timedelta(seconds=90)
-
-
-def _teller_available(db: Session, bank: Bank) -> bool:
-    """Is there a live teller to hand this customer to, right now?
-
-    Two independent facts, and the button needs both. `teller_enabled` is the
-    bank's decision; presence is the truth about this minute. Selling the
-    feature does not staff it, and a queue with nobody watching is worse than
-    no button at all — the customer waits, watches a counter climb, and leaves
-    with a worse impression than an honest "I can't help with that".
-
-    Scoped by permission rather than by role name, so a bank that renames
-    `teller` to `agent` or splits it into two roles keeps working.
-    """
-    if not bank.teller_enabled:
-        return False
-    # No media layer, no offer. Same reasoning as presence: a button that
-    # queues someone for a call that cannot physically connect is worse than
-    # no button. This is what keeps a deployment with the feature switched on
-    # but LIVEKIT_* unset from advertising video it cannot deliver.
-    if livekit.credentials() is None:
-        return False
-    cutoff = datetime.now(UTC) - TELLER_PRESENCE_WINDOW
-    return db.execute(
-        select(User.id)
-        .join(Role, Role.id == User.role_id)
-        .join(RolePermission, RolePermission.role_id == Role.id)
-        .where(
-            User.bank_id == bank.id,
-            User.disabled_at.is_(None),
-            User.teller_seen_at.is_not(None),
-            User.teller_seen_at >= cutoff,
-            RolePermission.permission == permissions.Perm.TELLER_SERVE,
-        )
-        .limit(1)
-    ).first() is not None
+# Presence lives in `presence.py` so the assistant and the widget read the
+# same answer — see that module for why. Re-exported under the old names
+# because they are what the tests and the rest of this file already say, and
+# renaming a thing at the same time as moving it makes the diff unreadable.
+TELLER_PRESENCE_WINDOW = presence.TELLER_PRESENCE_WINDOW
+_teller_available = presence.teller_available
 
 
 @app.get("/banks/{slug}/public")
@@ -889,6 +853,14 @@ def logout(
 ) -> dict[str, bool]:
     token = request.cookies.get(admin_auth.COOKIE_NAME)
     if token:
+        # Signing out takes you off the air. Leaving presence set would keep
+        # the customer's Connect button lit for up to the staleness window
+        # after the person behind it went home — the exact failure the window
+        # exists to bound, arriving by the one route where we know for certain
+        # they have left.
+        signer = admin_auth.resolve(db, token)
+        if signer is not None:
+            presence.set_duty(signer, on_duty=False)
         admin_auth.revoke(db, token)
         db.commit()
     response.delete_cookie(admin_auth.COOKIE_NAME, path="/admin")
@@ -2485,6 +2457,57 @@ def abandon_teller_session(
     return {"state": session.state}
 
 
+class TellerPresenceIn(BaseModel):
+    on_duty: bool
+
+
+@app.post("/admin/api/{slug}/teller/presence")
+def set_teller_presence(
+    payload: TellerPresenceIn,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """A teller declaring they are at a desk, and the heartbeat that keeps it true.
+
+    The console calls this every `heartbeat_seconds` from the shell, on every
+    page, so being available no longer depends on which screen happens to be
+    open. That dependency is what produced the symptom this fixes: the feature
+    was on, a teller was signed in, and the customer's Connect button never
+    appeared because the teller was looking at Reports.
+
+    `teller.serve` and self-only. Presence is a claim about where YOU are;
+    nobody else can make it for you, and no supervisor can put a colleague on
+    the air. The break-glass token has no user, so it cannot appear on the
+    queue as a person a customer can be routed to.
+    """
+    if principal.user is None:
+        raise HTTPException(
+            status_code=403, detail="Sign in as a person to go on duty"
+        )
+    was = presence.on_duty(principal.user)
+    presence.set_duty(principal.user, on_duty=payload.on_duty)
+    # Audited only on the edges, not on every heartbeat — 2,880 rows a day per
+    # teller would bury the events an auditor actually reads. Going on and off
+    # the air is the event; still being there is not.
+    if was != payload.on_duty:
+        _audit(
+            db, principal.bank,
+            "teller_on_duty" if payload.on_duty else "teller_off_duty",
+            "user", principal.user.id, {}, actor=principal.audit_actor,
+        )
+    db.commit()
+    return {
+        "on_duty": payload.on_duty,
+        "heartbeat_seconds": presence.HEARTBEAT_SECONDS,
+        # What the tenant looks like from a customer's side after this call.
+        # A teller who goes on duty and still sees false learns immediately
+        # that something else is wrong — the feature is off for the tenant, or
+        # the media layer is unconfigured — instead of waiting for a call that
+        # was never going to be offered.
+        "available": presence.teller_available(db, principal.bank),
+    }
+
+
 class TellerLanguagesIn(BaseModel):
     languages: list[str] = Field(default_factory=list)
 
@@ -2548,6 +2571,16 @@ def get_teller_settings(
         "enabled": bank.teller_enabled,
         "available": _teller_available(db, bank),
         "presence_window_seconds": int(TELLER_PRESENCE_WINDOW.total_seconds()),
+        "heartbeat_seconds": presence.HEARTBEAT_SECONDS,
+        # Whether THIS teller is on the air, as the server sees it. Read for
+        # display, not to drive the toggle: the browser DECLARES duty and the
+        # server records the declaration, so a console that reconciled its
+        # switch against this would end up fighting its own heartbeat. It is
+        # here so the Live queue strip can distinguish "somebody is available"
+        # from "you are available".
+        "on_duty": (
+            principal.user is not None and presence.on_duty(principal.user)
+        ),
         # This teller's own declared languages, so the page can show them
         # without a second request. Null for the break-glass token, which is
         # nobody in particular.
@@ -2599,19 +2632,11 @@ def teller_queue(
     it was built to prevent.
     """
     bank = principal.bank
-    # Watching the queue IS the presence signal — it is the only evidence that
-    # a person is at a desk ready to take a call, and it costs nothing to
-    # collect because the page is already polling. This is what turns the
-    # customer's "Talk to a teller" button on.
-    #
-    # Only for a principal who can actually answer: a supervisor with
-    # `sessions.read` watching the queue is not somebody who can take the call,
-    # and counting them would light the button with nobody behind it.
-    if principal.user is not None and roles.user_has(
-        db, principal.user, permissions.Perm.TELLER_SERVE
-    ):
-        principal.user.teller_seen_at = datetime.now(UTC)
-        db.commit()
+    # Deliberately does NOT touch presence. Watching this page used to be the
+    # presence signal, which had two failures pointing in opposite directions:
+    # a teller working anywhere else in the console silently went off the air,
+    # and a teller who had explicitly gone OFF duty was put back on by the
+    # page's own poll. Duty is declared at /teller/presence and nowhere else.
     rows = db.execute(
         select(TellerSession)
         .where(
