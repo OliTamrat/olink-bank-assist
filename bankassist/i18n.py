@@ -85,6 +85,15 @@ _NOTES: dict[str, str] = {
         "Said INSTEAD of asking again, when we already have their number. Its own "
         "short sentence on its own line. {contact} is their phone number or email."
     ),
+    "no_contact_yet": (
+        "Said INSTEAD of asking again, when we have NO way to reach them and have "
+        "already asked as often as we are willing to. A statement of fact, not a "
+        "question, and NOT a fresh request for a number — the customer has "
+        "declined twice and must not be pestered a third time. It exists only "
+        "so they are not left believing a callback is coming. Do not add an "
+        "invitation to send details later: nothing is listening for them once "
+        "the asking has stopped. Its own short sentence on its own line."
+    ),
     "contact_saved": "Confirms their details were stored. {contact} is what they gave.",
     "contact_saved_named": "Same, when we also captured their name.",
     "account_help": (

@@ -370,6 +370,14 @@ _HUMAN_REQUEST_RE = re.compile(
     # agent-banking outlet.
     r"\b(live|real|actual) (agent|person|human|teller|rep|representative|"
     r"operator)\b|"
+    # "speak to a LIVE anything". Reported from the demo as "can I speak to a
+    # live a gent" — a phone keyboard had split "agent" in two, and the noun
+    # list could not match half a word. Chasing individual typos is endless;
+    # what carries the meaning here is "live" inside a speak-to construction,
+    # whatever noun follows it. Both halves are required, so an ordinary
+    # sentence containing "live" — "do you have a live rate feed" — is
+    # untouched.
+    r"\b(speak|talk|chat) (to|with) (a |an |the )?(live|real|actual)\b|"
     r"\bhuman (agent|being|support)\b|"
     r"\bcall me back\b|"
     # Amharic. "ከ አለቃ ወይም አመራር ጋር መነጋገር እፈልጋለው" was reported from the live

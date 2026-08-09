@@ -234,7 +234,20 @@ def _request_contact(
     ).scalar_one()
     if asks > MAX_CONTACT_ASKS:
         conversation.awaiting_contact = False
-        return reply
+        # Stop ASKING, but say plainly that we cannot reach them.
+        #
+        # This is the mirror of the lesson above, and it was missed. Silence
+        # about a number we hold looks like not holding one; silence about
+        # holding NONE looks exactly like holding one. Returning the bare
+        # reply left "I've passed you to our customer service team so a
+        # person can help you directly" as the last word to someone whose
+        # number nobody has — a callback promised to an address that does not
+        # exist, in a product whose whole claim is that it never says what it
+        # cannot support.
+        #
+        # A statement, not a question: `awaiting_contact` stays false and the
+        # cap is still honoured, so this does not become a third ask.
+        return f"{reply}\n\n{t(language, 'no_contact_yet')}"
     conversation.awaiting_contact = True
     return f"{reply}\n\n{t(language, 'ask_contact')}"
 
