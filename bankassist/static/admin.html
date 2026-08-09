@@ -38,6 +38,47 @@
   --bad-bg: #2c1618;
   --shadow: 0 1px 3px rgba(0, 0, 0, .55);
   --radius: 14px;
+
+  /* --- series palette -------------------------------------------------
+     Chart colour is an ENCODING, not decoration, and that is why these are
+     not derived from --brand like everything else on this page.
+
+     The first version of the donut shaded every slice from the tenant's own
+     hue toward the surface, on the reasoning that a white-label product
+     should not paint a bank's dashboard in colours that are not theirs.
+     That reasoning was wrong, and the live CBE panel showed why: a one-hue
+     ramp encodes MAGNITUDE, and language and channel encode IDENTITY. The
+     result was a ring of near-identical purples that no reader could take a
+     share off, with the small slices mixed so far toward a near-black
+     surface that they were effectively invisible.
+
+     A tenant's brand hex also cannot be held to the gates that make a
+     categorical palette safe — a colour-blind reader has to separate the
+     slices, and someone will print this page. So identity gets a fixed,
+     validated palette and the brand keeps everything it was already doing:
+     the rail, the buttons, the focus rings, and every SINGLE-series chart
+     on the page (the trend line, the bar tracks), where one hue is the
+     correct choice and the brand is free to be it.
+
+     Values are the documented default categorical order, validated against
+     THIS page's surfaces rather than assumed:
+       light on #ffffff — CVD ΔE 9.1, normal-vision ΔE 19.6, all PASS
+       dark  on #12141d — CVD ΔE 8.4, normal-vision ΔE 19.3, all PASS
+     Light mode warns on <3:1 fill contrast for three slots, which obliges a
+     relief channel: every slice ships a visible legend row with its name and
+     count. Do not remove those labels to save space — they are load-bearing
+     for accessibility, not ornament.
+
+     Slots are assigned BY ENTITY (see LANG_SLOT / CHANNEL_SLOT), never by
+     rank, so Amharic does not change colour on the day it overtakes English. */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
 }
 :root[data-theme="light"] {
   --bg: #e8ecf4;
@@ -57,6 +98,16 @@
   --ok-bg: #eafaf0;
   --warn-bg: #fdf5e6;
   --bad-bg: #fdeeee;
+  /* The same eight hues stepped for a white surface — not an automatic
+     lightening of the dark set. Validated separately; see the note above. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
   --shadow: 0 1px 3px rgba(16, 24, 40, .09), 0 1px 2px rgba(16, 24, 40, .05);
 }
 * { box-sizing: border-box; margin: 0; }
@@ -354,6 +405,48 @@ main { padding: 20px 24px 40px; }
 .legend .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend .val { color: var(--muted); font-variant-numeric: tabular-nums; }
 .legend .row.zero .lbl, .legend .row.zero .val { color: var(--faint); }
+
+/* ------------------------------------------------------------- channels */
+/* Not a share chart. A donut of one channel is a circle that says 100%, and
+   worse, a breakdown drawn from traffic alone cannot say the thing a bank
+   most wants to know — that WhatsApp is not connected yet. So the catalogue
+   is the spine: every channel is listed, the ones carrying customers show
+   their volume, and the rest say what it would take to switch them on. */
+.chanlist { display: flex; flex-direction: column; }
+.chan {
+  display: grid; grid-template-columns: 10px 1fr auto; gap: 10px;
+  align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line);
+  background: none; border-left: 0; border-right: 0; border-top: 0; width: 100%;
+  text-align: left; font-family: inherit; font-size: 13px; color: var(--body);
+}
+.chan:last-child { border-bottom: none; }
+.chan.clickable { cursor: pointer; }
+.chan.clickable:hover .cname { color: var(--brand); }
+.chan .dot { width: 10px; height: 10px; border-radius: 3px; }
+/* A channel with no traffic keeps its identity colour but wears it hollow —
+   recognisable when it does light up, without competing for attention now. */
+.chan.idle .dot { background: none !important; border: 1.5px solid var(--faint); }
+.cname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chan .n { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+.chan .pill {
+  font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 99px; border: 1px solid var(--line);
+  color: var(--faint); white-space: nowrap;
+}
+/* Live and merely-connectable must not look alike: one is a channel sitting
+   quiet, the other is work nobody has done yet. */
+.chan .pill.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.chan .pill.next { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
+
+/* A slim part-to-whole bar, shown ONLY when two or more channels carry
+   traffic. With one it would be a full-width block conveying nothing. The
+   2px gaps are the spacer rule — touching fills read as one segment. */
+.sharebar { display: flex; gap: 2px; height: 8px; margin-bottom: 12px; }
+.sharebar span { border-radius: 2px; min-width: 3px; }
+
+/* What replaces a chart when there is only one thing to show: say it. */
+.oneline { font-size: 13px; color: var(--body); line-height: 1.5; margin-bottom: 12px; }
+.oneline b { color: var(--ink); font-weight: 650; }
 
 /* --------------------------------------------------------- activity feed */
 /* Capped and scrolled rather than allowed to run. A feed is unbounded by
@@ -944,45 +1037,93 @@ function bars(rows, total, labeller) {
   }).join("") + "</div>";
 }
 
-/* A donut, drawn from the same numbers the bars used.
+/* --------------------------------------------------- series colour by entity
  *
- * Shades of the tenant's own hue rather than a rainbow: a categorical palette
- * would be five arbitrary colours that mean nothing, and on a white-label
- * product it would also be five colours that are not the bank's. Ordering is
- * by size, so the ramp reads as a ranking rather than as decoration.
+ * A slot per language and per channel, fixed in code. Two reasons it is a map
+ * and not `palette[index]`:
  *
- * A slice of zero draws nothing but still gets a legend row — that is how
- * "Tigrinya: 0" stays visible as coverage rather than vanishing into looking
- * unsupported.
+ * 1. Colour must follow the ENTITY, not its rank. Sorted-by-volume indexing
+ *    means Amharic is blue today and orange on the day English overtakes it,
+ *    and a reader who has learned the chart is then quietly misled by it.
+ * 2. The same colour then means the same thing in the donut, the share bar and
+ *    the channel list, because all three ask this one function.
+ *
+ * Slots run 1..8 in the documented order; the maps are deliberately small
+ * enough to read. Anything unmapped falls back to neutral rather than picking
+ * a colour at random — an unknown series is better grey than miscoloured.
+ */
+var LANG_SLOT = { en: 1, am: 2, om: 3, ti: 4, so: 5 };
+var CHANNEL_SLOT = {
+  web: 1, telegram: 2, whatsapp: 3, messenger: 4,
+  instagram: 5, viber: 6, sms: 7
+};
+function seriesColor(slot) {
+  return slot ? "var(--series-" + slot + ")" : "var(--faint)";
+}
+
+/* A donut of shares.
+ *
+ * Draws ONLY when at least two categories carry traffic. Below that a ring is
+ * a picture of nothing — a full circle labelled 100% takes a card's worth of
+ * space to say what one sentence says better — so one category degrades to
+ * that sentence and none degrades to an empty state. The coverage list still
+ * renders underneath in every case, because "Tigrinya: 0" is a fact worth
+ * showing: it is the difference between unused and unsupported.
+ *
+ * `rows` are {label, count, slot, drill}. Order controls slice order; `slot`
+ * controls colour, so the two can never drift.
  */
 function donut(rows, opts) {
   opts = opts || {};
   var total = rows.reduce(function (t, r) { return t + r.count; }, 0);
-  var size = 132, r = 52, cx = size / 2, cy = size / 2, thick = 20;
-  var shades = rows.map(function (_, i) {
-    // Evenly spaced from the brand hue toward the surface, so every slice is
-    // recognisably the same colour family and still separable.
-    var mix = 100 - Math.round((i / Math.max(rows.length - 1, 1)) * 62);
-    return "color-mix(in srgb, var(--brand) " + mix + "%, var(--surface))";
-  });
+  var live = rows.filter(function (r) { return r.count; });
 
+  function coverage() {
+    return '<div class="legend">' + rows.map(function (row) {
+      return "<" + (row.drill ? "button" : "div") + ' class="row' +
+        (row.drill ? " clickable" : "") + (row.count ? "" : " zero") + '"' +
+        (row.drill ? ' data-drill="' + row.drill + '" type="button"' : "") + ">" +
+        '<span class="sw" style="background:' +
+        (row.count ? seriesColor(row.slot) : "var(--line)") +
+        '"></span><span class="lbl">' + esc(row.label) + "</span>" +
+        '<span class="val">' + row.count +
+        (total ? " · " + Math.round((row.count / total) * 100) + "%" : "") + "</span>" +
+        "</" + (row.drill ? "button" : "div") + ">";
+    }).join("") + "</div>";
+  }
+
+  if (!total) {
+    return '<div class="empty">' + esc(opts.empty || "Nothing recorded yet in this window.") +
+      "</div>" + coverage();
+  }
+  if (live.length === 1) {
+    // The stat-tile case: one value, stated. Not a one-slice pie.
+    return '<div class="oneline">All <b>' + num(total) + "</b> " +
+      esc(opts.unit || "conversations") + " " + esc(opts.verb || "were in") +
+      " <b>" + esc(live[0].label) + "</b>.</div>" + coverage();
+  }
+
+  var size = 132, r = 52, cx = size / 2, cy = size / 2, thick = 20;
+  // Two slices in adjacent hues that physically touch read as one shape with a
+  // seam. A hairline of surface between them is what makes a boundary a
+  // boundary, and it is doing accessibility work as well as cosmetic: the
+  // closest pair in this palette is the pair most likely to end up adjacent.
+  var GAP = 0.045;                        // radians — about 2px at this radius
   var angle = -Math.PI / 2;
-  var arcs = rows.map(function (row, i) {
-    if (!row.count || !total) return "";
+  var arcs = rows.map(function (row) {
+    if (!row.count) return "";
     var sweep = (row.count / total) * Math.PI * 2;
-    var x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
-    angle += sweep;
-    var x2 = cx + r * Math.cos(angle), y2 = cy + r * Math.sin(angle);
-    // A single slice covering the whole circle cannot be drawn as one arc —
-    // start and end coincide and the path collapses to nothing.
-    if (rows.filter(function (x) { return x.count; }).length === 1) {
-      return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" ' +
-        'stroke="' + shades[i] + '" stroke-width="' + thick + '"><title>' +
-        esc(row.label + ": " + row.count) + "</title></circle>";
-    }
+    var from = angle, to = angle + sweep;
+    angle = to;
+    // A sliver narrower than the gap would be eaten by it. Better a slightly
+    // tight slice than a 1% slice that disappears altogether.
+    if (sweep > GAP * 2.5) { from += GAP / 2; to -= GAP / 2; }
+    var x1 = cx + r * Math.cos(from), y1 = cy + r * Math.sin(from);
+    var x2 = cx + r * Math.cos(to), y2 = cy + r * Math.sin(to);
     return '<path d="M' + x1.toFixed(2) + " " + y1.toFixed(2) +
-      " A" + r + " " + r + " 0 " + (sweep > Math.PI ? 1 : 0) + " 1 " +
-      x2.toFixed(2) + " " + y2.toFixed(2) + '" fill="none" stroke="' + shades[i] +
+      " A" + r + " " + r + " 0 " + (to - from > Math.PI ? 1 : 0) + " 1 " +
+      x2.toFixed(2) + " " + y2.toFixed(2) + '" fill="none" stroke="' +
+      seriesColor(row.slot) +
       '" stroke-width="' + thick + '" stroke-linecap="butt"' +
       (row.drill ? ' class="clickable" data-drill="' + row.drill + '"' : "") +
       "><title>" + esc(row.label + ": " + row.count) + "</title></path>";
@@ -995,16 +1136,69 @@ function donut(rows, opts) {
     num(total) + "</text>" +
     '<text class="holesub" x="' + cx + '" y="' + (cy + 15) + '" text-anchor="middle">' +
     esc((opts.unit || "TOTAL").toUpperCase()) + "</text></svg>" +
-    '<div class="legend">' + rows.map(function (row, i) {
-      return "<" + (row.drill ? "button" : "div") + ' class="row' +
-        (row.drill ? " clickable" : "") + (row.count ? "" : " zero") + '"' +
-        (row.drill ? ' data-drill="' + row.drill + '" type="button"' : "") + ">" +
-        '<span class="sw" style="background:' + (row.count ? shades[i] : "var(--line)") +
-        '"></span><span class="lbl">' + esc(row.label) + "</span>" +
-        '<span class="val">' + row.count +
-        (total ? " · " + Math.round((row.count / total) * 100) + "%" : "") + "</span>" +
-        "</" + (row.drill ? "button" : "div") + ">";
-    }).join("") + "</div></div>";
+    coverage() + "</div>";
+}
+
+/* The channel panel: the catalogue, with traffic folded in.
+ *
+ * Deliberately not a donut. A share chart can only describe channels that
+ * already have customers on them, and the fact a bank is buying on is the one
+ * such a chart structurally cannot express — that WhatsApp is a business
+ * decision away, not a missing feature. So every channel is a row: the live
+ * ones carry their volume and open the conversations behind it, and the rest
+ * carry what it would take to switch them on.
+ *
+ * The share bar above only appears at two or more live channels, for the same
+ * reason the donut does.
+ */
+var CHANNEL_PILL = {
+  // Live but quiet is not the same as never switched on, and "planned" is not
+  // a promise — it is "the adapter is small, the account paperwork is not".
+  live: ["on", "Live"],
+  available: ["next", "Ready to connect"],
+  planned: ["", "Needs setup"]
+};
+function channelPanel(rows, opts) {
+  opts = opts || {};
+  var total = rows.reduce(function (t, r) { return t + r.count; }, 0);
+  var live = rows.filter(function (r) { return r.count; });
+
+  var head = "";
+  if (!total) {
+    head = '<div class="empty">No conversations yet in this window.</div>';
+  } else if (live.length === 1) {
+    head = '<div class="oneline">All <b>' + num(total) +
+      "</b> conversations came from <b>" + esc(live[0].name) + "</b>.</div>";
+  } else {
+    head = '<div class="sharebar" role="img" aria-label="Share of conversations by channel">' +
+      live.map(function (row) {
+        return '<span style="flex:' + row.count + ";background:" +
+          seriesColor(CHANNEL_SLOT[row.channel]) + '" title="' +
+          esc(row.name + ": " + row.count) + '"></span>';
+      }).join("") + "</div>";
+  }
+
+  return head + '<div class="chanlist">' + rows.map(function (row) {
+    var pill = CHANNEL_PILL[row.status] || ["", row.status];
+    // A channel with traffic opens that traffic; one without opens the page
+    // where it gets switched on. "Needs setup" as a label with nowhere to go
+    // is the reader being told about a job and not shown where to do it.
+    var drill = row.count
+      ? (opts.canRead ? "convos:channel=" + row.channel : null)
+      : (opts.canSetup ? "settings" : null);
+    var tag = drill ? "button" : "div";
+    return "<" + tag + ' class="chan' + (row.count ? "" : " idle") +
+      (drill ? " clickable" : "") + '"' +
+      (drill ? ' data-drill="' + drill + '" type="button"' : "") + ">" +
+      '<span class="dot" style="background:' +
+      seriesColor(CHANNEL_SLOT[row.channel]) + '"></span>' +
+      '<span class="cname">' + esc(row.name) + "</span>" +
+      (row.count
+        ? '<span class="n">' + num(row.count) + "</span>"
+        : '<span class="pill' + (pill[0] ? " " + pill[0] : "") + '">' +
+          esc(pill[1]) + "</span>") +
+      "</" + tag + ">";
+  }).join("") + "</div>";
 }
 
 /* A real series from the analytics endpoint, with empty days present as zero.
@@ -1142,13 +1336,10 @@ function loadDashboard() {
         : "") +
       "</div>" +
       '<div class="panel"><h3>Channels</h3>' +
-      donut(a.channels.map(function (r) {
-        return {
-          label: r.channel, count: r.count,
-          drill: r.count && can("conversations.read")
-            ? "convos:channel=" + r.channel : null
-        };
-      }), { unit: "conversations", label: "Conversations by channel" }) + "</div>" +
+      channelPanel(a.channels, {
+        canRead: can("conversations.read"),
+        canSetup: can("integrations.manage")
+      }) + "</div>" +
       "</div></div>";
 
     /* Row 2 — the two mid-weight lists, which measured within 12px of each
@@ -1188,10 +1379,15 @@ function loadDashboard() {
       donut(a.languages.map(function (r) {
         return {
           label: r.name || r.language, count: r.count,
+          slot: LANG_SLOT[r.language],
           drill: r.count && can("conversations.read")
             ? "convos:language=" + r.language : null
         };
-      }), { unit: "conversations", label: "Conversations by language" }) + "</div>" +
+      }), {
+        unit: "conversations", verb: "were in",
+        label: "Conversations by language",
+        empty: "No conversations yet in this window."
+      }) + "</div>" +
       '<div class="panel noprint" id="activity"><h3>Recent activity</h3>' +
       '<div class="empty">Loading…</div></div>' +
       "</div>";
@@ -1349,7 +1545,8 @@ function exportAnalytics() {
   });
   a.daily.forEach(function (d) { add("Conversations per day", d.date, d.conversations, ""); });
   a.languages.forEach(function (r) { add("Languages", r.name || r.language, r.count, ""); });
-  a.channels.forEach(function (r) { add("Channels", r.channel, r.count, ""); });
+  // The readable name, not the key — this file gets pasted into a deck.
+  a.channels.forEach(function (r) { add("Channels", r.name || r.channel, r.count, ""); });
   a.top_topics.forEach(function (t) { add("Most asked", t.example, t.count, ""); });
   add("Escalations", "Open", a.handoffs.open, "");
   add("Escalations", "Closed", a.handoffs.closed, "");
