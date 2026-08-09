@@ -53,3 +53,64 @@ def test_reseeding_does_not_switch_it_on_for_a_prospect_tenant(
     assert db_session.execute(
         select(Bank).where(Bank.slug == "cbe")
     ).scalar_one().teller_enabled is False
+
+
+def test_reseeding_adds_documents_the_tenant_does_not_have_yet(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """The third occurrence of the same trap, caught before shipping.
+
+    Documents were only created in the branch that CREATES the bank, so a new
+    article added to the seed reached production and did nothing — every
+    deployment already has a demo bank. The foreign-exchange article written
+    because "the assistant has no answer for a basic exchange rate question"
+    would have deployed green and changed nothing at all.
+    """
+    from bankassist.models import Document
+    from bankassist.seed import seed
+
+    title = "Foreign Exchange and Currency"
+    doc = db_session.execute(
+        select(Document).where(
+            Document.bank_id == demo_bank.id, Document.title == title
+        )
+    ).scalar_one()
+    db_session.delete(doc)
+    db_session.commit()
+
+    seed()
+
+    db_session.expire_all()
+    assert db_session.execute(
+        select(Document).where(
+            Document.bank_id == demo_bank.id, Document.title == title
+        )
+    ).scalar_one_or_none() is not None
+
+
+def test_reseeding_does_not_overwrite_an_edited_article(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """A tenant may have edited an article in the admin panel. A deploy that
+    silently replaced their wording with our seed copy would be far worse than
+    a missing article — this adds what is absent and never argues with what is
+    already there."""
+    from bankassist.models import Document
+    from bankassist.seed import seed
+
+    doc = db_session.execute(
+        select(Document).where(
+            Document.bank_id == demo_bank.id, Document.title == "Savings Accounts"
+        )
+    ).scalar_one()
+    doc.content = "The bank rewrote this themselves."
+    db_session.commit()
+
+    seed()
+
+    db_session.expire_all()
+    assert db_session.execute(
+        select(Document).where(
+            Document.bank_id == demo_bank.id, Document.title == "Savings Accounts"
+        )
+    ).scalar_one().content == "The bank rewrote this themselves."

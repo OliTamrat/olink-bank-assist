@@ -8,7 +8,7 @@ Run:  python -m bankassist.seed
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from .db import get_engine, init_db
 from .models import Bank, Document
@@ -194,6 +194,63 @@ _DOCS: list[dict[str, str]] = [
         ),
     },
     {
+        # Foreign exchange is one of the first things an Ethiopian bank
+        # customer asks, and the demo tenant had nothing on it at all — so
+        # "what is the exchange rate?" retrieved nothing and the assistant
+        # correctly said it did not know. Correct, and a terrible first
+        # impression for a prospect trying the most obvious question.
+        #
+        # NO FIGURE IS QUOTED HERE, deliberately, and the closing paragraph
+        # says why in the customer's own words. A rate written into a static
+        # document is wrong the next morning, and a confidently stale rate is
+        # far worse than an honest pointer to where the live one lives — this
+        # product is sold on not stating what it cannot stand behind.
+        "title": "Foreign Exchange and Currency",
+        "category": "general",
+        "language": "en",
+        "content": (
+            "Demo Bank buys and sells major currencies including the US dollar, "
+            "euro and pound sterling. Buying and selling rates are quoted "
+            "separately, and cash rates are quoted separately from rates for "
+            "transfers.\n\n"
+            "Rates are updated at least once every business day, so the rate "
+            "that applies to you is the one published on the day of your "
+            "transaction. The current rate is shown on the Demo Bank website, "
+            "in the mobile banking app, and on the board at every branch.\n\n"
+            "To exchange currency at a branch bring a valid photo ID — a kebele "
+            "ID, national ID or passport. For amounts above the daily counter "
+            "limit, or to buy foreign currency for travel, business or medical "
+            "treatment, bring the supporting document for that purpose; branch "
+            "staff will tell you which one applies.\n\n"
+            "Foreign currency received from abroad can be paid to you in birr "
+            "at the day's rate, or held in a foreign currency account if you "
+            "have one.\n\n"
+            "This page does not quote a rate on purpose. An exchange rate "
+            "written down is out of date the next day, and a stale rate is "
+            "worse than no rate — always take the live figure from the app, "
+            "the website or a branch."
+        ),
+    },
+    {
+        "title": "የውጭ ምንዛሬ (Foreign Exchange — Amharic)",
+        "category": "general",
+        "language": "am",
+        "content": (
+            "ዲሞ ባንክ የአሜሪካ ዶላር፣ ዩሮ እና ፓውንድ ስተርሊንግን ጨምሮ ዋና ዋና ምንዛሬዎችን ይገዛል "
+            "እንዲሁም ይሸጣል። የመግዣ እና የመሸጫ ዋጋዎች ለየብቻ ይቀርባሉ፤ የጥሬ ገንዘብ ዋጋም ከዝውውር ዋጋ "
+            "ተለይቶ ይቀመጣል።\n\n"
+            "ዋጋዎቹ በእያንዳንዱ የሥራ ቀን ቢያንስ አንድ ጊዜ ይታደሳሉ፤ ስለዚህ የሚሠራልዎት ዋጋ ግብይትዎን "
+            "በሚፈጽሙበት ቀን የወጣው ነው። ወቅታዊውን ዋጋ በዲሞ ባንክ ድረ ገጽ፣ በሞባይል ባንኪንግ መተግበሪያ "
+            "ወይም በማንኛውም ቅርንጫፍ ማየት ይችላሉ።\n\n"
+            "በቅርንጫፍ ምንዛሬ ለመቀየር የቀበሌ መታወቂያ፣ ብሔራዊ መታወቂያ ወይም ፓስፖርት ይዘው ይምጡ። "
+            "ከዕለታዊ ገደብ በላይ ለሆነ መጠን ወይም ለጉዞ፣ ለንግድ እና ለሕክምና የውጭ ምንዛሬ ለመግዛት "
+            "ተዛማጅ ማስረጃ ያስፈልጋል፤ የቅርንጫፉ ሠራተኞች የትኛው እንደሚያስፈልግ ይነግሩዎታል።\n\n"
+            "ይህ ገጽ ሆን ብሎ ዋጋ አይጠቅስም። የተጻፈ የምንዛሬ ዋጋ በማግስቱ ጊዜው ያለፈበት ይሆናል፤ "
+            "ጊዜው ያለፈበት ዋጋ ደግሞ ከምንም የባሰ ነው — ሁልጊዜ ወቅታዊውን ዋጋ ከመተግበሪያው፣ "
+            "ከድረ ገጹ ወይም ከቅርንጫፍ ይውሰዱ።"
+        ),
+    },
+    {
         "title": "Branches, Hours, and Customer Care",
         "category": "general",
         "language": "en",
@@ -255,6 +312,39 @@ _DOCS: list[dict[str, str]] = [
 ]
 
 
+def _add_missing_docs(db: Session, bank_id: str) -> int:
+    """Insert any document in `_DOCS` this bank does not already have.
+
+    THE THIRD TIME THIS EXACT TRAP HAS BEEN HIT. Documents were only created
+    in the branch that creates the bank, so a new article added to `_DOCS`
+    reached production and did nothing at all — every deployment already has a
+    demo bank, and the early return above skips straight past the loop. A
+    foreign-exchange article written because "the assistant has no answer for
+    a basic exchange rate question" would have shipped, deployed green, and
+    changed nothing.
+
+    Matched on title, and existing rows are LEFT ALONE. A tenant may have
+    edited an article through the admin panel, and a deploy that silently
+    overwrote their edits with our seed copy would be far worse than a missing
+    one — this adds what is absent and never argues with what is there.
+    """
+    have = set(
+        db.execute(
+            select(Document.title).where(Document.bank_id == bank_id)
+        ).scalars().all()
+    )
+    added = 0
+    for spec in _DOCS:
+        if spec["title"] in have:
+            continue
+        doc = Document(bank_id=bank_id, **spec)
+        db.add(doc)
+        db.flush()
+        reindex_document(db, doc)
+        added += 1
+    return added
+
+
 def seed() -> tuple[Bank, bool]:
     """Create the demo bank if missing. Returns (bank, created)."""
     init_db()
@@ -276,6 +366,7 @@ def seed() -> tuple[Bank, bool]:
             # this is what it is for. A bank's own tenant is never touched
             # here.
             existing.teller_enabled = True
+            _add_missing_docs(db, existing.id)
             db.commit()
             return existing, False
         bank = Bank(
