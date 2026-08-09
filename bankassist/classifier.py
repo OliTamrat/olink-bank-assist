@@ -346,11 +346,30 @@ _COMPLAINT_RE = re.compile(
 # through to your manager" must still hit the account guardrail. Escalation is
 # the intent only when nothing more specific applies.
 _HUMAN_REQUEST_RE = re.compile(
+    # An adjective slot between the article and the noun. Without it the
+    # article had to sit flush against the noun, so "speak to a LIVE agent" —
+    # reported from the deployed demo, and the commonest way an English
+    # speaker asks — fell through to an ordinary question and was answered
+    # with "I don't have verified information about that yet" plus three
+    # unrelated articles. "a person" matched; "a live person" did not.
+    #
+    # `teller` is in the noun list because this is a bank. Its absence meant
+    # "talk to a teller" — the exact words for the feature this product is
+    # built around — was not an escalation.
     r"\b(speak|talk|chat) (to|with) (a |an |the |your |someone|somebody)?"
-    r"(human|person|manager|supervisor|agent|representative|rep|staff|"
+    r"(live |real |actual |human |available )*"
+    r"(human|person|manager|supervisor|agent|representative|rep|staff|teller|"
     r"customer (service|care)|real person|someone)|"
     r"\b(connect|transfer|put) me (to|through|with)|"
     r"\b(i (want|need) (to reach )?)?(a|an) (human|real person|actual person)\b|"
+    # "live agent", "live teller" as bare phrases — "I need a live agent",
+    # "live agent please". The adjective is REQUIRED, deliberately: AGENT
+    # BANKING IS A REAL ETHIOPIAN BANKING PRODUCT, so a bare "agent" here
+    # would turn "do you have agent banking?" and "where is your nearest
+    # agent?" into demands for a manager. Nobody says "live agent" about an
+    # agent-banking outlet.
+    r"\b(live|real|actual) (agent|person|human|teller|rep|representative|"
+    r"operator)\b|"
     r"\bhuman (agent|being|support)\b|"
     r"\bcall me back\b|"
     # Amharic. "ከ አለቃ ወይም አመራር ጋር መነጋገር እፈልጋለው" was reported from the live

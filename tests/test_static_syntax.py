@@ -92,3 +92,25 @@ def test_the_logo_layout_hook_targets_an_element_that_exists() -> None:
         assert f'{marker}[data-logo=' in src or f'.{marker}[data-logo=' in src, (
             f"{name}: the data-logo rule no longer hangs off {marker}"
         )
+
+
+def test_the_widget_offers_a_teller_when_someone_asks_for_a_person() -> None:
+    """The one case where not offering is absurd.
+
+    It used to ride in on `handoff_created`, which is a side effect of the
+    intent rather than the intent itself — so an explicit "can I speak to a
+    live agent?" depended on a handoff still being filed. Nothing would error
+    if that changed; the button would just stop appearing for the people most
+    obviously asking for it.
+    """
+    import re
+    from pathlib import Path
+
+    from bankassist import agent, classifier
+
+    src = (Path(agent.__file__).parent / "static" / "widget.html").read_text()
+    block = re.search(r"function shouldOfferTeller\(data\) \{(.*?)\n  \}", src, re.S)
+    assert block, "the widget no longer decides when to offer a teller"
+    assert f'"{classifier.HUMAN_REQUEST}"' in block.group(1), (
+        "an explicit request for a person does not offer one"
+    )

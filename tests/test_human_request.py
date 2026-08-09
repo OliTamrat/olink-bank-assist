@@ -213,3 +213,68 @@ def test_a_question_about_responsibility_is_not_a_demand_for_a_manager(
     not a request to escalate. Routing it to a queue answers something the
     customer did not ask and logs nothing as wrong."""
     assert _ask(client, message)["intent"] != "human_request", message
+
+
+# ------------------------------------------------- the adjective in the way
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Reported from the deployed demo. The article had to sit flush
+        # against the noun, so a single adjective between them dropped the
+        # request to an ordinary question — and "live agent" is the commonest
+        # way an English speaker asks for one.
+        "Can I speak to a live agent?",
+        "I want to speak to a live agent",
+        "speak to a live person",
+        "Can I talk to a live representative?",
+        "I need a live agent",
+        "live agent please",
+        "I want to chat with a real person",
+        # A bank. The word for the thing this product is built around was
+        # missing from the noun list entirely.
+        "talk to a teller",
+        "Can I speak to a teller?",
+    ],
+)
+def test_an_adjective_between_the_article_and_the_noun_still_escalates(
+    message: str,
+) -> None:
+    assert classifier.classify_intent(message) == classifier.HUMAN_REQUEST
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # AGENT BANKING IS A REAL ETHIOPIAN BANKING PRODUCT. This is why the
+        # bare-phrase rule requires an adjective: matching "agent" on its own
+        # would turn a customer asking about the agent network into a demand
+        # for a manager, and silently stop answering a question the bank has
+        # published content for.
+        "Do you have agent banking?",
+        "What is agent banking?",
+        "How do I become a banking agent?",
+        "Where is your nearest agent?",
+        "Can I open an account with an agent?",
+        # Same for teller, now that it is a noun in the list.
+        "Is there a teller at every branch?",
+        "What are teller working hours?",
+    ],
+)
+def test_asking_about_agents_and_tellers_is_still_a_question(message: str) -> None:
+    assert classifier.classify_intent(message) == classifier.QUESTION
+
+
+def test_a_live_agent_request_gets_no_unrelated_suggestions(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The screenshot that started this: "Can I speak to a live agent?" was
+    answered with "I don't have verified information about that yet" and three
+    suggested articles — Treasury Bills, Saving and Budgeting, Diaspora
+    Accounts. Retrieval had been asked a question nobody posed.
+    """
+    body = _ask(client, "Can I speak to a live agent?")
+    assert body["intent"] == classifier.HUMAN_REQUEST
+    assert not body.get("suggestions")
+    assert "verified information" not in body["reply"]
