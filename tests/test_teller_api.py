@@ -388,6 +388,7 @@ def test_a_waiting_customer_has_a_visible_wait(
     ).json()["id"]
     _staff(client, db_session, demo_bank, "t@bank.et", permissions.TELLER)
     row = client.get("/admin/api/demo/teller/queue").json()[0]
+    assert row["id"] == sid
     assert row["state"] == teller.QUEUED
     assert isinstance(row["waited_seconds"], int)
 
