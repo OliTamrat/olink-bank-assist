@@ -29,6 +29,7 @@ from . import (
     admin_auth,
     channels,
     handoff_webhook,
+    livekit,
     passwords,
     permissions,
     roles,
@@ -424,6 +425,12 @@ def _teller_available(db: Session, bank: Bank) -> bool:
     `teller` to `agent` or splits it into two roles keeps working.
     """
     if not bank.teller_enabled:
+        return False
+    # No media layer, no offer. Same reasoning as presence: a button that
+    # queues someone for a call that cannot physically connect is worse than
+    # no button. This is what keeps a deployment with the feature switched on
+    # but LIVEKIT_* unset from advertising video it cannot deliver.
+    if livekit.credentials() is None:
         return False
     cutoff = datetime.now(UTC) - TELLER_PRESENCE_WINDOW
     return db.execute(
@@ -2197,6 +2204,87 @@ def poll_teller_session(
     if session is None or session.bank_id != bank.id:
         raise HTTPException(status_code=404, detail="Unknown session")
     return _session_public_queued(db, bank, session)
+
+
+def _join(session: TellerSession, *, identity: str, name: str) -> dict[str, Any]:
+    """Everything a browser needs to get into the room, and nothing else."""
+    creds = livekit.require()
+    return {
+        "url": creds.url,
+        "token": livekit.access_token(
+            session_id=session.id, identity=identity, name=name,
+            # Both parties on a teller call publish. The read-only path exists
+            # in livekit.py for a supervisor observing, which is not this.
+            can_publish=True,
+        ),
+        "room": livekit.room_name(session.id),
+        "identity": identity,
+    }
+
+
+@app.get("/chat/{slug}/teller-session/{session_id}/token")
+def customer_join_token(
+    slug: str, session_id: str, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """A join token for the customer, once a teller has actually taken them.
+
+    Possession of the session id is the credential, exactly as it is for the
+    poll route above — the id is a UUID4 and is only ever handed to the
+    browser that created the session. Worth stating plainly rather than
+    leaving implied, because this route mints a media credential and the poll
+    route only reads state.
+
+    Issued ONLY while the session is active. Before a teller claims it there
+    is nobody to talk to, so a token then would be a live credential for an
+    empty room sitting in a browser for the whole length of the queue wait.
+    """
+    bank = _get_bank(db, slug)
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    if session.state != teller.ACTIVE:
+        raise HTTPException(status_code=409, detail="No teller on this session yet")
+    if livekit.credentials() is None:
+        raise HTTPException(status_code=503, detail="Video is not configured")
+    return _join(session, identity=f"customer-{session.id}", name="Customer")
+
+
+@app.get("/admin/api/{slug}/teller/sessions/{session_id}/token")
+def teller_join_token(
+    session_id: str,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """A join token for the teller who took this session.
+
+    Deliberately not "anyone holding teller.serve". Only the person the
+    session was claimed by may join it — otherwise every teller in the bank
+    could drop into any live customer call, which is both a privacy problem
+    and the kind of thing that is impossible to explain to a regulator after
+    the fact. A colleague who needs to take over claims the session, and that
+    is audited.
+    """
+    bank = principal.bank
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    if principal.user is None:
+        # The break-glass token has no person behind it, and a live customer
+        # call must be answerable to a named employee.
+        raise HTTPException(
+            status_code=403, detail="Sign in as a person to join a session"
+        )
+    if session.state != teller.ACTIVE:
+        raise HTTPException(status_code=409, detail="That session is not active")
+    if session.teller_user_id != principal.user.id:
+        raise HTTPException(status_code=403, detail="Another teller has this session")
+    if livekit.credentials() is None:
+        raise HTTPException(status_code=503, detail="Video is not configured")
+    return _join(
+        session,
+        identity=f"teller-{principal.user.id}",
+        name=principal.user.display_name or "Teller",
+    )
 
 
 @app.delete("/chat/{slug}/teller-session/{session_id}")

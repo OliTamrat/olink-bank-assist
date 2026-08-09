@@ -13,12 +13,27 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from bankassist import api as api_module
 from bankassist import passwords, permissions, teller
 from bankassist.models import Bank, Role, RolePermission, TellerSession, User, UserCredential
+
+
+@pytest.fixture(autouse=True)
+def _livekit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Availability now needs a configured media layer as well as a present
+    teller, so these tests have to supply one.
+
+    Without this every `teller_available is True` assertion here fails and
+    every `is False` one passes for the wrong reason — they would be measuring
+    the missing LIVEKIT_* variables rather than the presence logic they name.
+    """
+    monkeypatch.setenv("LIVEKIT_URL", "wss://test.livekit.cloud")
+    monkeypatch.setenv("LIVEKIT_API_KEY", "APItest")
+    monkeypatch.setenv("LIVEKIT_API_SECRET", "s" * 32)
 
 
 def _conversation(client: TestClient, slug: str = "demo") -> str:
