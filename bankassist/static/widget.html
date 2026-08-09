@@ -325,9 +325,309 @@
     color: var(--text-3); padding: 8px 16px 0;
   }
 
+  /* ------------------------------------------------- talk to a teller */
+  /* Offered in the thread, at the turn where a person would actually have
+     helped, rather than parked in the header where it competes with the
+     assistant on every message. The bank is paying for the assistant to
+     deflect; a permanent "skip the bot" button undercuts that. */
+  .teller-offer {
+    display: flex; align-items: center; gap: 10px;
+    margin: 2px 0 14px 35px; padding: 11px 13px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 13px; box-shadow: var(--shadow);
+    animation: rise .3s .1s cubic-bezier(.2,.7,.3,1) both;
+  }
+  .teller-offer .ico {
+    width: 30px; height: 30px; border-radius: 9px; flex: none;
+    background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+    color: var(--accent); display: grid; place-items: center;
+  }
+  .teller-offer .ico svg { width: 15px; height: 15px; }
+  .teller-offer .txt { flex: 1; min-width: 0; }
+  .teller-offer .txt b { display: block; font-size: 13px; font-weight: 600; }
+  .teller-offer .txt span { font-size: 11.5px; color: var(--text-2); }
+  .teller-offer button {
+    font-family: inherit; font-size: 12.5px; font-weight: 600; flex: none;
+    padding: 8px 14px; border-radius: 10px; cursor: pointer; border: 0;
+    background: var(--brand); color: #fff;
+    transition: transform .15s, opacity .15s;
+  }
+  .teller-offer button:hover { transform: translateY(-1px); }
+
+  /* The sheet. Covers the chat rather than replacing it, so closing it puts
+     the customer back exactly where they were mid-conversation. */
+  .sheet {
+    position: fixed; inset: 0; z-index: 20;
+    display: none; align-items: flex-end; justify-content: center;
+    background: rgba(10,12,16,.5);
+    animation: fade .2s both;
+  }
+  .sheet.open { display: flex; }
+  @keyframes fade { from { opacity: 0; } }
+  .sheet .panel {
+    width: 100%; max-width: 460px; max-height: 92%; overflow-y: auto;
+    background: var(--surface); color: var(--text);
+    border-radius: 20px 20px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+    animation: slideup .28s cubic-bezier(.2,.7,.3,1) both;
+  }
+  @keyframes slideup { from { transform: translateY(18px); opacity: 0; } }
+  .sheet h2 { font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+  .sheet .lede { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 6px; }
+
+  /* What the person on the call can and cannot do, side by side and equally
+     prominent. The "cannot" half is not a disclaimer to be buried — someone
+     who queues ten minutes to ask for a transfer and is refused live has had
+     a worse experience than being told instantly. */
+  .can { margin-top: 15px; display: flex; flex-direction: column; gap: 7px; }
+  .can .row {
+    display: flex; gap: 9px; align-items: flex-start;
+    font-size: 13px; line-height: 1.45;
+  }
+  .can .row svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+  .can .row.yes svg { color: #16a34a; }
+  .can .row.no  svg { color: #b45309; }
+  .can .row.no  { color: var(--text-2); }
+  @media (prefers-color-scheme: dark) {
+    .can .row.yes svg { color: #4ade80; }
+    .can .row.no  svg { color: #fbbf24; }
+  }
+  .can .hd {
+    font-size: 11px; font-weight: 650; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--text-3); margin-top: 4px;
+  }
+
+  .sheet .actions { display: flex; gap: 9px; margin-top: 18px; }
+  .sheet .actions button {
+    flex: 1; font-family: inherit; font-size: 14px; font-weight: 600;
+    padding: 13px; border-radius: 12px; cursor: pointer;
+    transition: transform .15s, opacity .15s;
+  }
+  .sheet .actions button:hover:not(:disabled) { transform: translateY(-1px); }
+  .sheet .actions button:disabled { opacity: .5; cursor: default; }
+  .btn-primary { border: 0; background: var(--brand); color: #fff; }
+  .btn-quiet {
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--line);
+  }
+
+  /* Media choice. Audio first and preselected — outside Addis it is the
+     common case, and defaulting to video quietly makes the product worse for
+     the customers with the weakest connections. */
+  .media { display: flex; gap: 9px; margin-top: 15px; }
+  .media label {
+    flex: 1; display: flex; align-items: center; gap: 8px; cursor: pointer;
+    padding: 11px 12px; border-radius: 12px; font-size: 13px; font-weight: 550;
+    background: var(--surface-2); border: 1px solid var(--line);
+    transition: border-color .15s, background .15s;
+  }
+  /* An inline <svg> with only a viewBox has no intrinsic size, so it fills its
+     flex line — these rendered at 109px before this rule. Every other icon in
+     the widget is sized by its own container's rule; this one needs its own. */
+  .media label svg { width: 16px; height: 16px; flex: none; opacity: .8; }
+  .media label:has(input:checked) {
+    border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+    background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  }
+  .media label:has(input:checked) svg { opacity: 1; color: var(--accent); }
+  .media input { accent-color: var(--brand); }
+
+  /* Waiting. The number is the whole point — someone told they are third will
+     wait; someone shown a spinner leaves. */
+  .queue { text-align: center; padding: 10px 0 4px; }
+  .queue .pos {
+    font-size: 40px; font-weight: 300; letter-spacing: -.03em; line-height: 1.1;
+    color: var(--accent);
+  }
+  .queue .posl { font-size: 13.5px; color: var(--text-2); margin-top: 4px; }
+  .queue .timer {
+    font-size: 12px; color: var(--text-3); margin-top: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ring {
+    width: 26px; height: 26px; margin: 0 auto 12px; border-radius: 50%;
+    border: 2.5px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    border-top-color: var(--accent);
+    animation: spin .9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ------------------------------------------------- the call */
+  /* Full-screen rather than a panel in the sheet. A call is the only thing
+     happening while it is happening, and a video tile competing with a chat
+     thread behind it is how someone taps the wrong control mid-sentence. */
+  .call {
+    position: fixed; inset: 0; z-index: 30; display: none;
+    flex-direction: column; background: #0a0c10; color: #fff;
+  }
+  .call.open { display: flex; }
+  .call .stage {
+    flex: 1; position: relative; min-height: 0;
+    display: grid; place-items: center; overflow: hidden;
+  }
+  /* The teller. object-fit: cover rather than contain — a letterboxed face
+     in a phone-shaped frame wastes most of the screen. */
+  .call .stage video {
+    width: 100%; height: 100%; object-fit: cover; background: #0a0c10;
+  }
+  /* Self-view, small and in the corner. Mirrored, because an un-mirrored
+     self-view reads as someone else's camera and people move the wrong way. */
+  .call .self {
+    position: absolute; right: 14px; bottom: 14px;
+    width: 96px; height: 128px; border-radius: 12px; overflow: hidden;
+    background: #14171d; border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 8px 24px -10px rgba(0,0,0,.8);
+  }
+  .call .self video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .call .who2 {
+    position: absolute; left: 0; right: 0; top: 0;
+    padding: 14px 16px calc(14px + env(safe-area-inset-top));
+    background: linear-gradient(rgba(10,12,16,.75), transparent);
+    font-size: 14px; font-weight: 600;
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+  .call .who2 .nm { flex: 1; min-width: 0; }
+  .call .who2 small {
+    display: block; font-weight: 400; font-size: 11.5px;
+    color: rgba(255,255,255,.72); margin-top: 2px;
+  }
+  /* Call duration. Every consumer video app shows one, and its absence is
+     felt rather than noticed — a customer with no sense of elapsed time on a
+     paid mobile connection gets anxious and hangs up. */
+  .call .timer2 {
+    font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums;
+    color: rgba(255,255,255,.85); display: flex; align-items: center; gap: 6px;
+    flex: none; padding-top: 1px;
+  }
+  .call .qdot {
+    width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
+    box-shadow: 0 0 0 3px rgba(74,222,128,.18);
+  }
+  .call .qdot.poor { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251,191,36,.18); }
+  .call .qdot.bad  { background: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,.18); }
+  /* Reconnecting. Silence with a frozen frame is indistinguishable from the
+     other person having gone quiet; saying so is what stops them hanging up
+     on a call that is about to recover. */
+  .call .recon {
+    position: absolute; left: 50%; top: 68px; transform: translateX(-50%);
+    background: rgba(251,191,36,.16); color: #fbbf24;
+    border: 1px solid rgba(251,191,36,.3);
+    padding: 6px 13px; border-radius: 99px; font-size: 12px; font-weight: 550;
+    display: none; white-space: nowrap;
+  }
+  .call .recon.on { display: block; }
+  /* Shown until a remote track arrives. Audio-only calls never get one, so
+     this is the normal state outside Addis rather than an error. */
+  .call .placeholder { text-align: center; padding: 20px; }
+  .call .placeholder .av {
+    width: 78px; height: 78px; border-radius: 50%; margin: 0 auto 14px;
+    background: color-mix(in srgb, var(--brand) 70%, #000);
+    display: grid; place-items: center; font-size: 26px; font-weight: 600;
+  }
+  .call .placeholder p { font-size: 13.5px; color: rgba(255,255,255,.72); }
+
+  .call .controls {
+    display: flex; justify-content: center; gap: 16px;
+    padding: 18px 16px calc(20px + env(safe-area-inset-bottom));
+    background: #0a0c10;
+  }
+  .call .controls button {
+    width: 54px; height: 54px; border-radius: 50%; border: 0; cursor: pointer;
+    display: grid; place-items: center; color: #fff;
+    background: rgba(255,255,255,.13);
+    transition: background .15s, transform .15s;
+  }
+  .call .controls button:hover { transform: translateY(-1px); }
+  .call .controls button svg { width: 21px; height: 21px; }
+  /* Muted/camera-off is a WHITE button, not a red one. Red reads as "this
+     control is dangerous"; the danger is forgetting you are muted, so the
+     off state is the one that has to be unmissable at a glance. */
+  .call .controls button.off { background: #fff; color: #0a0c10; }
+  .call .controls button.hang { background: #dc2626; }
+  .call .controls button.hang:hover { background: #ef4444; }
+  .call .note2 {
+    text-align: center; font-size: 11px; color: rgba(255,255,255,.5);
+    padding: 0 16px 10px; background: #0a0c10;
+  }
+  /* Chat, during the call. Not a nicety: account numbers, reference codes and
+     names are the things people cannot say clearly over a bad line, and they
+     are exactly what a banking call is about. It also keeps the session
+     usable when audio fails entirely. */
+  .call .chatbtn {
+    position: relative;
+  }
+  .call .chatbtn .badge {
+    position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px;
+    border-radius: 99px; background: #dc2626; color: #fff;
+    font-size: 10.5px; font-weight: 700; display: none;
+    align-items: center; justify-content: center; padding: 0 5px;
+  }
+  .call .chatbtn .badge.on { display: flex; }
+  /* Opaque, not 97%. At .97 the call header ghosted through the top of the
+     panel and read as a rendering fault rather than as translucency. */
+  .callchat {
+    position: absolute; inset: 0; z-index: 2; display: none;
+    flex-direction: column; background: #0a0c10;
+  }
+  .callchat.open { display: flex; }
+  .callchat .head2 {
+    display: flex; align-items: center; gap: 10px;
+    padding: calc(14px + env(safe-area-inset-top)) 16px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    font-size: 14px; font-weight: 600;
+  }
+  .callchat .head2 button {
+    margin-left: auto; background: none; border: 0; color: rgba(255,255,255,.75);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .callchat .log {
+    flex: 1; overflow-y: auto; padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .callchat .m {
+    font-size: 13.5px; line-height: 1.5; padding: 9px 12px; border-radius: 13px;
+    max-width: 84%; overflow-wrap: anywhere; white-space: pre-wrap;
+  }
+  .callchat .m.user { align-self: flex-end; background: var(--brand); color: #fff; }
+  .callchat .m.teller { align-self: flex-start; background: #23272f; color: #fff; }
+  /* The assistant's earlier turns, dimmed. They are context for what was
+     already said, not part of the live exchange — and a bank's evaluator
+     must be able to see at a glance which lines the AI wrote. */
+  .callchat .m.assistant {
+    align-self: flex-start; background: transparent; color: rgba(255,255,255,.62);
+    border: 1px solid rgba(255,255,255,.14);
+  }
+  .callchat .who3 {
+    font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+    color: rgba(255,255,255,.42); margin: 4px 0 -3px;
+  }
+  .callchat form {
+    display: flex; gap: 9px; padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255,255,255,.1);
+  }
+  .callchat input {
+    flex: 1; min-width: 0; border: 1px solid rgba(255,255,255,.16);
+    background: rgba(255,255,255,.07); color: #fff;
+    border-radius: 12px; padding: 11px 13px; font-family: inherit;
+    /* >= 16px or iOS Safari zooms the whole call panel on focus. */
+    font-size: 16px; outline: none;
+  }
+  .callchat input::placeholder { color: rgba(255,255,255,.42); }
+  .callchat button.send2 {
+    width: 44px; flex: none; border: 0; border-radius: 12px;
+    background: var(--brand); color: #fff; cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .callchat button.send2 svg { width: 17px; height: 17px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ring { animation: none; }
+    .bubble, .meta, .suggest, .teller-offer, .sheet, .sheet .panel { animation: none; }
+  }
+
   @media (max-width: 420px) {
     .bubble { max-width: 92%; font-size: 14px; }
-    .meta, .cites, .suggest { margin-left: 0; }
+    .meta, .cites, .suggest, .teller-offer { margin-left: 0; }
   }
 </style>
 </head>
@@ -356,6 +656,39 @@
     </button>
   </form>
   <div class="notice">Answers are drawn from this bank's official information and cited. General education only — not personal investment advice.</div>
+</div>
+
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="panel" id="sheetPanel"></div>
+</div>
+
+<div class="call" id="call" role="dialog" aria-modal="true" aria-label="Call with a teller">
+  <div class="stage" id="stage">
+    <div class="placeholder" id="placeholder">
+      <div class="av" id="callInitials">·</div>
+      <p id="callStatus">Connecting…</p>
+    </div>
+    <div class="who2" id="callWho"></div>
+    <div class="recon" id="callRecon">Reconnecting…</div>
+    <div class="self" id="selfView" style="display:none"><video id="selfVideo" autoplay muted playsinline></video></div>
+    <div class="callchat" id="callChat">
+      <div class="head2">Messages<button type="button" id="chatClose" aria-label="Close messages">&times;</button></div>
+      <div class="log" id="chatLog"></div>
+      <form id="chatForm">
+        <input id="chatInput" type="text" autocomplete="off" placeholder="Type a message…">
+        <button type="submit" class="send2" aria-label="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </form>
+    </div>
+  </div>
+  <div class="controls">
+    <button type="button" id="btnMic" title="Mute" aria-label="Mute"></button>
+    <button type="button" id="btnCam" title="Camera" aria-label="Camera"></button>
+    <button type="button" id="btnChat" class="chatbtn" title="Messages" aria-label="Messages"><span class="badge" id="chatBadge">0</span></button>
+    <button type="button" id="btnHang" class="hang" title="End call" aria-label="End call"></button>
+  </div>
+  <div class="note2">This teller cannot move money. Never share your PIN or password.</div>
 </div>
 
 <script>
@@ -419,8 +752,36 @@
     globe:  '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/>',
     doc:    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
     user:   '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
-    spark:  '<path d="M12 3l1.9 5.4L19 10l-5.1 1.6L12 17l-1.9-5.4L5 10l5.1-1.6z"/>'
+    spark:  '<path d="M12 3l1.9 5.4L19 10l-5.1 1.6L12 17l-1.9-5.4L5 10l5.1-1.6z"/>',
+    head:   '<path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M21 15a2 2 0 0 1-2 2h-1v-5h1a2 2 0 0 1 2 2zM3 15a2 2 0 0 0 2 2h1v-5H5a2 2 0 0 0-2 2z"/><path d="M18 17v1a3 3 0 0 1-3 3h-3"/>',
+    cam:    '<path d="M23 7l-7 5 7 5z"/><rect x="1" y="5" width="15" height="14" rx="2"/>',
+    mic:    '<rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/>',
+    check:  '<path d="M20 6L9 17l-5-5"/>',
+    cross:  '<path d="M18 6L6 18M6 6l12 12"/>'
   };
+
+  // Server-side capability keys (teller.py) -> what to tell the customer.
+  // A key with no entry is skipped rather than printed raw: a new capability
+  // shipped on the API should not surface as "dispute_intake" in a bank's
+  // customer-facing widget before anyone has written the sentence for it.
+  var CAPABILITY = {
+    general_guidance: "Explain products, fees and eligibility",
+    own_records:      "Look up your own application or account records",
+    document_capture: "Take a copy of your ID or a completed form",
+    dispute_intake:   "File a complaint or dispute on your behalf"
+  };
+
+  // What no session can do, at any level of verification. Shown up front and
+  // as prominently as the "can" list, not tucked into small print.
+  //
+  // This is a product boundary, not a limitation being apologised for: the
+  // assistant never touches money, so a compromised session cannot move any.
+  // A customer who queues ten minutes to ask for a transfer and is refused
+  // live has had a far worse experience than one told before they waited.
+  var CANNOT = [
+    "Move money — deposits, withdrawals or transfers",
+    "Change your PIN, password or security details"
+  ];
 
   function svg(name, extra) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
@@ -470,7 +831,10 @@
     scroll();
   }
 
-  function addBot(text, reveal) {
+  // `done` fires when the text has finished revealing — not when the request
+  // returned. Anything appended below the reply has to wait for that, or it
+  // sits under a half-written sentence looking like it interrupted.
+  function addBot(text, reveal, done) {
     var turn = el("div", "turn bot");
     var row = el("div", "botrow");
     var sp = el("div", "spark", svg("spark", ' style="fill:currentColor;stroke:none" class="brandfill"'));
@@ -480,14 +844,14 @@
     turn.appendChild(row);
     chat.appendChild(turn);
 
-    if (!reveal) { b.textContent = text; scroll(); return turn; }
+    if (!reveal) { b.textContent = text; scroll(); if (done) done(); return turn; }
 
     // Progressive reveal. The response arrives complete from a single POST —
     // this is a presentation choice, not true token streaming. It reads as
     // live generation, which is what a prospect expects from an AI product.
     var words = text.split(/(\s+)/), i = 0;
     (function step() {
-      if (i >= words.length) { scroll(); return; }
+      if (i >= words.length) { scroll(); if (done) done(); return; }
       b.textContent += words[i++];
       scroll();
       setTimeout(step, words[i - 1] && words[i - 1].trim() ? 16 : 8);
@@ -608,6 +972,12 @@
         d.style.display = "block";
       }
 
+      // Both halves: the tenant has the feature on AND somebody is watching
+      // the queue. The server decides; the widget never infers availability
+      // from the feature merely existing, because a button that queues a
+      // customer behind nobody is worse than no button.
+      tellerAvailable = !!cfg.teller_available;
+
       var auto = el("option"); auto.value = ""; auto.textContent = "Auto";
       langSel.appendChild(auto);
       (cfg.languages || []).forEach(function (l) {
@@ -659,7 +1029,12 @@
       .then(function (data) {
         conversationId = data.conversation_id;
         t.remove();
-        var turn = addBot(data.reply, true);
+        var turn = addBot(data.reply, true, function () {
+          // After the reply has finished writing itself, not before — see
+          // addBot. The offer is a response to what the assistant just said,
+          // and appearing mid-sentence makes it read as an interruption.
+          if (shouldOfferTeller(data)) offerTeller();
+        });
         addMeta(turn, data);
         // Offered when retrieval found nothing confident. Tapping one asks
         // about that topic, so a customer whose phrasing missed the
@@ -693,6 +1068,636 @@
       })
       .finally(function () { send.disabled = false; input.focus(); });
   }
+
+  // ------------------------------------------------------- talk to a teller
+  //
+  // The escape hatch from the assistant to a person, for the cases the
+  // assistant is designed NOT to handle: anything about this customer's own
+  // account, complaints, and the gaps where the knowledge base has nothing.
+  //
+  // Deliberately not a permanent header button. The bank is paying for the
+  // assistant to deflect volume, and a standing "skip the bot" control on
+  // every screen is how a deflection product becomes a queue product. It is
+  // offered at the turn where a person would genuinely have helped, which is
+  // also the moment the customer is most likely to accept it.
+
+  var tellerAvailable = false;   // set from /public — enabled AND someone on
+  var session = null;            // the live session, once requested
+  var pollTimer = null;
+  var tickTimer = null;
+  var sheet = document.getElementById("sheet");
+  var sheetPanel = document.getElementById("sheetPanel");
+
+  function mmss(sec) {
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  // Offer a person after a turn the assistant could not carry. Which turns
+  // those are is decided by what the API already reports, not by guessing at
+  // the text: an explicit handoff, an admitted knowledge gap, and the two
+  // guardrails that exist precisely because a human is the right answer.
+  function shouldOfferTeller(data) {
+    return tellerAvailable && !session && (
+      data.handoff_created ||
+      data.outcome === "unanswered" ||
+      data.intent === "account_specific" ||
+      data.intent === "complaint"
+    );
+  }
+
+  function offerTeller() {
+    var card = el("div", "teller-offer",
+      '<div class="ico">' + svg("head") + '</div>' +
+      '<div class="txt"><b>Speak to a ' + bankName + ' teller</b>' +
+      '<span>Available now — audio or video</span></div>' +
+      '<button type="button">Connect</button>');
+    card.querySelector("button").addEventListener("click", function () {
+      card.remove();
+      openPreflight();
+    });
+    chat.appendChild(card);
+    scroll();
+  }
+
+  function openSheet(html) {
+    sheetPanel.innerHTML = html;
+    sheet.classList.add("open");
+  }
+  function closeSheet() {
+    sheet.classList.remove("open");
+  }
+
+  // What the teller will and will not be able to do — BEFORE the customer
+  // commits to waiting. Both tiers are shown, because the second one explains
+  // why they are about to be asked for an ID: arriving at that request with no
+  // warning reads as an interrogation rather than a verification step.
+  function openPreflight() {
+    var yes = ["general_guidance"].map(function (k) {
+      return '<div class="row yes">' + svg("check") + '<span>' + CAPABILITY[k] + '</span></div>';
+    }).join("");
+    var more = ["own_records", "document_capture", "dispute_intake"].map(function (k) {
+      return '<div class="row yes">' + svg("check") + '<span>' + CAPABILITY[k] + '</span></div>';
+    }).join("");
+    var no = CANNOT.map(function (label) {
+      return '<div class="row no">' + svg("cross") + '<span>' + label + '</span></div>';
+    }).join("");
+
+    openSheet(
+      '<h2 id="sheetTitle">Speak to a teller</h2>' +
+      '<p class="lede">A ' + bankName + ' teller will join you on a call. ' +
+      'They will ask to see your Fayda ID and check a detail on your account ' +
+      'before discussing anything specific to you.</p>' +
+      '<div class="can">' +
+        '<div class="hd">Straight away</div>' + yes +
+        '<div class="hd">Once they have checked your ID</div>' + more +
+        '<div class="hd">Not on this call, ever</div>' + no +
+      '</div>' +
+      '<div class="media">' +
+        '<label>' + svg("mic") + '<input type="radio" name="media" value="audio" checked hidden>Audio</label>' +
+        '<label>' + svg("cam") + '<input type="radio" name="media" value="video" hidden>Video</label>' +
+      '</div>' +
+      '<div class="actions">' +
+        '<button type="button" class="btn-quiet" id="tCancel">Not now</button>' +
+        '<button type="button" class="btn-primary" id="tGo">Join the queue</button>' +
+      '</div>'
+    );
+    // The radios are visually hidden but still the source of truth, so the
+    // label's :has(input:checked) styling and the value read here cannot
+    // disagree with each other.
+    Array.prototype.forEach.call(sheetPanel.querySelectorAll(".media label"),
+      function (lab) {
+        lab.addEventListener("click", function () {
+          lab.querySelector("input").checked = true;
+        });
+      });
+    document.getElementById("tCancel").addEventListener("click", closeSheet);
+    document.getElementById("tGo").addEventListener("click", function (e) {
+      e.target.disabled = true;
+      var picked = sheetPanel.querySelector('input[name=media]:checked');
+      requestSession(picked ? picked.value : "audio");
+    });
+  }
+
+  function requestSession(media) {
+    fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId, media: media })
+    })
+      .then(function (r) {
+        if (!r.ok) { var e = new Error("session"); e.status = r.status; throw e; }
+        return r.json();
+      })
+      .then(function (data) {
+        session = data;
+        // The clock starts here, in the client. The customer-facing session
+        // payload deliberately carries no timestamps — it is served to anyone
+        // holding the id — so the elapsed time on screen is time since this
+        // browser asked, which is also the number the customer cares about.
+        session.waited_from = Date.now();
+        renderQueue();
+        startPolling();
+      })
+      .catch(function (err) {
+        // 409 is the tenant having the feature switched off between the page
+        // loading and the tap. Named separately because it is the one failure
+        // where retrying is pointless and the customer should be sent back to
+        // the assistant rather than left tapping.
+        var msg = (err && err.status === 409)
+          ? "Live teller sessions aren't available right now."
+          : "Sorry — we couldn't reach a teller. Please try again in a moment.";
+        closeSheet();
+        addBot(msg, false);
+      });
+  }
+
+  function renderQueue() {
+    if (!session) return;
+    if (session.state === "queued") {
+      var ahead = session.ahead;
+      var pos = (ahead == null) ? "" :
+        '<div class="pos">' + (ahead + 1) + '</div>' +
+        // Not "a teller is joining" — being first in the queue is not the same
+        // as someone having picked up, and copy that implies an imminent
+        // answer is a promise nothing here can keep.
+        '<div class="posl">' + (ahead === 0
+          ? "You're first in the queue"
+          : "in the queue, " + ahead + " ahead of you") + '</div>';
+      openSheet(
+        '<h2 id="sheetTitle">Waiting for a teller</h2>' +
+        '<div class="queue"><div class="ring"></div>' + pos +
+        '<div class="timer" id="tTimer">0:00</div></div>' +
+        '<div class="actions">' +
+          '<button type="button" class="btn-quiet" id="tLeave">Leave the queue</button>' +
+        '</div>'
+      );
+      document.getElementById("tLeave").addEventListener("click", leaveQueue);
+      startTicking();
+      return;
+    }
+    if (session.state === "active") {
+      stopTicking();
+      closeSheet();
+      joinCall();
+      return;
+    }
+    // Terminal. The session is over however it ended; drop it so the customer
+    // can ask for another one rather than being stuck against a dead record.
+    stopPolling();
+    stopTicking();
+    closeSheet();
+    session = null;
+  }
+
+  function startTicking() {
+    stopTicking();
+    tickTimer = setInterval(function () {
+      var t = document.getElementById("tTimer");
+      if (!t || !session) return stopTicking();
+      t.textContent = mmss(
+        Math.round((Date.now() - session.waited_from) / 1000));
+    }, 1000);
+  }
+  function stopTicking() {
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+  }
+
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(poll, 3000);
+  }
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  function poll() {
+    if (!session) return stopPolling();
+    var from = session.waited_from;
+    fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" + session.id)
+      .then(function (r) {
+        if (!r.ok) { var e = new Error("poll"); e.status = r.status; throw e; }
+        return r.json();
+      })
+      .then(function (data) {
+        if (!session) return;
+        var changed = data.state !== session.state || data.ahead !== session.ahead;
+        session = data;
+        session.waited_from = from;
+        // Only re-render when something the customer can see has changed.
+        // Rebuilding the panel every three seconds would restart the spinner
+        // and steal focus from the Leave button mid-tap.
+        if (changed) renderQueue();
+      })
+      .catch(function (err) {
+        // A 404 means the session is genuinely gone — stop, rather than poll a
+        // record that will never exist again.
+        //
+        // Everything else is treated as a blip and retried. A dropped poll is
+        // not an ended session, and tearing the panel down on one failed
+        // request would eject a customer from a queue they are still in.
+        if (err && err.status === 404) {
+          stopPolling(); stopTicking(); closeSheet();
+          session = null;
+        }
+      });
+  }
+
+  function leaveQueue() {
+    if (!session) return closeSheet();
+    var id = session.id;
+    stopPolling(); stopTicking();
+    session = null;
+    closeSheet();
+    fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" + id,
+      { method: "DELETE" }).catch(function () {});
+    // No "say teller to try again" — nothing listens for that word, and copy
+    // that promises a command which does not exist is worse than none. Leaving
+    // clears `session`, so the next turn a person would genuinely have helped
+    // with offers the queue again on its own.
+    addBot("You've left the queue. I'm here if there's anything else I can help with.", false);
+  }
+
+  // ------------------------------------------------------------- the call
+  //
+  // Joining is deliberately a separate step from being claimed: the token is
+  // only issued once a teller is actually in the session, so there is never a
+  // live media credential sitting in a browser through a ten-minute wait.
+
+  var room = null;              // the LiveKit Room, while connected
+  var joined = false;           // have we ever actually been in the room?
+  var sdkLoading = null;        // in-flight load, so two calls share one
+  var callEl = document.getElementById("call");
+
+  var CALL_ICONS = {
+    mic:    '<path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 19v3"/>',
+    micoff: '<path d="M15 9V5a3 3 0 0 0-5.9-.7M9 9v2a3 3 0 0 0 5 2.2"/><path d="M19 10v1a7 7 0 0 1-11 5.7M5 10v1a7 7 0 0 0 2 4.9M12 19v3"/><path d="M2 2l20 20"/>',
+    cam:    '<path d="M23 7l-7 5 7 5z"/><rect x="1" y="5" width="15" height="14" rx="2"/>',
+    camoff: '<path d="M16 16v2a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2m5 0h4a2 2 0 0 1 2 2v2l6-4v10"/><path d="M2 2l20 20"/>',
+    hang:   '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/><path d="M23 1L1 23"/>',
+    chat:   '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-4.6A8.4 8.4 0 1 1 21 11.5z"/><path d="M8 10h8M8 14h5"/>'
+  };
+  function callIcon(name) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round">' + CALL_ICONS[name] + '</svg>';
+  }
+
+  // Served from our own origin, never a CDN — see the route's docstring. One
+  // shared promise so a reconnect does not fetch 560 KB again.
+  function loadSdk() {
+    if (window.LivekitClient) return Promise.resolve(window.LivekitClient);
+    if (sdkLoading) return sdkLoading;
+    sdkLoading = new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = api + "/vendor/livekit-client.umd.js";
+      s.onload = function () {
+        window.LivekitClient ? resolve(window.LivekitClient)
+                             : reject(new Error("sdk"));
+      };
+      s.onerror = function () { sdkLoading = null; reject(new Error("sdk")); };
+      document.head.appendChild(s);
+    });
+    return sdkLoading;
+  }
+
+  function callStatus(text) {
+    var el2 = document.getElementById("callStatus");
+    if (el2) el2.textContent = text;
+  }
+
+  function joinCall() {
+    if (room || !session) return;
+    callEl.classList.add("open");
+    document.getElementById("callInitials").textContent = initials(bankName);
+    document.getElementById("callWho").innerHTML =
+      '<div class="nm"><span></span>' +
+      "<small>Verify your identity before discussing your account</small></div>" +
+      '<div class="timer2"><span class="qdot" id="qdot"></span>' +
+      '<span id="callClock">0:00</span></div>';
+    callEl.querySelector(".who2 .nm span").textContent = bankName + " teller";
+    callStatus("Connecting…");
+    paintControls();
+    startChat();
+
+    var wantVideo = session.media === "video";
+    var sid = session.id;
+
+    Promise.all([
+      loadSdk(),
+      fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" + sid + "/token")
+        .then(function (r) {
+          if (!r.ok) { var e = new Error("token"); e.status = r.status; throw e; }
+          return r.json();
+        })
+    ]).then(function (both) {
+      var LK = both[0], grant = both[1];
+      var r = new LK.Room({ adaptiveStream: true, dynacast: true });
+      room = r;
+
+      r.on(LK.RoomEvent.TrackSubscribed, function (track) {
+        attachRemote(LK, track);
+      });
+      r.on(LK.RoomEvent.TrackUnsubscribed, function (track) { track.detach(); });
+      // The teller hung up, or dropped. Either way the call is over for the
+      // customer — leaving the panel open with a frozen frame is worse than
+      // closing it and saying so.
+      //
+      // Guarded on `joined`, because a FAILED first connect also fires this.
+      // Unguarded it tore the panel down and said "the call has ended" about
+      // a call that never started, discarding the message in the catch below
+      // that actually told the customer what to do. Observed, not theorised:
+      // a blocked WebSocket produced exactly that.
+      r.on(LK.RoomEvent.Disconnected, function () {
+        if (joined) endCall("The call has ended.");
+      });
+      r.on(LK.RoomEvent.ParticipantDisconnected, function () {
+        callStatus("The teller has left the call.");
+      });
+
+      // Industry-standard call affordances, each earning its place:
+      // a clock (a customer on a paid mobile connection with no sense of
+      // elapsed time gets anxious and hangs up), a quality dot (so a bad line
+      // reads as the network rather than the bank), and a reconnecting banner
+      // (silence with a frozen frame is indistinguishable from the other
+      // person having gone quiet).
+      r.on(LK.RoomEvent.Reconnecting, function () {
+        document.getElementById("callRecon").classList.add("on");
+      });
+      r.on(LK.RoomEvent.Reconnected, function () {
+        document.getElementById("callRecon").classList.remove("on");
+      });
+      r.on(LK.RoomEvent.ConnectionQualityChanged, function (quality, participant) {
+        // Only our own leg. The remote's quality is their problem to see, and
+        // showing it here would have the customer read the teller's poor wifi
+        // as the bank's fault.
+        if (participant !== r.localParticipant) return;
+        var dot = document.getElementById("qdot");
+        if (!dot) return;
+        dot.className = "qdot" +
+          (quality === LK.ConnectionQuality.Poor ? " poor" :
+           quality === LK.ConnectionQuality.Lost ? " bad" : "");
+      });
+
+      return r.connect(grant.url, grant.token).then(function () {
+        joined = true;
+        startClock();
+        callStatus("Waiting for the teller…");
+        // Microphone always; camera only if they chose video. Asking for a
+        // camera on an audio call is a permission prompt for hardware the
+        // customer deliberately declined.
+        return r.localParticipant.setMicrophoneEnabled(true).then(function () {
+          return wantVideo ? r.localParticipant.setCameraEnabled(true) : null;
+        });
+      }).then(function () {
+        showSelfView(LK, r);
+        paintControls();
+      });
+    }).catch(function (err) {
+      // Distinguish the three failures that need different actions from the
+      // customer: no permission (fix it in the browser), no teller yet (wait),
+      // everything else (try again).
+      var name = err && err.name;
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        callStatus("Microphone access was blocked. Allow it in your browser, then try again.");
+      } else if (err && err.status === 409) {
+        callStatus("The teller is not connected yet.");
+      } else {
+        callStatus("Couldn't connect. Please check your connection and try again.");
+      }
+    });
+  }
+
+  function attachRemote(LK, track) {
+    if (track.kind === LK.Track.Kind.Video) {
+      var stage = document.getElementById("stage");
+      var existing = stage.querySelector("video.remote");
+      if (existing) existing.remove();
+      var v = track.attach();
+      v.className = "remote";
+      v.setAttribute("playsinline", "");
+      document.getElementById("placeholder").style.display = "none";
+      stage.insertBefore(v, stage.firstChild);
+    } else {
+      // Audio is attached but never shown. On an audio-only call the
+      // placeholder stays, which is the normal state outside Addis rather
+      // than a failure — so the status line says connected, not "waiting".
+      var a = track.attach();
+      a.style.display = "none";
+      document.body.appendChild(a);
+      callStatus("Connected");
+    }
+  }
+
+  function showSelfView(LK, r) {
+    var pub = r.localParticipant.getTrackPublication(LK.Track.Source.Camera);
+    if (!pub || !pub.track) return;
+    var holder = document.getElementById("selfView");
+    var v = pub.track.attach();
+    v.setAttribute("playsinline", "");
+    var slot = document.getElementById("selfVideo");
+    if (slot) slot.remove();
+    holder.innerHTML = "";
+    holder.appendChild(v);
+    holder.style.display = "block";
+  }
+
+  // ---------------------------------------------------------- call clock
+  var clockTimer = null, clockFrom = 0;
+  function startClock() {
+    clockFrom = Date.now();
+    stopClock();
+    clockTimer = setInterval(function () {
+      var el2 = document.getElementById("callClock");
+      if (!el2) return stopClock();
+      el2.textContent = mmss(Math.round((Date.now() - clockFrom) / 1000));
+    }, 1000);
+  }
+  function stopClock() {
+    if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  }
+
+  // ------------------------------------------------- chat during the call
+  //
+  // Over our API, not LiveKit's data channel — the same reason the data
+  // channel is switched off in the token: an unaudited side channel between
+  // a customer and a bank employee is exactly what a banking product must not
+  // have. Going through the server means every line lands in the same
+  // transcript as the assistant's, in order, and is there afterwards.
+  //
+  // It is also the part that makes a bad line survivable. Account numbers,
+  // reference codes and names are precisely what cannot be said clearly over
+  // poor audio, and they are what a banking call is about.
+  var chatTimer = null, chatSeen = 0, chatOpen = false;
+
+  function startChat() {
+    chatSeen = 0; chatOpen = false;
+    document.getElementById("callChat").classList.remove("open");
+    document.getElementById("chatBadge").classList.remove("on");
+    pollChat();
+    stopChatPolling();
+    chatTimer = setInterval(pollChat, 3000);
+  }
+  function stopChatPolling() {
+    if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
+  }
+
+  function pollChat() {
+    if (!session) return stopChatPolling();
+    fetch(api + "/chat/" + encodeURIComponent(slug) +
+          "/teller-session/" + session.id + "/messages")
+      .then(function (r) { if (!r.ok) throw new Error("chat"); return r.json(); })
+      .then(renderChat)
+      .catch(function () {});   // a dropped poll is not a dropped call
+  }
+
+  function renderChat(rows) {
+    var log = document.getElementById("chatLog");
+    if (!log) return;
+    var atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.innerHTML = "";
+    rows.forEach(function (m) {
+      // The assistant's earlier turns are shown but dimmed and labelled: they
+      // are the context the customer already gave, not part of the live
+      // exchange, and nobody should have to guess which lines a bot wrote.
+      if (m.role === "teller") {
+        log.appendChild(el("div", "who3", "Teller"));
+      }
+      var b = el("div", "m " + (m.role === "user" ? "user" :
+                                m.role === "teller" ? "teller" : "assistant"));
+      b.textContent = m.text;
+      log.appendChild(b);
+    });
+    if (atBottom) log.scrollTop = log.scrollHeight;
+
+    // Unread count, but only for what the teller said — echoing the
+    // customer's own messages back as "unread" is how a badge becomes noise
+    // that people stop looking at.
+    var fromTeller = rows.filter(function (m) { return m.role === "teller"; }).length;
+    var badge = document.getElementById("chatBadge");
+    if (chatOpen) { chatSeen = fromTeller; }
+    var unread = Math.max(0, fromTeller - chatSeen);
+    badge.textContent = unread > 9 ? "9+" : String(unread);
+    badge.classList.toggle("on", unread > 0 && !chatOpen);
+  }
+
+  function toggleChat(open) {
+    chatOpen = open;
+    document.getElementById("callChat").classList.toggle("open", open);
+    if (open) {
+      document.getElementById("chatBadge").classList.remove("on");
+      var log = document.getElementById("chatLog");
+      log.scrollTop = log.scrollHeight;
+      pollChat();
+      document.getElementById("chatInput").focus();
+    }
+  }
+
+  document.getElementById("btnChat").addEventListener("click", function () {
+    toggleChat(!chatOpen);
+  });
+  document.getElementById("chatClose").addEventListener("click", function () {
+    toggleChat(false);
+  });
+  document.getElementById("chatForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var input2 = document.getElementById("chatInput");
+    var text = input2.value.trim();
+    if (!text || !session) return;
+    input2.value = "";
+    fetch(api + "/chat/" + encodeURIComponent(slug) +
+          "/teller-session/" + session.id + "/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("send");
+      pollChat();
+    }).catch(function () {
+      // Put it back in the box rather than losing it. Retyping an account
+      // number because a send failed silently is the worst version of this.
+      input2.value = text;
+      addBot("That message didn't send. Please try again.", false);
+    });
+  });
+
+  function paintControls() {
+    // `hasCam` comes from what the customer CHOSE, not from whether a room
+    // exists yet. Reading it off `room` hid the camera button for the whole
+    // connect on a video call — the control was missing exactly while the
+    // customer was watching the screen waiting for something to happen.
+    var hasCam = !!session && session.media === "video";
+    var micOn = true, camOn = hasCam;
+    if (room) {
+      micOn = room.localParticipant.isMicrophoneEnabled;
+      camOn = room.localParticipant.isCameraEnabled;
+    }
+    var mic = document.getElementById("btnMic");
+    mic.innerHTML = callIcon(micOn ? "mic" : "micoff");
+    mic.classList.toggle("off", !micOn);
+    mic.title = micOn ? "Mute" : "Unmute";
+
+    var cam = document.getElementById("btnCam");
+    cam.style.display = hasCam ? "grid" : "none";
+    cam.innerHTML = callIcon(camOn ? "cam" : "camoff");
+    cam.classList.toggle("off", !camOn);
+
+    document.getElementById("btnHang").innerHTML = callIcon("hang");
+    var chatBtn = document.getElementById("btnChat");
+    // Preserve the badge element — innerHTML would drop it.
+    var badge = document.getElementById("chatBadge");
+    chatBtn.innerHTML = callIcon("chat");
+    chatBtn.appendChild(badge);
+  }
+
+  document.getElementById("btnMic").addEventListener("click", function () {
+    if (!room) return;
+    room.localParticipant
+      .setMicrophoneEnabled(!room.localParticipant.isMicrophoneEnabled)
+      .then(paintControls);
+  });
+  document.getElementById("btnCam").addEventListener("click", function () {
+    if (!room) return;
+    room.localParticipant
+      .setCameraEnabled(!room.localParticipant.isCameraEnabled)
+      .then(paintControls);
+  });
+  document.getElementById("btnHang").addEventListener("click", function () {
+    endCall("You ended the call.");
+  });
+
+  function endCall(message) {
+    if (room) { try { room.disconnect(); } catch (e) {} room = null; }
+    joined = false;
+    stopClock();
+    stopChatPolling();
+    toggleChat(false);
+    document.getElementById("callRecon").classList.remove("on");
+    callEl.classList.remove("open");
+    var stage = document.getElementById("stage");
+    var v = stage.querySelector("video.remote");
+    if (v) v.remove();
+    document.getElementById("placeholder").style.display = "";
+    document.getElementById("selfView").style.display = "none";
+    stopPolling(); stopTicking();
+    session = null;
+    if (message) addBot(message, false);
+  }
+
+  // A call in progress must not survive the tab closing without LiveKit being
+  // told — otherwise the teller sits looking at a participant who is gone.
+  window.addEventListener("pagehide", function () {
+    if (room) { try { room.disconnect(); } catch (e) {} }
+  });
+
+  // Closing the tab is the commonest way a queue is abandoned, and a session
+  // nobody cancels sits in the teller's queue as a customer who is not there.
+  // `keepalive` is what lets the request outlive the page; sendBeacon cannot
+  // be used because it only issues POST.
+  window.addEventListener("pagehide", function () {
+    if (!session || session.state !== "queued") return;
+    fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" + session.id,
+      { method: "DELETE", keepalive: true }).catch(function () {});
+  });
 
   document.getElementById("form").addEventListener("submit", function (e) {
     e.preventDefault();

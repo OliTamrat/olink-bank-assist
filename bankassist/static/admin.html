@@ -777,6 +777,139 @@ td.title { color: var(--ink); font-weight: 550; }
   .kpis { grid-template-columns: repeat(4, 1fr) !important; }
   .grid2 { grid-template-columns: 1fr 1fr !important; }
 }
+
+/* ------------------------------------------------------- the teller's call */
+/* Full-screen, above everything including the slide-out (9999) and the
+   documents modal (10000). A live customer is on the other end; nothing in
+   this panel should be able to draw over them. */
+.callroom {
+  position: fixed; inset: 0; z-index: 10001; display: none;
+  background: #06070d; color: var(--ink);
+  grid-template-columns: 1fr 340px; grid-template-rows: 1fr auto;
+}
+.callroom.open { display: grid; }
+.callroom .video { position: relative; grid-row: 1; overflow: hidden; background: #06070d; }
+.callroom .video video.remote { width: 100%; height: 100%; object-fit: cover; }
+.callroom .waiting {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  text-align: center; padding: 24px;
+}
+.callroom .waiting .av {
+  width: 88px; height: 88px; border-radius: 50%; margin: 0 auto 14px;
+  background: color-mix(in srgb, var(--brand) 70%, #000);
+  display: grid; place-items: center; font-size: 28px; font-weight: 600;
+}
+.callroom .waiting .lang {
+  font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 6px;
+}
+.callroom .waiting .msg { color: var(--muted); font-size: 13.5px; }
+.callroom .self {
+  position: absolute; right: 16px; bottom: 16px;
+  width: 150px; height: 112px; border-radius: 12px; overflow: hidden;
+  background: #12141d; border: 1px solid rgba(255,255,255,.14);
+}
+/* Mirrored: an un-mirrored self-view reads as somebody else's camera. */
+.callroom .self video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+
+/* The working column. A teller needs the transcript and the verification
+   bar in the same glance as the customer's face — putting either behind a
+   tab means the ID check happens from memory. */
+.callroom .work {
+  grid-row: 1 / span 2; border-left: 1px solid var(--line);
+  background: var(--surface); display: flex; flex-direction: column; min-height: 0;
+}
+.callroom .work h4 {
+  font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint); padding: 14px 16px 8px;
+}
+.callroom .transcript {
+  flex: 1; overflow-y: auto; padding: 0 16px 12px;
+  display: flex; flex-direction: column; gap: 8px; min-height: 0;
+}
+.callroom .msg2 {
+  font-size: 12.5px; line-height: 1.5; padding: 8px 11px; border-radius: 10px;
+  background: var(--surface-2); color: var(--body); max-width: 92%;
+}
+/* Alignment is "mine versus theirs", read from the TELLER's seat: the
+   customer and the assistant are both the other side of this conversation
+   and sit left; only what this teller typed sits right.
+
+   The first pass had the customer on the right — the widget's convention,
+   where the customer is "me" — which put the customer and the teller on the
+   same side and destroyed the only cue the layout gives. Caught by looking
+   at it, not by reading it. */
+.callroom .msg2.user { align-self: flex-start; background: var(--brand); color: #fff; }
+/* The teller's own lines, distinct from the assistant's. A bank reviewing a
+   transcript has to be able to see at a glance which sentences a person
+   wrote and which the AI did — that distinction is the product. */
+.callroom .msg2.teller {
+  align-self: flex-end; background: var(--surface-2); color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line));
+}
+.callroom .rolelbl {
+  font-size: 10px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--faint); margin: 2px 0 -4px;
+}
+.callroom .rolelbl.mine { align-self: flex-end; }
+.callroom .composer2 {
+  display: flex; gap: 8px; padding: 10px 16px;
+  border-top: 1px solid var(--line);
+}
+.callroom .composer2 input {
+  flex: 1; min-width: 0; margin: 0; padding: 9px 11px; font-size: 13px;
+  background: var(--surface-2);
+}
+.callroom .composer2 button { flex: none; }
+
+.callroom .verify { border-top: 1px solid var(--line); padding: 14px 16px; }
+.callroom .verify label {
+  display: flex; gap: 9px; align-items: flex-start;
+  font-size: 12.5px; line-height: 1.45; color: var(--body);
+  /* The global `label` rule is 600 — right for a form field's name, wrong
+     for a sentence a teller reads while looking at a customer. */
+  font-weight: 450;
+  margin-bottom: 9px; cursor: pointer;
+}
+.callroom .verify label span { flex: 1; }
+/* The global `input` rule sets width:100%, which a checkbox obeys — it took
+   the whole row and squeezed each sentence into a narrow right-aligned
+   column. Caught by rendering it, not by reading the rule. */
+.callroom .verify input[type=checkbox] {
+  width: auto; flex: none; margin: 2px 0 0; accent-color: var(--brand);
+}
+.callroom .verify input[type=text] {
+  width: 100%; margin-bottom: 10px; padding: 9px 11px; border-radius: 9px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  color: var(--ink); font-family: inherit; font-size: 13px;
+}
+.callroom .verified {
+  font-size: 12.5px; color: var(--ok); display: flex; gap: 7px; align-items: center;
+}
+.callroom .scope {
+  font-size: 11.5px; color: var(--faint); margin-top: 8px; line-height: 1.45;
+}
+
+.callroom .controls {
+  grid-row: 2; grid-column: 1; display: flex; gap: 14px;
+  justify-content: center; padding: 16px; background: #06070d;
+  border-top: 1px solid var(--line);
+}
+.callroom .controls button {
+  width: 50px; height: 50px; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center; color: #fff;
+  background: rgba(255,255,255,.13);
+}
+.callroom .controls button svg { width: 20px; height: 20px; }
+/* White for "off", not red — red reads as a dangerous control, and the
+   danger here is forgetting you are muted. */
+.callroom .controls button.off { background: #fff; color: #06070d; }
+.callroom .controls button.hang { background: #dc2626; }
+
+@media (max-width: 900px) {
+  .callroom { grid-template-columns: 1fr; grid-template-rows: 1fr auto auto; }
+  .callroom .work { grid-row: 2; grid-column: 1; border-left: 0; border-top: 1px solid var(--line); max-height: 42vh; }
+  .callroom .controls { grid-row: 3; }
+}
 </style>
 </head>
 <body>
@@ -875,6 +1008,33 @@ td.title { color: var(--ink); font-weight: 550; }
   </div>
 </div>
 
+<div class="callroom" id="callroom" role="dialog" aria-modal="true" aria-label="Live session">
+  <div class="video">
+    <div class="waiting" id="callWaiting">
+      <div>
+        <div class="av" id="callAv">·</div>
+        <div class="lang" id="callLang"></div>
+        <div class="msg" id="callMsg">Connecting…</div>
+      </div>
+    </div>
+    <div class="self" id="callSelf" style="display:none"></div>
+  </div>
+  <div class="work">
+    <h4>Conversation</h4>
+    <div class="transcript" id="callTranscript"></div>
+    <form class="composer2" id="callComposer">
+      <input id="callSay" type="text" autocomplete="off" placeholder="Message the customer…">
+      <button class="btn sm" type="submit">Send</button>
+    </form>
+    <div class="verify" id="callVerify"></div>
+  </div>
+  <div class="controls">
+    <button type="button" id="cMic" title="Mute"></button>
+    <button type="button" id="cCam" title="Camera"></button>
+    <button type="button" id="cHang" class="hang" title="End session"></button>
+  </div>
+</div>
+
 <script>
 "use strict";
 
@@ -954,7 +1114,23 @@ function api(path, opts) {
   return fetch("/admin/api/" + encodeURIComponent(state.slug) + path, opts).then(function (r) {
     if (r.status === 401) { signedOut("Your session has ended. Please sign in again."); throw new Error("Signed out"); }
     if (r.status === 403) { throw new Error("You do not have permission to do that."); }
-    if (!r.ok) { return r.text().then(function (t) { throw new Error(t || ("HTTP " + r.status)); }); }
+    // FastAPI errors are {"detail": "..."} — surface the sentence, not the
+    // envelope. This showed up on the teller's verification bar, where a
+    // refusal names exactly which check is missing and the teller reads it
+    // mid-call with a customer waiting; wrapping that one useful sentence in
+    // JSON punctuation is the worst place to make someone parse a payload.
+    // Falls back to the raw body, so a non-JSON error (a proxy's HTML 502)
+    // still says something rather than nothing.
+    if (!r.ok) {
+      return r.text().then(function (t) {
+        var msg = t;
+        try {
+          var parsed = JSON.parse(t);
+          if (parsed && typeof parsed.detail === "string") msg = parsed.detail;
+        } catch (e) { /* not JSON — keep the body */ }
+        throw new Error(msg || ("HTTP " + r.status));
+      });
+    }
     return r.status === 204 ? null : r.json();
   });
 }
@@ -2616,11 +2792,41 @@ function waited(sec) {
   return m < 60 ? m + "m " + (sec % 60) + "s" : Math.floor(m / 60) + "h " + (m % 60) + "m";
 }
 
+// Whether the tenant offers live sessions at all, and whether customers can
+// see the button right now. Read once per visit rather than on every 4s poll:
+// it changes only when somebody toggles it, and re-reading it fifteen times a
+// minute per teller would be a request per teller for a value nobody touched.
+var tellerSettings = null;
+// Refresh the settings strip about every 40s, not on every 4s poll: it changes
+// only when someone toggles it or the last teller leaves, and re-reading it
+// fifteen times a minute per teller is a request per teller for a value nobody
+// touched.
+var TELLER_SETTINGS_EVERY = 10;
+
 function loadTellerQueue() {
   stopTellerPolling();
   renderTellerQueue(null);
+  var ticks = 0;
+
+  // AFTER the queue call, never beside it. Reading availability in parallel
+  // with the first poll asks "is anyone watching?" before this teller's own
+  // poll has recorded that they are — so the page greeted them with "nobody
+  // is watching the queue" while they sat looking at it, and stayed wrong
+  // until they navigated away and back.
+  var settings = function () {
+    // The queue still renders if this fails. A settings read going down must
+    // not take the page away from a teller with customers waiting on it.
+    api("/teller/settings")
+      .then(function (s) { tellerSettings = s; })
+      .catch(function () {});
+  };
+
   var draw = function () {
-    api("/teller/queue").then(renderTellerQueue).catch(function (e) {
+    api("/teller/queue").then(function (rows) {
+      if (ticks % TELLER_SETTINGS_EVERY === 0) settings();
+      ticks += 1;
+      renderTellerQueue(rows);
+    }).catch(function (e) {
       stopTellerPolling();
       $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
     });
@@ -2640,13 +2846,78 @@ function renderTellerQueue(rows) {
   var waiting = rows.filter(function (r) { return r.state === "queued"; });
   var live = rows.filter(function (r) { return r.state === "active"; });
 
-  var h = '<div class="row row-half">' +
+  // On duty, and what that means. The non-obvious fact about this page is
+  // that WATCHING IT is what puts the "Speak to a teller" button in front of
+  // customers — close the tab and the offer disappears within ninety seconds.
+  // A teller who does not know that will close it at lunch and wonder why the
+  // afternoon was quiet, so it is said here rather than in an induction deck.
+  var h = "";
+  if (tellerSettings) {
+    var on = tellerSettings.enabled;
+    var live_ = tellerSettings.available;
+    var mins = Math.round((tellerSettings.presence_window_seconds || 90) / 30) / 2;
+    // `chanlist rich` rather than a bare row: this line carries a sentence of
+    // explanation, and the plain row ellipsises it — the truncated half was
+    // the half that says closing the tab takes the button away.
+    h += '<div class="panel"><h3>Live sessions</h3>' +
+      '<div class="chanlist rich"><div class="chan q">' +
+      '<span class="dot" style="background:var(' +
+        (live_ ? "--ok" : on ? "--warn" : "--faint") + ')"></span>' +
+      '<span class="cname">' +
+        (!on ? "Switched off for this bank"
+             : live_ ? "Customers can reach a teller now"
+                     : "Switched on — but nobody is watching the queue") +
+      '<div class="meta">' +
+        (!on
+          ? "No “Speak to a teller” button appears in your widget."
+          : canServe
+            ? "This page is what keeps you visible. Leave it open while you are on " +
+              "duty — the offer disappears from your widget about " + mins +
+              " minute" + (mins === 1 ? "" : "s") + " after the last teller closes it."
+            : "A colleague with permission to take calls has to have this page " +
+              "open before customers are offered one.") +
+      "</div></span>" +
+      (can("integrations.manage")
+        ? '<button class="btn sm" id="teller-toggle">' +
+          (on ? "Switch off" : "Switch on") + "</button>"
+        : "") +
+      "</div></div>";
+
+    // Which languages this teller speaks. Their own to set — whether you can
+    // hold a conversation in Afaan Oromoo is a fact about you, and routing a
+    // customer to somebody because a manager ticked a box produces a call
+    // where neither party can proceed.
+    if (canServe && tellerSettings.all_languages) {
+      var mine = tellerSettings.languages || [];
+      h += '<div class="meta" style="margin-top:14px">I can hold a conversation in:</div>' +
+        '<div class="tools" style="margin-top:8px" id="lang-pills">' +
+        tellerSettings.all_languages.map(function (l) {
+          var picked = mine.indexOf(l.code) !== -1;
+          return '<button class="btn sm' + (picked ? "" : " ghost") +
+            '" data-lang="' + esc(l.code) + '">' + esc(l.name) + "</button>";
+        }).join("") + "</div>" +
+        '<div class="note">' + (mine.length
+          ? "Customers writing in these reach you first. Everyone else still " +
+            "reaches you — after a short wait, so nobody is stranded."
+          : "Nothing selected, so every waiting customer is offered to you in " +
+            "plain oldest-first order.") + "</div>";
+    }
+    h += "</div>";
+  }
+
+  h += '<div class="row row-half">' +
     '<div class="panel"><h3>Waiting</h3>' +
     (waiting.length
       ? '<div class="chanlist">' + waiting.map(function (r) {
           return '<div class="chan q">' +
             '<span class="dot" style="background:var(--warn)"></span>' +
             '<span class="cname">' + esc(LANG_NAME[r.language] || "Waiting") +
+            // Only flagged when it does NOT match, and only once the teller
+            // has declared something. A green tick on every matching row is
+            // noise; the row worth a second look is the one you may not be
+            // able to talk to.
+            (r.speaks === false
+              ? ' <span class="pill">not your language</span>' : "") +
             '<div class="meta">' + esc(r.media === "video" ? "Video" : "Audio") +
             " · " + esc(r.scope === "verified" ? "Identified" : "Not yet identified") +
             "</div></span>" +
@@ -2658,7 +2929,15 @@ function renderTellerQueue(rows) {
         }).join("") + "</div>"
       : '<div class="empty">Nobody is waiting.</div>') +
     (waiting.length
-      ? '<div class="note">Oldest first. The longest wait is the one to take.</div>'
+      // The note has to match what the list is actually doing. With languages
+      // declared it is no longer plain oldest-first, and leaving that claim up
+      // would have a teller reading the order as a bug.
+      ? '<div class="note">' + (
+          (tellerSettings && (tellerSettings.languages || []).length)
+            ? "Your languages first, longest wait within each. Anyone waiting " +
+              "too long moves to the top whatever they speak."
+            : "Oldest first. The longest wait is the one to take."
+        ) + "</div>"
       : "") +
     "</div>" +
     '<div class="panel"><h3>In progress</h3>' +
@@ -2689,16 +2968,373 @@ function renderTellerQueue(rows) {
     "call.</div></div>";
 
   $("main").innerHTML = h;
+  var toggle = $("teller-toggle");
+  if (toggle) {
+    toggle.onclick = function () {
+      toggle.disabled = true;
+      // api() hands opts straight to fetch — it does not serialise a body, so
+      // passing an object here would POST the string "[object Object]".
+      api("/teller/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !tellerSettings.enabled })
+      })
+        .then(function (s) {
+          tellerSettings = s;
+          setStatus(s.enabled ? "Live sessions on" : "Live sessions off");
+          renderTellerQueue(rows);
+        })
+        .catch(function (e) { toggle.disabled = false; setStatus(e.message); });
+    };
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-lang]"), function (b) {
+    b.onclick = function () {
+      var code = b.getAttribute("data-lang");
+      var mine = (tellerSettings.languages || []).slice();
+      var at = mine.indexOf(code);
+      if (at === -1) { mine.push(code); } else { mine.splice(at, 1); }
+      b.disabled = true;
+      api("/teller/languages", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ languages: mine })
+      }).then(function (res) {
+        tellerSettings.languages = res.languages;
+        setStatus("Languages updated");
+        // Redraw from the server's answer, not the optimistic local copy —
+        // it normalises order and drops duplicates, and a list that disagrees
+        // with what routing uses is worse than no list.
+        loadTellerQueue();
+      }).catch(function (e) { b.disabled = false; setStatus(e.message); });
+    };
+  });
   Array.prototype.forEach.call(document.querySelectorAll("[data-claim]"), function (b) {
     b.onclick = function () {
       b.disabled = true;   // a double-tap would 409, and the second looks broken
       api("/teller/sessions/" + b.getAttribute("data-claim") + "/claim",
           { method: "POST" })
-        .then(function () { setStatus("Session taken"); loadTellerQueue(); })
+        // Straight into the call. Claiming and then having to find a second
+        // button would leave a customer who has already waited listening to
+        // silence while the teller hunts for the way in.
+        .then(function (s) { setStatus("Session taken"); openCall(s); })
         .catch(function (e) { b.disabled = false; setStatus(e.message); loadTellerQueue(); });
     };
   });
 }
+
+/* ------------------------------------------------------ the teller's call */
+/* The staff half of a tier-3 session. Deliberately shows three things at
+   once — the customer, what they already asked the assistant, and the
+   verification bar — because a teller who has to switch tabs to read the
+   transcript ends up asking the customer to repeat themselves, and one who
+   has to remember the ID checks does them from memory. */
+
+var callRoom = null;      // the LiveKit Room, while connected
+var callJoined = false;   // have we actually been in the room?
+var callSession = null;   // the TellerSession we are serving
+var callSdk = null;       // in-flight SDK load, shared
+
+var CICON = {
+  mic:    '<path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 19v3"/>',
+  micoff: '<path d="M15 9V5a3 3 0 0 0-5.9-.7M9 9v2a3 3 0 0 0 5 2.2"/><path d="M19 10v1a7 7 0 0 1-11 5.7M5 10v1a7 7 0 0 0 2 4.9M12 19v3"/><path d="M2 2l20 20"/>',
+  cam:    '<path d="M23 7l-7 5 7 5z"/><rect x="1" y="5" width="15" height="14" rx="2"/>',
+  camoff: '<path d="M16 16v2a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2m5 0h4a2 2 0 0 1 2 2v2l6-4v10"/><path d="M2 2l20 20"/>',
+  hang:   '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/><path d="M23 1L1 23"/>'
+};
+function cicon(n) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round">' + CICON[n] + "</svg>";
+}
+
+function loadCallSdk() {
+  if (window.LivekitClient) return Promise.resolve(window.LivekitClient);
+  if (callSdk) return callSdk;
+  callSdk = new Promise(function (resolve, reject) {
+    var s = document.createElement("script");
+    s.src = "/vendor/livekit-client.umd.js";
+    s.onload = function () {
+      window.LivekitClient ? resolve(window.LivekitClient) : reject(new Error("sdk"));
+    };
+    s.onerror = function () { callSdk = null; reject(new Error("sdk")); };
+    document.head.appendChild(s);
+  });
+  return callSdk;
+}
+
+function callMsg(text) { $("callMsg").textContent = text; }
+
+function openCall(session) {
+  callSession = session;
+  callJoined = false;
+  $("callroom").classList.add("open");
+  // A person glyph, not initials. We do not know who this is — that is the
+  // entire point of the verification bar below — and an avatar reading "EN"
+  // (the language code, sliced) implied we did.
+  $("callAv").innerHTML = icon("team", 34);
+  // The language, where the teller needs it: before they speak. Greeting an
+  // Amharic speaker in English is the first thing that goes wrong on a call,
+  // and the conversation already knows which it is.
+  $("callLang").textContent =
+    (LANG_NAME[session.language] || "Language unknown") +
+    " · " + (session.media === "video" ? "Video" : "Audio");
+  callMsg("Connecting…");
+  paintCallControls();
+  renderVerify();
+  startCallChat();
+
+  Promise.all([
+    loadCallSdk(),
+    api("/teller/sessions/" + session.id + "/token")
+  ]).then(function (both) {
+    var LK = both[0], grant = both[1];
+    var r = new LK.Room({ adaptiveStream: true, dynacast: true });
+    callRoom = r;
+
+    r.on(LK.RoomEvent.TrackSubscribed, function (track) {
+      if (track.kind === LK.Track.Kind.Video) {
+        var host = document.querySelector(".callroom .video");
+        var old = host.querySelector("video.remote");
+        if (old) old.remove();
+        var v = track.attach();
+        v.className = "remote";
+        v.setAttribute("playsinline", "");
+        $("callWaiting").style.display = "none";
+        host.insertBefore(v, host.firstChild);
+      } else {
+        var a = track.attach();
+        a.style.display = "none";
+        document.body.appendChild(a);
+        // Audio-only is the normal case outside Addis, not a degraded one —
+        // so this says connected rather than leaving "Connecting…" up.
+        callMsg("Connected — audio only");
+      }
+    });
+    r.on(LK.RoomEvent.TrackUnsubscribed, function (t) { t.detach(); });
+    r.on(LK.RoomEvent.ParticipantDisconnected, function () {
+      callMsg("The customer has left the call.");
+      var v = document.querySelector(".callroom video.remote");
+      if (v) v.remove();
+      $("callWaiting").style.display = "";
+    });
+    // Guarded on having joined: a FAILED connect fires this too, and tearing
+    // the panel down then would hide the error that says what went wrong.
+    r.on(LK.RoomEvent.Disconnected, function () {
+      if (callJoined) closeCall();
+    });
+
+    return r.connect(grant.url, grant.token).then(function () {
+      callJoined = true;
+      callMsg("Waiting for the customer…");
+      return r.localParticipant.setMicrophoneEnabled(true).then(function () {
+        // Camera only on a video session. A teller's camera coming on during
+        // an audio call is a surprise for both of them.
+        return session.media === "video"
+          ? r.localParticipant.setCameraEnabled(true) : null;
+      });
+    }).then(function () {
+      var pub = r.localParticipant.getTrackPublication(LK.Track.Source.Camera);
+      if (pub && pub.track) {
+        var holder = $("callSelf");
+        holder.innerHTML = "";
+        var v = pub.track.attach();
+        v.setAttribute("playsinline", "");
+        holder.appendChild(v);
+        holder.style.display = "block";
+      }
+      paintCallControls();
+    });
+  }).catch(function (err) {
+    var name = err && err.name;
+    if (name === "NotAllowedError" || name === "SecurityError") {
+      callMsg("Microphone access is blocked. Allow it in your browser and take the session again.");
+    } else {
+      callMsg("Couldn't connect: " + ((err && err.message) || "unknown error"));
+    }
+  });
+}
+
+/* The conversation, live. Everything the customer already told the assistant
+   plus everything either side types now, in one thread and in one order.
+
+   Polled rather than pushed over LiveKit's data channel — that channel is
+   switched off in the token on purpose, so no words pass between a customer
+   and a bank employee outside the record. */
+var chatPoll = null;
+
+function startCallChat() {
+  drawThread();
+  stopCallChat();
+  chatPoll = setInterval(function () {
+    if (!callSession) { stopCallChat(); return; }
+    drawThread();
+  }, 3000);
+}
+function stopCallChat() {
+  if (chatPoll) { clearInterval(chatPoll); chatPoll = null; }
+}
+
+function drawThread() {
+  var box = $("callTranscript");
+  if (!box || !callSession) return;
+  api("/teller/sessions/" + callSession.id + "/messages").then(function (rows) {
+    // Hold position if the teller has scrolled up to re-read something —
+    // yanking them to the bottom every three seconds makes the panel unusable
+    // exactly when they are hunting for a detail.
+    var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    if (!rows.length) { box.innerHTML = '<div class="empty">No messages yet.</div>'; return; }
+    box.innerHTML = rows.map(function (m) {
+      var cls = m.role === "user" ? "user" : m.role === "teller" ? "teller" : "";
+      var label = m.role === "teller"
+        ? '<div class="rolelbl mine">You</div>'
+        : m.role === "assistant" ? '<div class="rolelbl">Assistant</div>' : "";
+      // `text`, not `content` — the endpoint returns {role, text, at}.
+      // Getting this wrong renders empty bubbles, which reads as a customer
+      // who typed nothing rather than as a bug.
+      return label + '<div class="msg2 ' + cls + '">' + esc(m.text) + "</div>";
+    }).join("");
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }).catch(function () {
+    // A failed poll must not take the call down — the teller can still talk.
+    if (!box.innerHTML) box.innerHTML = '<div class="empty">Conversation unavailable.</div>';
+  });
+}
+
+$("callComposer").onsubmit = function (e) {
+  e.preventDefault();
+  var input = $("callSay");
+  var text = input.value.trim();
+  if (!text || !callSession) return;
+  input.value = "";
+  api("/teller/sessions/" + callSession.id + "/messages", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text })
+  }).then(drawThread).catch(function (err) {
+    // Restore it rather than lose it — a teller retyping a reference number
+    // because a send failed silently is the worst version of this.
+    input.value = text;
+    setStatus(err.message);
+  });
+};
+
+/* The verification bar. The bar itself lives in verification.py — this only
+   collects what the teller says they checked. The server refuses anything
+   short of a document AND an account question, so a teller ticking one box
+   gets a 422 rather than a verified session. */
+function renderVerify() {
+  var box = $("callVerify");
+  if (!callSession) { box.innerHTML = ""; return; }
+  if (callSession.scope === "verified") {
+    box.innerHTML = '<div class="verified">' + icon("audit", 15) +
+      "Identity confirmed" +
+      (callSession.verified_ref ? " · Fayda ••••" + esc(callSession.verified_ref) : "") +
+      "</div>" +
+      '<div class="scope">You can now discuss their own records, take documents ' +
+      "and file a dispute. Never a deposit, withdrawal or transfer.</div>";
+    return;
+  }
+  box.innerHTML =
+    '<label><input type="checkbox" data-chk="id_document">' +
+      "<span>Fayda ID shown and matches the account name</span></label>" +
+    '<label><input type="checkbox" data-chk="account_detail">' +
+      "<span>Answered a question only the account holder could</span></label>" +
+    '<label><input type="checkbox" data-chk="id_photo_matches">' +
+      "<span>Photo on the ID matches the person on the call <em>(video only)</em></span></label>" +
+    '<input type="text" id="vFayda" placeholder="Fayda number (optional)" autocomplete="off">' +
+    '<button class="btn sm" id="vGo">Confirm identity</button>' +
+    '<div class="scope">Until this is done you can only give general guidance ' +
+    "— products, eligibility and how to apply.</div>";
+
+  $("vGo").onclick = function () {
+    var checks = [];
+    Array.prototype.forEach.call(box.querySelectorAll("[data-chk]"), function (c) {
+      if (c.checked) checks.push(c.getAttribute("data-chk"));
+    });
+    var fayda = $("vFayda").value.trim();
+    $("vGo").disabled = true;
+    api("/teller/sessions/" + callSession.id + "/verify", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ checks: checks, fayda_number: fayda || null })
+    }).then(function (s) {
+      callSession = s;
+      setStatus("Identity confirmed");
+      renderVerify();
+    }).catch(function (e) {
+      $("vGo").disabled = false;
+      // The server's own words. It names which check is missing, and
+      // paraphrasing it here would drift from the rule being enforced.
+      setStatus(e.message);
+    });
+  };
+}
+
+function paintCallControls() {
+  var hasCam = !!callSession && callSession.media === "video";
+  var micOn = true, camOn = hasCam;
+  if (callRoom) {
+    micOn = callRoom.localParticipant.isMicrophoneEnabled;
+    camOn = callRoom.localParticipant.isCameraEnabled;
+  }
+  var mic = $("cMic");
+  mic.innerHTML = cicon(micOn ? "mic" : "micoff");
+  mic.classList.toggle("off", !micOn);
+  mic.title = micOn ? "Mute" : "Unmute";
+  var cam = $("cCam");
+  cam.style.display = hasCam ? "grid" : "none";
+  cam.innerHTML = cicon(camOn ? "cam" : "camoff");
+  cam.classList.toggle("off", !camOn);
+  $("cHang").innerHTML = cicon("hang");
+}
+
+function closeCall() {
+  if (callRoom) { try { callRoom.disconnect(); } catch (e) {} callRoom = null; }
+  stopCallChat();
+  callJoined = false;
+  callSession = null;
+  $("callroom").classList.remove("open");
+  var v = document.querySelector(".callroom video.remote");
+  if (v) v.remove();
+  $("callWaiting").style.display = "";
+  $("callSelf").style.display = "none";
+  $("callSelf").innerHTML = "";
+  if (state.page === "teller") loadTellerQueue();
+}
+
+/* Ending the session, with what it was about. The resolution is the only
+   record of WHY someone called — the session row otherwise says a person
+   waited four minutes and spoke for six, which answers nothing. */
+function hangUpCall() {
+  if (!callSession) { closeCall(); return; }
+  var id = callSession.id;
+  var note = prompt("What did this session cover? (optional)", "");
+  // A cancelled prompt is "I did not mean to hang up", not "end with no
+  // note" — the two are one keystroke apart and only one is recoverable.
+  if (note === null) return;
+  api("/teller/sessions/" + id + "/end", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resolution: note || null })
+  }).then(function () { setStatus("Session ended"); })
+    .catch(function (e) { setStatus(e.message); })
+    .then(closeCall, closeCall);
+}
+
+$("cMic").onclick = function () {
+  if (!callRoom) return;
+  callRoom.localParticipant
+    .setMicrophoneEnabled(!callRoom.localParticipant.isMicrophoneEnabled)
+    .then(paintCallControls);
+};
+$("cCam").onclick = function () {
+  if (!callRoom) return;
+  callRoom.localParticipant
+    .setCameraEnabled(!callRoom.localParticipant.isCameraEnabled)
+    .then(paintCallControls);
+};
+$("cHang").onclick = hangUpCall;
+
+// A teller closing the tab mid-call must not leave the customer talking to a
+// participant who is gone.
+window.addEventListener("pagehide", function () {
+  if (callRoom) { try { callRoom.disconnect(); } catch (e) {} }
+});
 
 /* ------------------------------------------------------------ settings */
 function loadSettings() {

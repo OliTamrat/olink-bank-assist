@@ -29,6 +29,7 @@ from . import (
     admin_auth,
     channels,
     handoff_webhook,
+    livekit,
     passwords,
     permissions,
     roles,
@@ -53,6 +54,7 @@ from .models import (
     Handoff,
     Message,
     Role,
+    RolePermission,
     TellerSession,
     User,
     UserCredential,
@@ -402,6 +404,50 @@ def health(response: Response) -> HealthOut:
     )
 
 
+# How stale a teller's last queue poll may be before we stop counting them as
+# present. The queue page polls every 4s, so this tolerates a laptop sleeping
+# through a coffee break's worth of stalls without the button flickering on and
+# off — while still going dark within a minute and a half of the last person
+# closing the tab.
+TELLER_PRESENCE_WINDOW = timedelta(seconds=90)
+
+
+def _teller_available(db: Session, bank: Bank) -> bool:
+    """Is there a live teller to hand this customer to, right now?
+
+    Two independent facts, and the button needs both. `teller_enabled` is the
+    bank's decision; presence is the truth about this minute. Selling the
+    feature does not staff it, and a queue with nobody watching is worse than
+    no button at all — the customer waits, watches a counter climb, and leaves
+    with a worse impression than an honest "I can't help with that".
+
+    Scoped by permission rather than by role name, so a bank that renames
+    `teller` to `agent` or splits it into two roles keeps working.
+    """
+    if not bank.teller_enabled:
+        return False
+    # No media layer, no offer. Same reasoning as presence: a button that
+    # queues someone for a call that cannot physically connect is worse than
+    # no button. This is what keeps a deployment with the feature switched on
+    # but LIVEKIT_* unset from advertising video it cannot deliver.
+    if livekit.credentials() is None:
+        return False
+    cutoff = datetime.now(UTC) - TELLER_PRESENCE_WINDOW
+    return db.execute(
+        select(User.id)
+        .join(Role, Role.id == User.role_id)
+        .join(RolePermission, RolePermission.role_id == Role.id)
+        .where(
+            User.bank_id == bank.id,
+            User.disabled_at.is_(None),
+            User.teller_seen_at.is_not(None),
+            User.teller_seen_at >= cutoff,
+            RolePermission.permission == permissions.Perm.TELLER_SERVE,
+        )
+        .limit(1)
+    ).first() is not None
+
+
 @app.get("/banks/{slug}/public")
 def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     bank = _get_bank(db, slug)
@@ -420,6 +466,11 @@ def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         "languages": [
             {"code": code, "name": LANGUAGE_NAMES[code]} for code in SUPPORTED_LANGUAGES
         ],
+        # Whether to offer a live teller right now — enabled AND somebody
+        # actually watching the queue. A boolean rather than a headcount: how
+        # thinly a bank staffs its queue is its business, not the public
+        # internet's, and the customer only needs to know whether to wait.
+        "teller_available": _teller_available(db, bank),
     }
 
 
@@ -528,6 +579,30 @@ def embed_script() -> FileResponse:
         _STATIC / "embed.js",
         media_type="application/javascript",
         headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/vendor/livekit-client.umd.js")
+def livekit_sdk() -> FileResponse:
+    """The LiveKit browser SDK, served from our own origin.
+
+    Vendored rather than loaded from a CDN, deliberately. This script runs on
+    a BANK'S OWN PAGE — a third-party CDN there is a script tag their security
+    review has to justify, a Content-Security-Policy entry they have to widen,
+    and an outage nobody in this project can fix. The file is in the repo,
+    pinned, auditable, and served from the same origin as everything else.
+
+    Apache 2.0, licence alongside it in static/vendor. Already minified as
+    shipped (~141 KB gzipped), so there is no build step — which matters in a
+    repo that deliberately has none.
+
+    Cached hard: it is immutable for a given release and every customer who
+    opens a call fetches it.
+    """
+    return FileResponse(
+        _STATIC / "vendor" / "livekit-client.umd.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 
@@ -2028,6 +2103,31 @@ def _session_public(session: TellerSession) -> dict[str, Any]:
     }
 
 
+def _session_public_queued(
+    db: Session, bank: Bank, session: TellerSession
+) -> dict[str, Any]:
+    """The customer's view, plus their place in the queue when they're waiting.
+
+    Shared by the create and the poll routes rather than living only on the
+    poll. Returning it from only one of them left the customer looking at a
+    spinner with no number until the first poll landed — three seconds of the
+    exact screen this panel exists to avoid. A number beats a spinner: someone
+    told they are third will wait; someone shown a spinner leaves.
+    """
+    data = _session_public(session)
+    if session.state == teller.QUEUED:
+        data["ahead"] = db.execute(
+            select(func.count())
+            .select_from(TellerSession)
+            .where(
+                TellerSession.bank_id == bank.id,
+                TellerSession.state == teller.QUEUED,
+                TellerSession.requested_at < session.requested_at,
+            )
+        ).scalar_one()
+    return data
+
+
 def _session_admin(db: Session, session: TellerSession) -> dict[str, Any]:
     """What a teller or supervisor sees. Adds the internal record."""
     data = _session_public(session)
@@ -2073,6 +2173,14 @@ def request_teller_session(
         raise HTTPException(status_code=429, detail="Too many requests, please slow down")
 
     bank = _get_bank(db, slug)
+    # Enforced here, not only by hiding the button. The widget is public
+    # JavaScript on a bank's own website — anyone can read it, find this route
+    # and POST to it. A tenant that has not turned the feature on must not
+    # accumulate a queue of customers no employee can see.
+    if not bank.teller_enabled:
+        raise HTTPException(
+            status_code=409, detail="Live teller sessions are not enabled"
+        )
     conversation = db.get(Conversation, payload.conversation_id)
     # Tenancy: a conversation id from another bank must not open a session here.
     if conversation is None or conversation.bank_id != bank.id:
@@ -2088,7 +2196,7 @@ def request_teller_session(
         )
     ).scalars().first()
     if existing is not None:
-        return _session_public(existing)
+        return _session_public_queued(db, bank, existing)
 
     session = TellerSession(
         bank_id=bank.id,
@@ -2107,7 +2215,7 @@ def request_teller_session(
         {"media": session.media}, actor="customer",
     )
     db.commit()
-    return _session_public(session)
+    return _session_public_queued(db, bank, session)
 
 
 @app.get("/chat/{slug}/teller-session/{session_id}")
@@ -2119,21 +2227,226 @@ def poll_teller_session(
     session = db.get(TellerSession, session_id)
     if session is None or session.bank_id != bank.id:
         raise HTTPException(status_code=404, detail="Unknown session")
-    data = _session_public(session)
-    if session.state == teller.QUEUED:
-        # Position, counted from sessions that arrived earlier and are still
-        # waiting. A number beats a spinner: someone told they are third will
-        # wait; someone shown a spinner leaves.
-        data["ahead"] = db.execute(
-            select(func.count())
-            .select_from(TellerSession)
-            .where(
-                TellerSession.bank_id == bank.id,
-                TellerSession.state == teller.QUEUED,
-                TellerSession.requested_at < session.requested_at,
-            )
-        ).scalar_one()
-    return data
+    return _session_public_queued(db, bank, session)
+
+
+def _join(session: TellerSession, *, identity: str, name: str) -> dict[str, Any]:
+    """Everything a browser needs to get into the room, and nothing else."""
+    creds = livekit.require()
+    return {
+        "url": creds.url,
+        "token": livekit.access_token(
+            session_id=session.id, identity=identity, name=name,
+            # Both parties on a teller call publish. The read-only path exists
+            # in livekit.py for a supervisor observing, which is not this.
+            can_publish=True,
+        ),
+        "room": livekit.room_name(session.id),
+        "identity": identity,
+    }
+
+
+@app.get("/chat/{slug}/teller-session/{session_id}/token")
+def customer_join_token(
+    slug: str, session_id: str, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """A join token for the customer, once a teller has actually taken them.
+
+    Possession of the session id is the credential, exactly as it is for the
+    poll route above — the id is a UUID4 and is only ever handed to the
+    browser that created the session. Worth stating plainly rather than
+    leaving implied, because this route mints a media credential and the poll
+    route only reads state.
+
+    Issued ONLY while the session is active. Before a teller claims it there
+    is nobody to talk to, so a token then would be a live credential for an
+    empty room sitting in a browser for the whole length of the queue wait.
+    """
+    bank = _get_bank(db, slug)
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    if session.state != teller.ACTIVE:
+        raise HTTPException(status_code=409, detail="No teller on this session yet")
+    if livekit.credentials() is None:
+        raise HTTPException(status_code=503, detail="Video is not configured")
+    return _join(session, identity=f"customer-{session.id}", name="Customer")
+
+
+@app.get("/admin/api/{slug}/teller/sessions/{session_id}/token")
+def teller_join_token(
+    session_id: str,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """A join token for the teller who took this session.
+
+    Deliberately not "anyone holding teller.serve". Only the person the
+    session was claimed by may join it — otherwise every teller in the bank
+    could drop into any live customer call, which is both a privacy problem
+    and the kind of thing that is impossible to explain to a regulator after
+    the fact. A colleague who needs to take over claims the session, and that
+    is audited.
+    """
+    bank = principal.bank
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    if principal.user is None:
+        # The break-glass token has no person behind it, and a live customer
+        # call must be answerable to a named employee.
+        raise HTTPException(
+            status_code=403, detail="Sign in as a person to join a session"
+        )
+    if session.state != teller.ACTIVE:
+        raise HTTPException(status_code=409, detail="That session is not active")
+    if session.teller_user_id != principal.user.id:
+        raise HTTPException(status_code=403, detail="Another teller has this session")
+    if livekit.credentials() is None:
+        raise HTTPException(status_code=503, detail="Video is not configured")
+    return _join(
+        session,
+        identity=f"teller-{principal.user.id}",
+        name=principal.user.display_name or "Teller",
+    )
+
+
+class SessionMessageIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+def _thread(db: Session, session: TellerSession) -> list[dict[str, Any]]:
+    """The whole conversation, assistant turns included.
+
+    Deliberately the whole thing rather than only what was said on the call:
+    the customer explained their problem to the assistant before asking for a
+    person, and a chat panel that starts blank makes them explain it twice.
+    """
+    rows = db.execute(
+        select(Message)
+        .where(Message.conversation_id == session.conversation_id)
+        .order_by(Message.created_at, Message.id)
+    ).scalars().all()
+    return [
+        {
+            "id": m.id, "role": m.role, "text": m.text,
+            "at": m.created_at.isoformat(),
+        }
+        for m in rows
+    ]
+
+
+def _live_session(db: Session, bank: Bank, session_id: str) -> TellerSession:
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    if session.state != teller.ACTIVE:
+        raise HTTPException(status_code=409, detail="That session is not active")
+    return session
+
+
+@app.get("/chat/{slug}/teller-session/{session_id}/messages")
+def customer_thread(
+    slug: str, session_id: str, db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """The conversation, polled by the customer during a call."""
+    bank = _get_bank(db, slug)
+    return _thread(db, _live_session(db, bank, session_id))
+
+
+@app.post("/chat/{slug}/teller-session/{session_id}/messages", status_code=201)
+def customer_says(
+    slug: str, session_id: str, payload: SessionMessageIn, request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The customer typing to the teller, mid-call.
+
+    THE ASSISTANT DOES NOT ANSWER THIS. That is the entire difference from
+    `POST /chat/{slug}` and the reason this is a separate route rather than a
+    flag on that one: a bot replying over the top of a human who is mid-
+    sentence is the single worst thing this feature could do, and a flag is
+    something a future change can get wrong. Here there is no code path to the
+    agent at all.
+
+    Rate limited on the shared IP limiter, like every other unauthenticated
+    write.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    limiter: SlidingWindowLimiter = request.app.state.ip_limiter
+    if not limiter.allow(f"{slug}:{client_ip}"):
+        raise HTTPException(status_code=429, detail="Too many requests, please slow down")
+
+    bank = _get_bank(db, slug)
+    session = _live_session(db, bank, session_id)
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Empty message")
+    db.add(
+        Message(
+            conversation_id=session.conversation_id, bank_id=bank.id,
+            role="user", text=text,
+        )
+    )
+    db.commit()
+    return _thread(db, session)[-1]
+
+
+@app.get("/admin/api/{slug}/teller/sessions/{session_id}/messages")
+def teller_thread(
+    session_id: str,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """The conversation as the teller sees it, polled during the call.
+
+    The whole thread, assistant turns included. The customer explained their
+    problem before asking for a person, and a teller who cannot see that makes
+    them explain it twice — which is the experience this product exists to
+    replace.
+    """
+    bank = principal.bank
+    session = _live_session(db, bank, session_id)
+    if principal.user is None or session.teller_user_id != principal.user.id:
+        raise HTTPException(
+            status_code=403, detail="Only the teller on this session can read it"
+        )
+    return _thread(db, session)
+
+
+@app.post("/admin/api/{slug}/teller/sessions/{session_id}/messages", status_code=201)
+def teller_says(
+    session_id: str,
+    payload: SessionMessageIn,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The teller typing to the customer.
+
+    Stored under its own role — never `assistant`. Everything filed under the
+    assistant's name is meant to have come from the bank's indexed content,
+    and a human's typing under that role would be indistinguishable from it
+    afterwards in the transcript, the analytics and any audit.
+
+    Only the teller on the session, like every other action on a live call:
+    someone reading the queue is not in this conversation.
+    """
+    bank = principal.bank
+    session = _live_session(db, bank, session_id)
+    if principal.user is None or session.teller_user_id != principal.user.id:
+        raise HTTPException(
+            status_code=403, detail="Only the teller on this session can write to it"
+        )
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Empty message")
+    db.add(
+        Message(
+            conversation_id=session.conversation_id, bank_id=bank.id,
+            role=teller.MESSAGE_ROLE, text=text,
+        )
+    )
+    db.commit()
+    return _thread(db, session)[-1]
 
 
 @app.delete("/chat/{slug}/teller-session/{session_id}")
@@ -2162,6 +2475,109 @@ def abandon_teller_session(
     return {"state": session.state}
 
 
+class TellerLanguagesIn(BaseModel):
+    languages: list[str] = Field(default_factory=list)
+
+
+@app.put("/admin/api/{slug}/teller/languages")
+def set_teller_languages(
+    payload: TellerLanguagesIn,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Which languages this teller can hold a conversation in. Their own.
+
+    `teller.serve` and self-only — not `users.manage`. Whether you can talk to
+    a customer in Afaan Oromoo is a fact about you, and the person who knows
+    it is you. Routing a customer to a teller because a manager once ticked a
+    box produces a call where neither party can proceed.
+
+    An empty list clears it, which reads as "not declared" and routes
+    everything to them — the same as a teller who never filled it in.
+    """
+    if principal.user is None:
+        raise HTTPException(
+            status_code=403, detail="Sign in as a person to set your languages"
+        )
+    unknown = [c for c in payload.languages if c not in SUPPORTED_LANGUAGES]
+    if unknown:
+        # Refused rather than quietly dropped. An ignored code would leave a
+        # teller believing they are routed work they will never be offered.
+        raise HTTPException(
+            status_code=422, detail=f"Unsupported language: {', '.join(unknown)}"
+        )
+    # De-duplicated and in a stable order, so two tellers who picked the same
+    # set store the same value.
+    chosen = [c for c in SUPPORTED_LANGUAGES if c in set(payload.languages)]
+    principal.user.teller_languages = chosen or None
+    _audit(
+        db, principal.bank, "teller_languages_updated", "user", principal.user.id,
+        {"languages": chosen}, actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"languages": chosen}
+
+
+class TellerSettingsIn(BaseModel):
+    enabled: bool
+
+
+@app.get("/admin/api/{slug}/teller/settings")
+def get_teller_settings(
+    principal: Principal = NeedsSessionsRead, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Whether this tenant offers live sessions, and whether anyone is on now.
+
+    `available` is what the customer's widget is actually deciding on, so it is
+    returned here too — a bank that has switched the feature on and sees
+    "nobody watching" has the answer to why no button appeared, without anyone
+    reading a log.
+    """
+    bank = principal.bank
+    return {
+        "enabled": bank.teller_enabled,
+        "available": _teller_available(db, bank),
+        "presence_window_seconds": int(TELLER_PRESENCE_WINDOW.total_seconds()),
+        # This teller's own declared languages, so the page can show them
+        # without a second request. Null for the break-glass token, which is
+        # nobody in particular.
+        "languages": (
+            principal.user.teller_languages if principal.user is not None else None
+        ),
+        "all_languages": [
+            {"code": c, "name": LANGUAGE_NAMES[c]} for c in SUPPORTED_LANGUAGES
+        ],
+    }
+
+
+@app.put("/admin/api/{slug}/teller/settings")
+def set_teller_settings(
+    payload: TellerSettingsIn,
+    principal: Principal = NeedsIntegrationsManage,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Turn live teller sessions on or off for this tenant.
+
+    `integrations.manage` rather than `teller.serve`: this decides whether the
+    bank offers the service at all, which is the same class of decision as
+    repointing the handoff webhook. A teller answering calls should not be able
+    to switch the product on for the whole tenant.
+
+    Switching it off leaves sessions already in the queue alone. Those are real
+    people waiting, and dropping them silently to make a toggle tidy is the
+    kind of cleanup that loses a customer mid-conversation; the queue drains
+    and no new sessions can start.
+    """
+    bank = principal.bank
+    bank.teller_enabled = payload.enabled
+    _audit(
+        db, bank, "teller_settings_updated", "bank", bank.id,
+        {"enabled": payload.enabled}, actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"enabled": bank.teller_enabled, "available": _teller_available(db, bank)}
+
+
 @app.get("/admin/api/{slug}/teller/queue")
 def teller_queue(
     principal: Principal = NeedsSessionsRead, db: Session = Depends(get_db)
@@ -2173,6 +2589,19 @@ def teller_queue(
     it was built to prevent.
     """
     bank = principal.bank
+    # Watching the queue IS the presence signal — it is the only evidence that
+    # a person is at a desk ready to take a call, and it costs nothing to
+    # collect because the page is already polling. This is what turns the
+    # customer's "Talk to a teller" button on.
+    #
+    # Only for a principal who can actually answer: a supervisor with
+    # `sessions.read` watching the queue is not somebody who can take the call,
+    # and counting them would light the button with nobody behind it.
+    if principal.user is not None and roles.user_has(
+        db, principal.user, permissions.Perm.TELLER_SERVE
+    ):
+        principal.user.teller_seen_at = datetime.now(UTC)
+        db.commit()
     rows = db.execute(
         select(TellerSession)
         .where(
@@ -2181,7 +2610,26 @@ def teller_queue(
         )
         .order_by(TellerSession.requested_at)
     ).scalars().all()
-    return [_session_admin(db, s) for s in rows]
+    out = [_session_admin(db, s) for s in rows]
+
+    # Language routing, computed per teller rather than stored on the queue:
+    # the same queue is a different order for an Amharic speaker than for an
+    # Afaan Oromoo one, so there is no single correct order to persist.
+    #
+    # Only the waiting ones are reordered. An active session belongs to
+    # whoever is already on it, and shuffling somebody else's live call around
+    # the list is noise.
+    mine = principal.user.teller_languages if principal.user is not None else None
+    for row in out:
+        row["speaks"] = teller.speaks(mine, row["language"])
+    waiting = [i for i, r in enumerate(out) if r["state"] == teller.QUEUED]
+    order = teller.queue_order(
+        [(out[i]["language"], out[i]["waited_seconds"]) for i in waiting], mine
+    )
+    return (
+        [out[waiting[j]] for j in order]
+        + [r for r in out if r["state"] != teller.QUEUED]
+    )
 
 
 @app.post("/admin/api/{slug}/teller/sessions/{session_id}/claim")

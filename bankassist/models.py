@@ -88,6 +88,14 @@ class Bank(Base):
     # guidance rather than the bank's official information. Per-tenant because a
     # compliance-conservative bank will want it off.
     allow_general_knowledge: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Whether this tenant offers live sessions with a human teller.
+    #
+    # Defaults OFF, unlike the flag above. The feature needs a named person
+    # sitting on the queue page; a bank that has bought the assistant but has
+    # not staffed a teller must not grow a "Talk to a teller" button in its
+    # widget the day we deploy. Enabling it is a decision someone makes, not a
+    # side effect of upgrading.
+    teller_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     telegram_bot_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     telegram_webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Where to POST a handoff so it lands in the bank's own contact-centre tool
@@ -327,6 +335,26 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Last time this person was watching the teller queue. Touched by the queue
+    # poll, which is the only honest evidence we have that somebody is actually
+    # there — a login hours ago is not.
+    #
+    # This is what decides whether a customer is shown a "Talk to a teller"
+    # button at all. Without it the button is a trap: tapped at 22:00 it queues
+    # someone behind nobody, and the wait counter climbing with no one coming is
+    # a worse answer than the assistant saying plainly that it cannot help.
+    teller_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Which languages this person can actually hold a conversation in, as a
+    # list of codes from i18n.SUPPORTED_LANGUAGES.
+    #
+    # EMPTY MEANS "NOT DECLARED", AND IS TREATED AS "CAN TAKE ANYTHING" — not
+    # as "speaks nothing". Every teller starts empty, so failing closed would
+    # empty every queue on the day this ships and make the feature look like
+    # an outage. Declaring languages narrows what is routed to you first; it
+    # never takes work away from a bank that has not filled it in.
+    teller_languages: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     @property

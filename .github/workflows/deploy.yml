@@ -148,8 +148,8 @@ jobs:
             --max-instances 3 \
             --memory 512Mi \
             --service-account "bankassist-deployer@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
-            --set-secrets "BANKASSIST_DATABASE_URL=bankassist-database-url:latest" \
-            --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }},VERTEX_LOCATION=us-central1,BANKASSIST_GIT_SHA=${{ github.sha }}" \
+            --set-secrets "BANKASSIST_DATABASE_URL=bankassist-database-url:latest,LIVEKIT_API_KEY=bankassist-livekit-api-key:latest,LIVEKIT_API_SECRET=bankassist-livekit-api-secret:latest" \
+            --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }},VERTEX_LOCATION=us-central1,BANKASSIST_GIT_SHA=${{ github.sha }},LIVEKIT_URL=wss://olink-bank-assist-vfutbbvq.livekit.cloud" \
             --quiet
 
       # Cloud Run's URL isn't known until after the service exists, so this
