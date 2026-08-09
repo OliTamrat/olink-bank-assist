@@ -1704,16 +1704,63 @@ def analytics(
             )
     languages.sort(key=lambda row: (-int(row["count"]), str(row["language"])))
 
-    channels = [
-        {"channel": channel, "count": n}
+    # Every channel in the catalogue, whether or not anyone has used it —
+    # deliberately not just the ones GROUP BY returns.
+    #
+    # A breakdown built from traffic alone cannot answer the question a bank
+    # is actually asking. "Web: 100%" and "WhatsApp is not connected yet" are
+    # different facts, and a chart drawn only from rows that exist renders
+    # both as the same thing: an absence. The second fact is the one worth
+    # money, so the catalogue is the spine here and the counts are folded in.
+    #
+    # Named `channel_rows` rather than `channels`: assigning to `channels`
+    # would shadow the imported module for the whole function body, and the
+    # catalogue call below needs the module.
+    channel_counts = {
+        channel: n
         for channel, n in db.execute(
             select(Conversation.channel, func.count())
             .where(Conversation.bank_id == bank.id)
             .where(*_window(Conversation.created_at))
             .group_by(Conversation.channel)
         ).all()
+    }
+    catalogue = channels.catalogue(
+        telegram_connected=bool(bank.telegram_bot_token)
+    )
+    channel_rows = [
+        {
+            "channel": entry["key"],
+            "name": entry["name"],
+            "status": entry["status"],
+            "count": int(channel_counts.pop(entry["key"], 0)),
+        }
+        for entry in catalogue
     ]
-    channels.sort(key=lambda row: -int(row["count"]))
+    # Anything in the data but not in the catalogue. Should be empty; if it is
+    # ever not, silently dropping real conversations from the totals would be
+    # worse than showing a row with a key for a name.
+    channel_rows.extend(
+        {
+            "channel": key or "unknown",
+            "name": key or "Unknown",
+            "status": channels.LIVE,
+            "count": int(n),
+        }
+        for key, n in sorted(channel_counts.items(), key=lambda kv: -int(kv[1]))
+    )
+    # Busiest first, then by how close a channel is to carrying traffic, then
+    # catalogue order — so the panel reads as "what is working, then what you
+    # could turn on next" rather than as an alphabet.
+    _status_rank = {channels.LIVE: 0, channels.AVAILABLE: 1, channels.PLANNED: 2}
+    _catalogue_order = {entry["key"]: i for i, entry in enumerate(catalogue)}
+    channel_rows.sort(
+        key=lambda row: (
+            -int(row["count"]),
+            _status_rank.get(str(row["status"]), 3),
+            _catalogue_order.get(str(row["channel"]), 99),
+        )
+    )
 
     # --- conversations per day ----------------------------------------
     #
@@ -1813,7 +1860,7 @@ def analytics(
         ],
         "unclassified_turns": unclassified,
         "languages": languages,
-        "channels": channels,
+        "channels": channel_rows,
         "top_topics": top_topics[:MAX_TOP_TOPICS],
         "handoffs": {
             "open": len(open_handoffs),
