@@ -13,7 +13,6 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Chunk, Document
@@ -207,23 +206,60 @@ def expand_query(tokens: list[str]) -> list[tuple[str, ...]]:
     return [_FORM_TO_GROUP.get(tok, (tok,)) for tok in tokens]
 
 
+@dataclass(frozen=True)
+class CorpusStats:
+    """Everything BM25 needs about the corpus rather than about the query.
+
+    Split out so it can be computed once and reused across queries. Nothing
+    here depends on what was asked, and recomputing it per message is what
+    made retrieval cost grow with the size of the knowledge base — see
+    `index.py`.
+    """
+
+    n: int
+    df: Counter[str]
+    avg_len: float
+    informative_df_ceiling: int
+
+
+def corpus_stats(corpus: list[tuple[str, list[str]]]) -> CorpusStats:
+    n = len(corpus)
+    df: Counter[str] = Counter()
+    for _, tokens in corpus:
+        for term in set(tokens):
+            df[term] += 1
+    avg_len = sum(len(tokens) for _, tokens in corpus) / n if n else 0.0
+    return CorpusStats(
+        n=n, df=df, avg_len=avg_len,
+        informative_df_ceiling=max(1, (n + 1) // 2 - 1),
+    )
+
+
 def _score_corpus(
-    corpus: list[tuple[str, list[str]]], query_groups: list[tuple[str, ...]]
+    corpus: list[tuple[str, list[str]]],
+    query_groups: list[tuple[str, ...]],
+    stats: CorpusStats | None = None,
 ) -> list[tuple[str, float, int]]:
     """Return (chunk_id, bm25_score, informative_matches) for every chunk.
 
     A group scores through its single best-matching member rather than the sum
     of them, so a chunk saying both "fee" and "charge" does not out-rank one
     saying "fee" twice on the strength of the synonym list.
+
+    `stats` MUST describe the whole corpus, not the subset in `corpus`. The
+    index passes only the chunks that contain a query term — scoring the rest
+    is arithmetic to reach zero — and BM25's idf would change meaning if the
+    document frequencies were recounted over that subset.
     """
-    n = len(corpus)
-    if n == 0 or not query_groups:
+    if not corpus or not query_groups:
         return []
-    df: Counter[str] = Counter()
-    for _, tokens in corpus:
-        for term in set(tokens):
-            df[term] += 1
-    avg_len = sum(len(tokens) for _, tokens in corpus) / n
+    if stats is None:
+        stats = corpus_stats(corpus)
+    n = stats.n
+    if n == 0:
+        return []
+    df = stats.df
+    avg_len = stats.avg_len
     # A stopword, or a term sitting in at least half the corpus, carries no
     # signal; it must not count toward "we actually found something". This
     # is ceil(n/2) - 1, floored at 1: strictly *below* half (not "at most
@@ -232,7 +268,7 @@ def _score_corpus(
     # precisely half of one bank's chunks) slip through as informative).
     # The floor of 1 preserves retrievability for tiny corpora — for a
     # single-chunk corpus this still allows df=1 to count.
-    informative_df_ceiling = max(1, (n + 1) // 2 - 1)
+    informative_df_ceiling = stats.informative_df_ceiling
 
     results: list[tuple[str, float, int]] = []
     for chunk_id, tokens in corpus:
@@ -289,16 +325,12 @@ this down."""
 
 def retrieve(db: Session, bank_id: str, query: str, top_k: int = 4) -> list[RetrievedChunk]:
     """Top-k chunks for this bank only. Empty list means: we do not know."""
-    rows = db.execute(
-        select(Chunk, Document.title)
-        .join(Document, Chunk.document_id == Document.id)
-        .where(Chunk.bank_id == bank_id)
-    ).all()
-    if not rows:
+    from . import index as index_module
+
+    idx = index_module.get(db, bank_id)
+    if not idx.corpus:
         return []
 
-    by_id = {chunk.id: (chunk, title) for chunk, title in rows}
-    corpus = [(chunk.id, tokenize(chunk.text)) for chunk, _ in rows]
     query_tokens = tokenize(query)
     content_tokens = [t for t in query_tokens if t not in _STOPWORDS]
     if not content_tokens:
@@ -310,7 +342,11 @@ def retrieve(db: Session, bank_id: str, query: str, top_k: int = 4) -> list[Retr
     # min_informative is counted from the customer's own words, before
     # expansion — synonyms widen what each word may match, they never change
     # how many matches are required.
-    scored = _score_corpus(corpus, expand_query(query_tokens))
+    # Only the chunks that share a term with the query. The rest score exactly
+    # zero and are dropped by the filter below either way, so this is a
+    # narrowing of the work, not of the result.
+    groups = expand_query(query_tokens)
+    scored = _score_corpus(idx.candidates(groups), groups, idx.stats)
 
     hits = sorted(
         (item for item in scored if item[1] > 0 and item[2] >= max(1, min_informative)),
@@ -320,13 +356,13 @@ def retrieve(db: Session, bank_id: str, query: str, top_k: int = 4) -> list[Retr
 
     results = []
     for chunk_id, score, _ in hits:
-        chunk, title = by_id[chunk_id]
+        payload = idx.payloads[chunk_id]
         results.append(
             RetrievedChunk(
-                chunk_id=chunk.id,
-                document_id=chunk.document_id,
-                title=title,
-                text=chunk.text,
+                chunk_id=payload.chunk_id,
+                document_id=payload.document_id,
+                title=payload.title,
+                text=payload.text,
                 score=round(score, 4),
             )
         )
@@ -367,30 +403,28 @@ def suggest_topics(
     falls back to the bank's broadest documents so the customer still gets
     a way forward instead of a closed door.
 
-    Deliberately re-scores rather than sharing state with `retrieve()`:
-    this only runs on the miss path, and keeping `retrieve()`'s signature
-    untouched is worth more than saving a pass over an MVP-sized corpus.
+    Re-scores rather than sharing a result set with `retrieve()`, but over the
+    same cached index: this only runs on the miss path, and keeping
+    `retrieve()`'s signature untouched is worth more than threading state
+    between them.
     """
-    rows = db.execute(
-        select(Chunk, Document.title)
-        .join(Document, Chunk.document_id == Document.id)
-        .where(Chunk.bank_id == bank_id)
-    ).all()
-    if not rows:
+    from . import index as index_module
+
+    idx = index_module.get(db, bank_id)
+    if not idx.corpus:
         return []
 
-    doc_of = {chunk.id: (chunk.document_id, title) for chunk, title in rows}
-    corpus = [(chunk.id, tokenize(chunk.text)) for chunk, _ in rows]
-    scored = _score_corpus(corpus, expand_query(tokenize(query)))
+    groups = expand_query(tokenize(query))
+    scored = _score_corpus(idx.candidates(groups), groups, idx.stats)
 
     # Best score per document, so one long document can't fill every slot.
     best: dict[str, tuple[float, str]] = {}
     for chunk_id, score, _informative in scored:
         if score <= 0:
             continue
-        document_id, title = doc_of[chunk_id]
-        if score > best.get(document_id, (0.0, ""))[0]:
-            best[document_id] = (score, title)
+        payload = idx.payloads[chunk_id]
+        if score > best.get(payload.document_id, (0.0, ""))[0]:
+            best[payload.document_id] = (score, payload.title)
 
     if best:
         ranked = sorted(best.items(), key=lambda kv: kv[1][0], reverse=True)
@@ -400,8 +434,8 @@ def suggest_topics(
     # broadest topics this bank actually covers — as a stable starting point.
     breadth: Counter[str] = Counter()
     titles: dict[str, str] = {}
-    for chunk, title in rows:
-        breadth[chunk.document_id] += 1
-        titles[chunk.document_id] = title
+    for payload in idx.payloads.values():
+        breadth[payload.document_id] += 1
+        titles[payload.document_id] = payload.title
     widest = sorted(breadth.items(), key=lambda kv: (-kv[1], titles[kv[0]]))
     return [Suggestion(doc_id, titles[doc_id]) for doc_id, _n in widest[:limit]]
