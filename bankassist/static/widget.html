@@ -718,6 +718,11 @@
     comparison:        { label: "Competitive query", icon: "chart" },
     investment_advice: { label: "Advice guardrail", icon: "shield", cls: "guard" },
     account_specific:  { label: "Account-data guardrail", icon: "lock", cls: "guard" },
+    // NOT a guardrail chip, deliberately. "How do I block my card" is answered
+    // from the bank's own published material like any other question, and
+    // stamping a lock on it would tell a bank evaluating the product that we
+    // refuse the how-to questions their call centre spends all day on.
+    account_procedure: { label: "Product guidance", icon: "book" },
     complaint:         { label: "Complaint", icon: "flag", cls: "guard" }
   };
 

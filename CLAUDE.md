@@ -93,8 +93,14 @@ a message takes, not about the branch's own logic.
    for the rest of the session and is used in greetings and acknowledgements.
    **Personal data — never logged.**
 3. **Intent classify** (`classifier.classify_intent`), deterministic regexes.
-   `GREETING`, `ACCOUNT_SPECIFIC`, `COMPLAINT`, `COMPARISON`,
-   `INVESTMENT_ADVICE`, `QUESTION`. The safety floor never depends on a model.
+   `GREETING`, `ACCOUNT_SPECIFIC`, `ACCOUNT_PROCEDURE`, `COMPLAINT`,
+   `COMPARISON`, `INVESTMENT_ADVICE`, `QUESTION`. The safety floor never
+   depends on a model. **The account line is drawn on what answering
+   REQUIRES, not on what the message mentions:** a value only core banking
+   holds (`ACCOUNT_SPECIFIC`, refused + teller offered) versus a how-to or a
+   published fact (`ACCOUNT_PROCEDURE`, answered from documents like any
+   other question). "What is my balance" and "how do I check my balance"
+   both say *my balance*.
 4. `COMPARISON` → direct category lookup of the `why-choose-us` document
    (never retrieval — see below). Other non-question intents → fixed
    templates.
