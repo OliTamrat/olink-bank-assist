@@ -484,11 +484,38 @@
     padding: 14px 16px calc(14px + env(safe-area-inset-top));
     background: linear-gradient(rgba(10,12,16,.75), transparent);
     font-size: 14px; font-weight: 600;
+    display: flex; align-items: flex-start; gap: 10px;
   }
+  .call .who2 .nm { flex: 1; min-width: 0; }
   .call .who2 small {
     display: block; font-weight: 400; font-size: 11.5px;
     color: rgba(255,255,255,.72); margin-top: 2px;
   }
+  /* Call duration. Every consumer video app shows one, and its absence is
+     felt rather than noticed — a customer with no sense of elapsed time on a
+     paid mobile connection gets anxious and hangs up. */
+  .call .timer2 {
+    font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums;
+    color: rgba(255,255,255,.85); display: flex; align-items: center; gap: 6px;
+    flex: none; padding-top: 1px;
+  }
+  .call .qdot {
+    width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
+    box-shadow: 0 0 0 3px rgba(74,222,128,.18);
+  }
+  .call .qdot.poor { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251,191,36,.18); }
+  .call .qdot.bad  { background: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,.18); }
+  /* Reconnecting. Silence with a frozen frame is indistinguishable from the
+     other person having gone quiet; saying so is what stops them hanging up
+     on a call that is about to recover. */
+  .call .recon {
+    position: absolute; left: 50%; top: 68px; transform: translateX(-50%);
+    background: rgba(251,191,36,.16); color: #fbbf24;
+    border: 1px solid rgba(251,191,36,.3);
+    padding: 6px 13px; border-radius: 99px; font-size: 12px; font-weight: 550;
+    display: none; white-space: nowrap;
+  }
+  .call .recon.on { display: block; }
   /* Shown until a remote track arrives. Audio-only calls never get one, so
      this is the normal state outside Addis rather than an error. */
   .call .placeholder { text-align: center; padding: 20px; }
@@ -522,6 +549,76 @@
     text-align: center; font-size: 11px; color: rgba(255,255,255,.5);
     padding: 0 16px 10px; background: #0a0c10;
   }
+  /* Chat, during the call. Not a nicety: account numbers, reference codes and
+     names are the things people cannot say clearly over a bad line, and they
+     are exactly what a banking call is about. It also keeps the session
+     usable when audio fails entirely. */
+  .call .chatbtn {
+    position: relative;
+  }
+  .call .chatbtn .badge {
+    position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px;
+    border-radius: 99px; background: #dc2626; color: #fff;
+    font-size: 10.5px; font-weight: 700; display: none;
+    align-items: center; justify-content: center; padding: 0 5px;
+  }
+  .call .chatbtn .badge.on { display: flex; }
+  /* Opaque, not 97%. At .97 the call header ghosted through the top of the
+     panel and read as a rendering fault rather than as translucency. */
+  .callchat {
+    position: absolute; inset: 0; z-index: 2; display: none;
+    flex-direction: column; background: #0a0c10;
+  }
+  .callchat.open { display: flex; }
+  .callchat .head2 {
+    display: flex; align-items: center; gap: 10px;
+    padding: calc(14px + env(safe-area-inset-top)) 16px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    font-size: 14px; font-weight: 600;
+  }
+  .callchat .head2 button {
+    margin-left: auto; background: none; border: 0; color: rgba(255,255,255,.75);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .callchat .log {
+    flex: 1; overflow-y: auto; padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .callchat .m {
+    font-size: 13.5px; line-height: 1.5; padding: 9px 12px; border-radius: 13px;
+    max-width: 84%; overflow-wrap: anywhere; white-space: pre-wrap;
+  }
+  .callchat .m.user { align-self: flex-end; background: var(--brand); color: #fff; }
+  .callchat .m.teller { align-self: flex-start; background: #23272f; color: #fff; }
+  /* The assistant's earlier turns, dimmed. They are context for what was
+     already said, not part of the live exchange — and a bank's evaluator
+     must be able to see at a glance which lines the AI wrote. */
+  .callchat .m.assistant {
+    align-self: flex-start; background: transparent; color: rgba(255,255,255,.62);
+    border: 1px solid rgba(255,255,255,.14);
+  }
+  .callchat .who3 {
+    font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+    color: rgba(255,255,255,.42); margin: 4px 0 -3px;
+  }
+  .callchat form {
+    display: flex; gap: 9px; padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255,255,255,.1);
+  }
+  .callchat input {
+    flex: 1; min-width: 0; border: 1px solid rgba(255,255,255,.16);
+    background: rgba(255,255,255,.07); color: #fff;
+    border-radius: 12px; padding: 11px 13px; font-family: inherit;
+    /* >= 16px or iOS Safari zooms the whole call panel on focus. */
+    font-size: 16px; outline: none;
+  }
+  .callchat input::placeholder { color: rgba(255,255,255,.42); }
+  .callchat button.send2 {
+    width: 44px; flex: none; border: 0; border-radius: 12px;
+    background: var(--brand); color: #fff; cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .callchat button.send2 svg { width: 17px; height: 17px; }
 
   @media (prefers-reduced-motion: reduce) {
     .ring { animation: none; }
@@ -572,11 +669,23 @@
       <p id="callStatus">Connecting…</p>
     </div>
     <div class="who2" id="callWho"></div>
+    <div class="recon" id="callRecon">Reconnecting…</div>
     <div class="self" id="selfView" style="display:none"><video id="selfVideo" autoplay muted playsinline></video></div>
+    <div class="callchat" id="callChat">
+      <div class="head2">Messages<button type="button" id="chatClose" aria-label="Close messages">&times;</button></div>
+      <div class="log" id="chatLog"></div>
+      <form id="chatForm">
+        <input id="chatInput" type="text" autocomplete="off" placeholder="Type a message…">
+        <button type="submit" class="send2" aria-label="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </form>
+    </div>
   </div>
   <div class="controls">
     <button type="button" id="btnMic" title="Mute" aria-label="Mute"></button>
     <button type="button" id="btnCam" title="Camera" aria-label="Camera"></button>
+    <button type="button" id="btnChat" class="chatbtn" title="Messages" aria-label="Messages"><span class="badge" id="chatBadge">0</span></button>
     <button type="button" id="btnHang" class="hang" title="End call" aria-label="End call"></button>
   </div>
   <div class="note2">This teller cannot move money. Never share your PIN or password.</div>
@@ -1225,7 +1334,8 @@
     micoff: '<path d="M15 9V5a3 3 0 0 0-5.9-.7M9 9v2a3 3 0 0 0 5 2.2"/><path d="M19 10v1a7 7 0 0 1-11 5.7M5 10v1a7 7 0 0 0 2 4.9M12 19v3"/><path d="M2 2l20 20"/>',
     cam:    '<path d="M23 7l-7 5 7 5z"/><rect x="1" y="5" width="15" height="14" rx="2"/>',
     camoff: '<path d="M16 16v2a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2m5 0h4a2 2 0 0 1 2 2v2l6-4v10"/><path d="M2 2l20 20"/>',
-    hang:   '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/><path d="M23 1L1 23"/>'
+    hang:   '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/><path d="M23 1L1 23"/>',
+    chat:   '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-4.6A8.4 8.4 0 1 1 21 11.5z"/><path d="M8 10h8M8 14h5"/>'
   };
   function callIcon(name) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
@@ -1260,10 +1370,14 @@
     callEl.classList.add("open");
     document.getElementById("callInitials").textContent = initials(bankName);
     document.getElementById("callWho").innerHTML =
-      "<span></span><small>Verify your identity before discussing your account</small>";
-    callEl.querySelector(".who2 span").textContent = bankName + " teller";
+      '<div class="nm"><span></span>' +
+      "<small>Verify your identity before discussing your account</small></div>" +
+      '<div class="timer2"><span class="qdot" id="qdot"></span>' +
+      '<span id="callClock">0:00</span></div>';
+    callEl.querySelector(".who2 .nm span").textContent = bankName + " teller";
     callStatus("Connecting…");
     paintControls();
+    startChat();
 
     var wantVideo = session.media === "video";
     var sid = session.id;
@@ -1300,8 +1414,33 @@
         callStatus("The teller has left the call.");
       });
 
+      // Industry-standard call affordances, each earning its place:
+      // a clock (a customer on a paid mobile connection with no sense of
+      // elapsed time gets anxious and hangs up), a quality dot (so a bad line
+      // reads as the network rather than the bank), and a reconnecting banner
+      // (silence with a frozen frame is indistinguishable from the other
+      // person having gone quiet).
+      r.on(LK.RoomEvent.Reconnecting, function () {
+        document.getElementById("callRecon").classList.add("on");
+      });
+      r.on(LK.RoomEvent.Reconnected, function () {
+        document.getElementById("callRecon").classList.remove("on");
+      });
+      r.on(LK.RoomEvent.ConnectionQualityChanged, function (quality, participant) {
+        // Only our own leg. The remote's quality is their problem to see, and
+        // showing it here would have the customer read the teller's poor wifi
+        // as the bank's fault.
+        if (participant !== r.localParticipant) return;
+        var dot = document.getElementById("qdot");
+        if (!dot) return;
+        dot.className = "qdot" +
+          (quality === LK.ConnectionQuality.Poor ? " poor" :
+           quality === LK.ConnectionQuality.Lost ? " bad" : "");
+      });
+
       return r.connect(grant.url, grant.token).then(function () {
         joined = true;
+        startClock();
         callStatus("Waiting for the teller…");
         // Microphone always; camera only if they chose video. Asking for a
         // camera on an audio call is a permission prompt for hardware the
@@ -1362,6 +1501,125 @@
     holder.style.display = "block";
   }
 
+  // ---------------------------------------------------------- call clock
+  var clockTimer = null, clockFrom = 0;
+  function startClock() {
+    clockFrom = Date.now();
+    stopClock();
+    clockTimer = setInterval(function () {
+      var el2 = document.getElementById("callClock");
+      if (!el2) return stopClock();
+      el2.textContent = mmss(Math.round((Date.now() - clockFrom) / 1000));
+    }, 1000);
+  }
+  function stopClock() {
+    if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  }
+
+  // ------------------------------------------------- chat during the call
+  //
+  // Over our API, not LiveKit's data channel — the same reason the data
+  // channel is switched off in the token: an unaudited side channel between
+  // a customer and a bank employee is exactly what a banking product must not
+  // have. Going through the server means every line lands in the same
+  // transcript as the assistant's, in order, and is there afterwards.
+  //
+  // It is also the part that makes a bad line survivable. Account numbers,
+  // reference codes and names are precisely what cannot be said clearly over
+  // poor audio, and they are what a banking call is about.
+  var chatTimer = null, chatSeen = 0, chatOpen = false;
+
+  function startChat() {
+    chatSeen = 0; chatOpen = false;
+    document.getElementById("callChat").classList.remove("open");
+    document.getElementById("chatBadge").classList.remove("on");
+    pollChat();
+    stopChatPolling();
+    chatTimer = setInterval(pollChat, 3000);
+  }
+  function stopChatPolling() {
+    if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
+  }
+
+  function pollChat() {
+    if (!session) return stopChatPolling();
+    fetch(api + "/chat/" + encodeURIComponent(slug) +
+          "/teller-session/" + session.id + "/messages")
+      .then(function (r) { if (!r.ok) throw new Error("chat"); return r.json(); })
+      .then(renderChat)
+      .catch(function () {});   // a dropped poll is not a dropped call
+  }
+
+  function renderChat(rows) {
+    var log = document.getElementById("chatLog");
+    if (!log) return;
+    var atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.innerHTML = "";
+    rows.forEach(function (m) {
+      // The assistant's earlier turns are shown but dimmed and labelled: they
+      // are the context the customer already gave, not part of the live
+      // exchange, and nobody should have to guess which lines a bot wrote.
+      if (m.role === "teller") {
+        log.appendChild(el("div", "who3", "Teller"));
+      }
+      var b = el("div", "m " + (m.role === "user" ? "user" :
+                                m.role === "teller" ? "teller" : "assistant"));
+      b.textContent = m.text;
+      log.appendChild(b);
+    });
+    if (atBottom) log.scrollTop = log.scrollHeight;
+
+    // Unread count, but only for what the teller said — echoing the
+    // customer's own messages back as "unread" is how a badge becomes noise
+    // that people stop looking at.
+    var fromTeller = rows.filter(function (m) { return m.role === "teller"; }).length;
+    var badge = document.getElementById("chatBadge");
+    if (chatOpen) { chatSeen = fromTeller; }
+    var unread = Math.max(0, fromTeller - chatSeen);
+    badge.textContent = unread > 9 ? "9+" : String(unread);
+    badge.classList.toggle("on", unread > 0 && !chatOpen);
+  }
+
+  function toggleChat(open) {
+    chatOpen = open;
+    document.getElementById("callChat").classList.toggle("open", open);
+    if (open) {
+      document.getElementById("chatBadge").classList.remove("on");
+      var log = document.getElementById("chatLog");
+      log.scrollTop = log.scrollHeight;
+      pollChat();
+      document.getElementById("chatInput").focus();
+    }
+  }
+
+  document.getElementById("btnChat").addEventListener("click", function () {
+    toggleChat(!chatOpen);
+  });
+  document.getElementById("chatClose").addEventListener("click", function () {
+    toggleChat(false);
+  });
+  document.getElementById("chatForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var input2 = document.getElementById("chatInput");
+    var text = input2.value.trim();
+    if (!text || !session) return;
+    input2.value = "";
+    fetch(api + "/chat/" + encodeURIComponent(slug) +
+          "/teller-session/" + session.id + "/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("send");
+      pollChat();
+    }).catch(function () {
+      // Put it back in the box rather than losing it. Retyping an account
+      // number because a send failed silently is the worst version of this.
+      input2.value = text;
+      addBot("That message didn't send. Please try again.", false);
+    });
+  });
+
   function paintControls() {
     // `hasCam` comes from what the customer CHOSE, not from whether a room
     // exists yet. Reading it off `room` hid the camera button for the whole
@@ -1384,6 +1642,11 @@
     cam.classList.toggle("off", !camOn);
 
     document.getElementById("btnHang").innerHTML = callIcon("hang");
+    var chatBtn = document.getElementById("btnChat");
+    // Preserve the badge element — innerHTML would drop it.
+    var badge = document.getElementById("chatBadge");
+    chatBtn.innerHTML = callIcon("chat");
+    chatBtn.appendChild(badge);
   }
 
   document.getElementById("btnMic").addEventListener("click", function () {
@@ -1405,6 +1668,10 @@
   function endCall(message) {
     if (room) { try { room.disconnect(); } catch (e) {} room = null; }
     joined = false;
+    stopClock();
+    stopChatPolling();
+    toggleChat(false);
+    document.getElementById("callRecon").classList.remove("on");
     callEl.classList.remove("open");
     var stage = document.getElementById("stage");
     var v = stage.querySelector("video.remote");

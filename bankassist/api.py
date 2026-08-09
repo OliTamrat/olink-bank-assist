@@ -2311,6 +2311,144 @@ def teller_join_token(
     )
 
 
+class SessionMessageIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+def _thread(db: Session, session: TellerSession) -> list[dict[str, Any]]:
+    """The whole conversation, assistant turns included.
+
+    Deliberately the whole thing rather than only what was said on the call:
+    the customer explained their problem to the assistant before asking for a
+    person, and a chat panel that starts blank makes them explain it twice.
+    """
+    rows = db.execute(
+        select(Message)
+        .where(Message.conversation_id == session.conversation_id)
+        .order_by(Message.created_at, Message.id)
+    ).scalars().all()
+    return [
+        {
+            "id": m.id, "role": m.role, "text": m.text,
+            "at": m.created_at.isoformat(),
+        }
+        for m in rows
+    ]
+
+
+def _live_session(db: Session, bank: Bank, session_id: str) -> TellerSession:
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    if session.state != teller.ACTIVE:
+        raise HTTPException(status_code=409, detail="That session is not active")
+    return session
+
+
+@app.get("/chat/{slug}/teller-session/{session_id}/messages")
+def customer_thread(
+    slug: str, session_id: str, db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """The conversation, polled by the customer during a call."""
+    bank = _get_bank(db, slug)
+    return _thread(db, _live_session(db, bank, session_id))
+
+
+@app.post("/chat/{slug}/teller-session/{session_id}/messages", status_code=201)
+def customer_says(
+    slug: str, session_id: str, payload: SessionMessageIn, request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The customer typing to the teller, mid-call.
+
+    THE ASSISTANT DOES NOT ANSWER THIS. That is the entire difference from
+    `POST /chat/{slug}` and the reason this is a separate route rather than a
+    flag on that one: a bot replying over the top of a human who is mid-
+    sentence is the single worst thing this feature could do, and a flag is
+    something a future change can get wrong. Here there is no code path to the
+    agent at all.
+
+    Rate limited on the shared IP limiter, like every other unauthenticated
+    write.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    limiter: SlidingWindowLimiter = request.app.state.ip_limiter
+    if not limiter.allow(f"{slug}:{client_ip}"):
+        raise HTTPException(status_code=429, detail="Too many requests, please slow down")
+
+    bank = _get_bank(db, slug)
+    session = _live_session(db, bank, session_id)
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Empty message")
+    db.add(
+        Message(
+            conversation_id=session.conversation_id, bank_id=bank.id,
+            role="user", text=text,
+        )
+    )
+    db.commit()
+    return _thread(db, session)[-1]
+
+
+@app.get("/admin/api/{slug}/teller/sessions/{session_id}/messages")
+def teller_thread(
+    session_id: str,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """The conversation as the teller sees it, polled during the call.
+
+    The whole thread, assistant turns included. The customer explained their
+    problem before asking for a person, and a teller who cannot see that makes
+    them explain it twice — which is the experience this product exists to
+    replace.
+    """
+    bank = principal.bank
+    session = _live_session(db, bank, session_id)
+    if principal.user is None or session.teller_user_id != principal.user.id:
+        raise HTTPException(
+            status_code=403, detail="Only the teller on this session can read it"
+        )
+    return _thread(db, session)
+
+
+@app.post("/admin/api/{slug}/teller/sessions/{session_id}/messages", status_code=201)
+def teller_says(
+    session_id: str,
+    payload: SessionMessageIn,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The teller typing to the customer.
+
+    Stored under its own role — never `assistant`. Everything filed under the
+    assistant's name is meant to have come from the bank's indexed content,
+    and a human's typing under that role would be indistinguishable from it
+    afterwards in the transcript, the analytics and any audit.
+
+    Only the teller on the session, like every other action on a live call:
+    someone reading the queue is not in this conversation.
+    """
+    bank = principal.bank
+    session = _live_session(db, bank, session_id)
+    if principal.user is None or session.teller_user_id != principal.user.id:
+        raise HTTPException(
+            status_code=403, detail="Only the teller on this session can write to it"
+        )
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Empty message")
+    db.add(
+        Message(
+            conversation_id=session.conversation_id, bank_id=bank.id,
+            role=teller.MESSAGE_ROLE, text=text,
+        )
+    )
+    db.commit()
+    return _thread(db, session)[-1]
+
+
 @app.delete("/chat/{slug}/teller-session/{session_id}")
 def abandon_teller_session(
     slug: str, session_id: str, db: Session = Depends(get_db)

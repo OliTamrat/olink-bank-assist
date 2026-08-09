@@ -141,3 +141,20 @@ def capabilities(scope: str) -> tuple[str, ...]:
     """Everything permitted at this level, sorted — for the UI that tells the
     customer, before they queue, what this teller will be able to help with."""
     return tuple(sorted(_GRANTS.get(scope, frozenset())))
+
+
+# --------------------------------------------------------------- chat roles
+#
+# What a live teller's typed message is stored as. A THIRD role, never
+# "assistant".
+#
+# The assistant's whole promise to a bank is that everything under its name
+# came from the bank's own indexed content. Filing a human's typing under the
+# same role would put words the assistant never produced into its transcript,
+# its analytics and any audit of what it said — and there would be no way to
+# tell them apart afterwards. It would also make the outcome column lie, since
+# a teller's sentence has no retrieval outcome.
+#
+# Analytics filter on `role == "assistant"` explicitly, so this role is
+# counted in neither the assistant's tallies nor the customer's.
+MESSAGE_ROLE: Final = "teller"

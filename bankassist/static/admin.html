@@ -830,7 +830,36 @@ td.title { color: var(--ink); font-weight: 550; }
   font-size: 12.5px; line-height: 1.5; padding: 8px 11px; border-radius: 10px;
   background: var(--surface-2); color: var(--body); max-width: 92%;
 }
-.callroom .msg2.user { align-self: flex-end; background: var(--brand); color: #fff; }
+/* Alignment is "mine versus theirs", read from the TELLER's seat: the
+   customer and the assistant are both the other side of this conversation
+   and sit left; only what this teller typed sits right.
+
+   The first pass had the customer on the right — the widget's convention,
+   where the customer is "me" — which put the customer and the teller on the
+   same side and destroyed the only cue the layout gives. Caught by looking
+   at it, not by reading it. */
+.callroom .msg2.user { align-self: flex-start; background: var(--brand); color: #fff; }
+/* The teller's own lines, distinct from the assistant's. A bank reviewing a
+   transcript has to be able to see at a glance which sentences a person
+   wrote and which the AI did — that distinction is the product. */
+.callroom .msg2.teller {
+  align-self: flex-end; background: var(--surface-2); color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line));
+}
+.callroom .rolelbl {
+  font-size: 10px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--faint); margin: 2px 0 -4px;
+}
+.callroom .rolelbl.mine { align-self: flex-end; }
+.callroom .composer2 {
+  display: flex; gap: 8px; padding: 10px 16px;
+  border-top: 1px solid var(--line);
+}
+.callroom .composer2 input {
+  flex: 1; min-width: 0; margin: 0; padding: 9px 11px; font-size: 13px;
+  background: var(--surface-2);
+}
+.callroom .composer2 button { flex: none; }
 
 .callroom .verify { border-top: 1px solid var(--line); padding: 14px 16px; }
 .callroom .verify label {
@@ -991,8 +1020,12 @@ td.title { color: var(--ink); font-weight: 550; }
     <div class="self" id="callSelf" style="display:none"></div>
   </div>
   <div class="work">
-    <h4>What they asked the assistant</h4>
+    <h4>Conversation</h4>
     <div class="transcript" id="callTranscript"></div>
+    <form class="composer2" id="callComposer">
+      <input id="callSay" type="text" autocomplete="off" placeholder="Message the customer…">
+      <button class="btn sm" type="submit">Send</button>
+    </form>
     <div class="verify" id="callVerify"></div>
   </div>
   <div class="controls">
@@ -2991,7 +3024,7 @@ function openCall(session) {
   callMsg("Connecting…");
   paintCallControls();
   renderVerify();
-  loadTranscript(session.conversation_id);
+  startCallChat();
 
   Promise.all([
     loadCallSdk(),
@@ -3064,26 +3097,68 @@ function openCall(session) {
   });
 }
 
-function loadTranscript(conversationId) {
+/* The conversation, live. Everything the customer already told the assistant
+   plus everything either side types now, in one thread and in one order.
+
+   Polled rather than pushed over LiveKit's data channel — that channel is
+   switched off in the token on purpose, so no words pass between a customer
+   and a bank employee outside the record. */
+var chatPoll = null;
+
+function startCallChat() {
+  drawThread();
+  stopCallChat();
+  chatPoll = setInterval(function () {
+    if (!callSession) { stopCallChat(); return; }
+    drawThread();
+  }, 3000);
+}
+function stopCallChat() {
+  if (chatPoll) { clearInterval(chatPoll); chatPoll = null; }
+}
+
+function drawThread() {
   var box = $("callTranscript");
-  box.innerHTML = '<div class="empty">Loading…</div>';
-  if (!conversationId) { box.innerHTML = '<div class="empty">No chat history.</div>'; return; }
-  api("/conversations/" + conversationId + "/messages").then(function (rows) {
+  if (!box || !callSession) return;
+  api("/teller/sessions/" + callSession.id + "/messages").then(function (rows) {
+    // Hold position if the teller has scrolled up to re-read something —
+    // yanking them to the bottom every three seconds makes the panel unusable
+    // exactly when they are hunting for a detail.
+    var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     if (!rows.length) { box.innerHTML = '<div class="empty">No messages yet.</div>'; return; }
-    // `text`, not `content` — the messages endpoint returns {role, text, ...}.
-    // Getting this wrong renders a column of empty bubbles, which looks like
-    // a customer who typed nothing rather than a bug.
     box.innerHTML = rows.map(function (m) {
-      return '<div class="msg2 ' + (m.role === "user" ? "user" : "") + '">' +
-        esc(m.text) + "</div>";
+      var cls = m.role === "user" ? "user" : m.role === "teller" ? "teller" : "";
+      var label = m.role === "teller"
+        ? '<div class="rolelbl mine">You</div>'
+        : m.role === "assistant" ? '<div class="rolelbl">Assistant</div>' : "";
+      // `text`, not `content` — the endpoint returns {role, text, at}.
+      // Getting this wrong renders empty bubbles, which reads as a customer
+      // who typed nothing rather than as a bug.
+      return label + '<div class="msg2 ' + cls + '">' + esc(m.text) + "</div>";
     }).join("");
-    box.scrollTop = box.scrollHeight;
+    if (atBottom) box.scrollTop = box.scrollHeight;
   }).catch(function () {
-    // A failed transcript must not take the call down — the teller can still
-    // talk to the person, they just have to ask what they wanted.
-    box.innerHTML = '<div class="empty">Chat history unavailable.</div>';
+    // A failed poll must not take the call down — the teller can still talk.
+    if (!box.innerHTML) box.innerHTML = '<div class="empty">Conversation unavailable.</div>';
   });
 }
+
+$("callComposer").onsubmit = function (e) {
+  e.preventDefault();
+  var input = $("callSay");
+  var text = input.value.trim();
+  if (!text || !callSession) return;
+  input.value = "";
+  api("/teller/sessions/" + callSession.id + "/messages", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text })
+  }).then(drawThread).catch(function (err) {
+    // Restore it rather than lose it — a teller retyping a reference number
+    // because a send failed silently is the worst version of this.
+    input.value = text;
+    setStatus(err.message);
+  });
+};
 
 /* The verification bar. The bar itself lives in verification.py — this only
    collects what the teller says they checked. The server refuses anything
@@ -3156,6 +3231,7 @@ function paintCallControls() {
 
 function closeCall() {
   if (callRoom) { try { callRoom.disconnect(); } catch (e) {} callRoom = null; }
+  stopCallChat();
   callJoined = false;
   callSession = null;
   $("callroom").classList.remove("open");
