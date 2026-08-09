@@ -236,6 +236,45 @@ textarea { min-height: 170px; resize: vertical; }
   border-radius: 99px; padding: 1px 7px; min-width: 20px; text-align: center;
 }
 .navitem.on .badge { background: rgba(255,255,255,.24); }
+
+/* ------------------------------------------------------------ sub-nav
+   One rail entry per channel, nested under Channels. The rail is where an
+   operator's mental map of the product lives, so a channel that exists needs
+   to be visible there — not folded inside a Settings tab where you only find
+   it if you already knew to look.
+
+   The disclosure arrow is a separate control from the label: clicking
+   "Channels" should open Channels, not merely toggle a drawer. Conflating the
+   two is the classic sidebar trap where a parent becomes un-clickable. */
+.navrow { display: flex; align-items: center; gap: 2px; }
+.navrow .navitem { margin-bottom: 0; }
+.disclose {
+  background: none; border: none; color: var(--side-text); cursor: pointer;
+  padding: 8px 5px; border-radius: 8px; line-height: 0; flex: none;
+}
+.disclose:hover { background: var(--side-2); color: #fff; }
+.disclose svg { transition: transform .15s; }
+.disclose[aria-expanded="true"] svg { transform: rotate(90deg); }
+.subnav { margin: 2px 0 4px 13px; padding-left: 11px; border-left: 1px solid var(--side-2); }
+.subnav[hidden] { display: none; }
+.subitem {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: none; color: var(--side-text);
+  padding: 6px 9px; border-radius: 8px; font-size: 12.5px; cursor: pointer;
+  text-align: left; font-family: inherit;
+}
+.subitem:hover { background: var(--side-2); color: #fff; }
+.subitem.on { background: var(--side-2); color: #fff; font-weight: 600; }
+.subitem .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The channel's own series colour, so the rail, the dashboard panel and the
+   donut all say "Telegram" with the same swatch. Hollow when it is not live —
+   the same language the dashboard list uses. */
+.subitem .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.subitem.idle .dot { background: none !important; border: 1.5px solid #6f7b93; }
+/* Collapsed to icons there is no room to nest anything, and a sub-list with no
+   labels is a column of unexplained dots. */
+[data-rail="mini"] .subnav, [data-rail="mini"] .disclose { display: none; }
+
 .side-foot { margin-top: auto; border-top: 1px solid var(--side-2); padding-top: 12px; }
 .who { display: flex; gap: 9px; align-items: center; padding: 4px 8px 10px; }
 .avatar {
@@ -256,6 +295,41 @@ textarea { min-height: 170px; resize: vertical; }
 .topbar h2 { font-size: 17px; }
 .topbar .spacer { flex: 1; }
 #status { font-size: 12.5px; color: var(--muted); }
+
+/* ----------------------------------------------------------- topbar tools
+   Two controls, each answering a question the page could not answer before.
+
+   "Updated 6m ago" — a dashboard gets left open on a second monitor all day,
+   and every number on it silently ages. Without a timestamp there is no way to
+   tell a quiet morning from a stale tab, and that is the failure mode where
+   someone acts on numbers from yesterday.
+
+   The queue button — the rail badge disappears when the rail is collapsed, and
+   it is invisible on the pages an operator actually works from. The one
+   time-sensitive thing in this product should be reachable from anywhere. */
+.tools { display: flex; align-items: center; gap: 8px; }
+.stamp {
+  font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.qbtn {
+  display: flex; align-items: center; gap: 7px; background: none; cursor: pointer;
+  border: 1px solid var(--line); color: var(--muted); border-radius: 9px;
+  padding: 6px 11px; font-size: 12.5px; font-family: inherit;
+}
+.qbtn:hover { border-color: var(--brand); color: var(--brand); }
+.qbtn .cnt {
+  font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink);
+}
+/* Waiting work is not a neutral fact. An empty queue stays quiet; a queue with
+   somebody in it wears the warning colour, so the state is readable without
+   reading the number. */
+.qbtn.hot { border-color: color-mix(in srgb, var(--warn) 55%, var(--line));
+  color: var(--warn); }
+.qbtn.hot .cnt { color: var(--warn); }
+.spin { animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 720px) { .stamp, .qbtn .lbl { display: none; } }
 main { padding: 20px 24px 40px; }
 
 /* ------------------------------------------------------- welcome banner
@@ -425,8 +499,18 @@ main { padding: 20px 24px 40px; }
 .chan .dot { width: 10px; height: 10px; border-radius: 3px; }
 /* A channel with no traffic keeps its identity colour but wears it hollow —
    recognisable when it does light up, without competing for attention now. */
-.chan.idle .dot { background: none !important; border: 1.5px solid var(--faint); }
+.chan.idle .dot, .dot.hollow { background: none !important; border: 1.5px solid var(--faint); }
 .cname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The dashboard panel is a tight list where a truncated name is fine. The
+   Channels page carries each channel's one-line explanation as well, so there
+   the row wraps and aligns to the top rather than ellipsising it away. */
+.chanlist.rich .chan {
+  align-items: start; padding: 13px 0;
+  grid-template-columns: 10px 1fr auto auto; gap: 10px 14px;
+}
+.chanlist.rich .chan .dot { margin-top: 5px; }
+.chanlist.rich .cname { white-space: normal; overflow: visible; }
+.chanlist.rich .cname .meta { margin-top: 3px; }
 .chan .n { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
 .chan .pill {
   font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
@@ -523,6 +607,10 @@ td.title { color: var(--ink); font-weight: 550; }
 .pill.closed { background: var(--ok-bg); color: var(--ok); }
 .pill.on { background: var(--ok-bg); color: var(--ok); }
 .pill.off { background: var(--bad-bg); color: var(--bad); }
+/* Actionable-now, as distinct from working-already (.on) and
+   blocked-on-paperwork (plain). */
+.pill.next { background: color-mix(in srgb, var(--brand) 16%, transparent);
+  color: var(--brand); }
 
 .seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line);
   border-radius: 9px; padding: 2px; }
@@ -691,10 +779,19 @@ td.title { color: var(--ink); font-weight: 550; }
       <h2 id="page-title">Dashboard</h2>
       <div class="spacer"></div>
       <span id="status"></span>
-      <button class="iconbtn" id="theme-toggle" title="Switch between dark and light"
-              aria-label="Switch between dark and light">
-        <span id="theme-glyph">☾</span>
-      </button>
+      <div class="tools">
+        <span class="stamp" id="stamp" aria-live="polite"></span>
+        <button class="iconbtn" id="refresh" title="Reload this page's data"
+                aria-label="Reload this page's data"></button>
+        <button class="qbtn hidden" id="queue-btn"
+                title="Open the escalation queue">
+          <span class="lbl">Queue</span><span class="cnt" id="queue-count">0</span>
+        </button>
+        <button class="iconbtn" id="theme-toggle" title="Switch between dark and light"
+                aria-label="Switch between dark and light">
+          <span id="theme-glyph">☾</span>
+        </button>
+      </div>
     </div>
     <main id="main"></main>
   </div>
@@ -716,6 +813,11 @@ var PAGES = [
   { id: "gaps",      label: "Content Gaps",  perm: "gaps.read",          load: loadGaps },
   { id: "audit",     label: "Audit log",     perm: "audit.read",         load: loadAudit },
   { id: "team",      label: "Team",          perm: "users.manage",       load: loadTeam },
+  // Channels is its own destination rather than a tab inside Settings. Where
+  // customers can reach you is a standing part of the product, not a
+  // preference — and burying it meant the answer to "can we do WhatsApp" was
+  // three clicks deep behind a gear icon.
+  { id: "channels",  label: "Channels",      perm: "integrations.manage",load: loadChannels, kids: true },
   { id: "settings",  label: "Settings",      perm: "integrations.manage",load: loadSettings }
 ];
 
@@ -728,8 +830,11 @@ var ICONS = {
   audit:     '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/><path d="M8 12l2.5 2.5L16 9"/>',
   team:      '<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M17 11.2A3.2 3.2 0 1 0 17 5M18 20h3.5a5.5 5.5 0 0 0-3-4.9"/>',
   settings:  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.500 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>',
+  channels:  '<path d="M4 6h9M4 12h16M4 18h6"/><circle cx="17" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/>',
   edit:      '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/>',
-  trash:     '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>'
+  trash:     '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>',
+  refresh:   '<path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v4h-4"/>',
+  chevron:   '<path d="M9 5l7 7-7 7"/>'
 };
 function icon(name, size) {
   return '<svg width="' + (size || 17) + '" height="' + (size || 17) + '" viewBox="0 0 24 24"' +
@@ -744,7 +849,11 @@ var state = {
   page: null,
   days: 30,
   hstatus: "open",
-  openHandoffs: null
+  openHandoffs: null,
+  channels: [],       // the catalogue, fetched once — drives the rail sub-nav
+  channel: null,      // which channel's page is open, if any
+  railOpen: localStorage.getItem("ba_chan_open") !== "0",
+  loadedAt: null      // when the open page last fetched, for the topbar stamp
 };
 
 /* ------------------------------------------------------------- plumbing */
@@ -910,6 +1019,7 @@ function enterApp() {
   if (!landing) { $("main").innerHTML = '<div class="empty">This account has no permissions yet. Ask an administrator.</div>'; return; }
   go(landing);
   refreshBadge();
+  loadChannelNav();
 }
 
 /* Where this person starts.
@@ -942,27 +1052,108 @@ function landingPage() {
 
 function renderNav() {
   $("nav").innerHTML = PAGES.filter(function (p) { return can(p.perm); }).map(function (p) {
-    return '<button class="navitem" id="nav-' + p.id + '" data-page="' + p.id + '">' +
+    var item = '<button class="navitem" id="nav-' + p.id + '" data-page="' + p.id + '">' +
       icon(p.id) + '<span class="label">' + esc(p.label) + "</span>" +
       (p.badge ? '<span class="badge hidden" id="badge-' + p.id + '"></span>' : "") +
       "</button>";
+    // Only Channels nests today, and only once its catalogue has arrived —
+    // rendering an empty drawer before the fetch resolves would flash a
+    // disclosure arrow that opens onto nothing.
+    if (!p.kids || !state.channels.length) return item;
+    return '<div class="navrow">' + item +
+      '<button class="disclose" id="disclose-' + p.id + '" aria-expanded="' +
+      (state.railOpen ? "true" : "false") + '" aria-controls="sub-' + p.id +
+      '" aria-label="Show or hide the channel list">' + icon("chevron", 14) + "</button></div>" +
+      '<div class="subnav" id="sub-' + p.id + '"' + (state.railOpen ? "" : " hidden") + ">" +
+      state.channels.map(function (c) {
+        return '<button class="subitem' + (c.status === "live" ? "" : " idle") +
+          '" data-channel="' + esc(c.key) + '">' +
+          '<span class="dot" style="background:' +
+          seriesColor(CHANNEL_SLOT[c.key]) + '"></span>' +
+          '<span class="label">' + esc(c.name) + "</span></button>";
+      }).join("") + "</div>";
   }).join("");
+
   Array.prototype.forEach.call($("nav").querySelectorAll(".navitem"), function (b) {
-    b.onclick = function () { go(b.getAttribute("data-page")); };
+    b.onclick = function () {
+      // The parent opens the overview, never a channel left selected from last
+      // time — clicking "Channels" and landing on Viber would be a surprise.
+      if (b.getAttribute("data-page") === "channels") state.channel = null;
+      go(b.getAttribute("data-page"));
+    };
   });
+  Array.prototype.forEach.call($("nav").querySelectorAll(".subitem"), function (b) {
+    b.onclick = function () {
+      state.channel = b.getAttribute("data-channel");
+      go("channels");
+    };
+  });
+  var d = $("disclose-channels");
+  if (d) d.onclick = function () {
+    state.railOpen = !state.railOpen;
+    localStorage.setItem("ba_chan_open", state.railOpen ? "1" : "0");
+    d.setAttribute("aria-expanded", state.railOpen ? "true" : "false");
+    $("sub-channels").hidden = !state.railOpen;
+  };
+  markNav();
+}
+
+/* Which rail entries read as current. Split out of go() because the sub-nav is
+   re-rendered whenever the catalogue changes, and the highlight has to survive
+   that without a second navigation. */
+function markNav() {
+  Array.prototype.forEach.call($("nav").querySelectorAll(".navitem"), function (b) {
+    b.classList.toggle("on", b.getAttribute("data-page") === state.page);
+  });
+  Array.prototype.forEach.call($("nav").querySelectorAll(".subitem"), function (b) {
+    b.classList.toggle("on",
+      state.page === "channels" && b.getAttribute("data-channel") === state.channel);
+  });
+}
+
+/* The catalogue, fetched once at sign-in so the rail can list channels.
+   Failure is silent on purpose: the rail simply does not nest, and every
+   channel is still reachable from the Channels page itself. */
+function loadChannelNav() {
+  if (!can("integrations.manage")) return;
+  api("/integrations").then(function (cfg) {
+    state.channels = cfg.channels || [];
+    renderNav();
+  }).catch(function () {});
 }
 
 function go(id) {
   var page = PAGES.filter(function (p) { return p.id === id; })[0];
   if (!page || !can(page.perm)) return;
   state.page = id;
-  Array.prototype.forEach.call($("nav").querySelectorAll(".navitem"), function (b) {
-    b.classList.toggle("on", b.getAttribute("data-page") === id);
-  });
-  $("page-title").textContent = page.label;
+  markNav();
+  var chan = state.page === "channels" && state.channel
+    ? channelByKey(state.channel) : null;
+  $("page-title").textContent = chan ? chan.name : page.label;
   $("main").innerHTML = '<div class="empty">Loading…</div>';
   setStatus("");
+  state.loadedAt = Date.now();
+  renderStamp();
   page.load();
+}
+
+function channelByKey(key) {
+  return state.channels.filter(function (c) { return c.key === key; })[0] || null;
+}
+
+/* How old the numbers on screen are.
+ *
+ * Rounded to the minute and only shown once a minute has passed: a counter
+ * ticking "3s ago … 4s ago" is motion with no information in it, and it draws
+ * the eye away from the figures it is describing. */
+function renderStamp() {
+  var el = $("stamp");
+  if (!el) return;
+  if (!state.loadedAt) { el.textContent = ""; return; }
+  var mins = Math.floor((Date.now() - state.loadedAt) / 60000);
+  el.textContent = mins < 1 ? "Up to date"
+    : (mins < 60 ? "Updated " + mins + "m ago"
+                 : "Updated " + Math.floor(mins / 60) + "h ago");
 }
 
 /* The queue count on the rail, so waiting work is visible from any page. */
@@ -971,9 +1162,20 @@ function refreshBadge() {
   api("/handoffs?status=open").then(function (rows) {
     state.openHandoffs = rows.length;
     var el = $("badge-handoffs");
-    if (!el) return;
-    el.textContent = rows.length;
-    el.classList.toggle("hidden", rows.length === 0);
+    if (el) {
+      el.textContent = rows.length;
+      el.classList.toggle("hidden", rows.length === 0);
+    }
+    // The same number in the topbar, which survives the rail being collapsed
+    // and is on screen while an operator is working inside a conversation.
+    var q = $("queue-btn");
+    if (!q) return;
+    q.classList.remove("hidden");
+    q.classList.toggle("hot", rows.length > 0);
+    $("queue-count").textContent = rows.length;
+    q.setAttribute("aria-label",
+      rows.length ? rows.length + " escalations waiting — open the queue"
+                  : "Escalation queue — nothing waiting");
   }).catch(function () {});
 }
 
@@ -2147,6 +2349,151 @@ function setUserActive(id, active) {
     }).catch(function (e) { setStatus(e.message); });
 }
 
+/* ------------------------------------------------------------ channels
+ *
+ * Everything about where customers reach the assistant, in one place: the
+ * catalogue, the traffic on each, and the control that switches each one on.
+ * These used to be three separate things — a read-only table in Settings, an
+ * embed snippet in a panel below it, and a Telegram token field below that —
+ * which meant the page describing a channel was never the page that connected
+ * it. */
+function loadChannels() {
+  api("/integrations").then(function (cfg) {
+    state.channels = cfg.channels || [];
+    renderNav();
+    // Traffic is a separate question from configuration, and someone may hold
+    // integrations.manage without conversations.read. Missing counts degrade
+    // to no counts rather than to a broken page.
+    if (!can("analytics.read")) return renderChannels(cfg, null);
+    api("/analytics?days=" + state.days)
+      .then(function (a) { renderChannels(cfg, a); })
+      .catch(function () { renderChannels(cfg, null); });
+  }).catch(function (e) {
+    $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
+  });
+}
+
+function renderChannels(cfg, a) {
+  var counts = {};
+  if (a) a.channels.forEach(function (r) { counts[r.channel] = r.count; });
+  var one = state.channel ? channelByKey(state.channel) : null;
+  $("main").innerHTML = one
+    ? channelDetail(one, cfg, counts[one.key] || 0, a)
+    : channelOverview(cfg, counts, a);
+  wireChannelForms(cfg);
+}
+
+function channelOverview(cfg, counts, a) {
+  var live = state.channels.filter(function (c) { return c.status === "live"; }).length;
+  return '<div class="panel"><h3>Where customers reach you</h3>' +
+    '<div class="meta" style="margin-bottom:14px">' +
+    "<strong>" + live + " of " + state.channels.length + "</strong> channels are live. " +
+    "The assistant does not care where a message comes from, so a new channel is a " +
+    "small adapter rather than a rebuild — Telegram is 41 lines. What takes time is " +
+    "the account each platform requires, which is why that is listed rather than " +
+    "hidden.</div>" +
+    '<div class="chanlist rich">' + state.channels.map(function (c) {
+      var st = CHANNEL_PILL[c.status] || ["", c.status];
+      var n = counts[c.key] || 0;
+      // Both the count and the status, unlike the dashboard's tighter list.
+      // They can disagree — a channel can carry historic traffic and not be
+      // connected right now — and on the page you come to in order to switch
+      // something on, that disagreement is the whole point.
+      return '<button class="chan' + (c.status === "live" ? "" : " idle") +
+        ' clickable" data-channel="' + esc(c.key) + '">' +
+        '<span class="dot" style="background:' + seriesColor(CHANNEL_SLOT[c.key]) + '"></span>' +
+        '<span class="cname">' + esc(c.name) +
+        '<div class="meta">' + esc(c.blurb) + "</div></span>" +
+        (n ? '<span class="n">' + num(n) + "</span>" : '<span class="n"></span>') +
+        '<span class="pill' + (st[0] ? " " + st[0] : "") + '">' + esc(st[1]) + "</span>" +
+        "</button>";
+    }).join("") + "</div>" +
+    (a ? '<div class="note">Counts are conversations in the last ' + state.days +
+      " days. Open a channel for what it needs and how to switch it on.</div>" : "") +
+    "</div>";
+}
+
+function channelDetail(c, cfg, n, a) {
+  var st = CHANNEL_PILL[c.status] || ["", c.status];
+  var tg = cfg.telegram || {};
+  // Hollow unless it is live. A filled dot reads as a status light, and three
+  // of the identity hues in this palette are green-ish — WhatsApp's slot among
+  // them — so a solid mark beside "Needs setup" says two opposite things.
+  var h = '<div class="panel"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
+    '<span class="dot' + (c.status === "live" ? "" : " hollow") +
+    '" style="width:12px;height:12px;border-radius:50%;background:' +
+    seriesColor(CHANNEL_SLOT[c.key]) + '"></span>' +
+    '<h3 style="margin:0">' + esc(c.name) + "</h3>" +
+    '<span class="pill' + (st[0] ? " " + st[0] : "") + '">' + esc(st[1]) + "</span></div>" +
+    '<div class="meta">' + esc(c.blurb) + "</div>" +
+    (a ? '<div class="oneline" style="margin-top:14px">' +
+      (n ? "<b>" + num(n) + "</b> conversation" + (n === 1 ? "" : "s") +
+           " in the last " + state.days + " days."
+         : "No conversations on this channel in the last " + state.days + " days.") +
+      "</div>" : "") +
+    "</div>";
+
+  h += '<div class="panel"><h3>What it needs</h3>' +
+    (c.needs.length
+      ? '<ul style="margin:0;padding-left:18px;line-height:1.7;color:var(--body)">' +
+        c.needs.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>"
+      : '<div class="meta">Nothing. This channel is on by default.</div>') +
+    (c.status === "planned"
+      ? '<div class="note">The adapter itself is small. We build it once the account ' +
+        "above exists, because there is no way to test it — or to be honest about it " +
+        "being live — before then.</div>"
+      : "") + "</div>";
+
+  // The one control that actually switches this channel on, on the page that
+  // describes it.
+  if (c.key === "web" && cfg.embed) {
+    h += '<div class="panel"><h3>Put the widget on your website</h3>' +
+      '<div class="meta" style="margin-bottom:10px">Paste this once, before the closing ' +
+      "&lt;/body&gt; tag. It adds a chat button in your own colour and loads nothing " +
+      "until a visitor opens it.</div>" +
+      '<div class="field"><textarea id="embed-snip" readonly ' +
+      'style="min-height:64px;font-family:ui-monospace,monospace;font-size:12.5px">' +
+      esc(cfg.embed) + "</textarea></div>" +
+      '<button class="btn ghost sm" id="copy-embed">Copy</button></div>';
+  } else if (c.key === "telegram") {
+    h += '<div class="panel"><h3>Connect your bot</h3>' +
+      '<div class="meta" style="margin-bottom:12px">Message @BotFather on Telegram, ' +
+      "send /newbot, and paste the token it gives you." +
+      (tg.connected ? " Entering a new token replaces the current bot." : "") + "</div>" +
+      '<div class="field"><input id="tg-token" placeholder="Bot token from @BotFather" type="password"></div>' +
+      '<button class="btn sm" id="tg-save">' + (tg.connected ? "Replace bot" : "Connect") +
+      "</button></div>";
+  }
+  return h;
+}
+
+function wireChannelForms(cfg) {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-channel]"), function (el) {
+    if (el.closest(".side")) return;                 // the rail wires its own
+    el.onclick = function () {
+      state.channel = el.getAttribute("data-channel");
+      go("channels");
+    };
+  });
+  var copy = $("copy-embed");
+  if (copy) copy.onclick = function () {
+    var box = $("embed-snip");
+    box.select();
+    // execCommand rather than the clipboard API: this panel is served over
+    // plain http in local development, where navigator.clipboard does not
+    // exist, and a copy button that silently does nothing is worse than none.
+    try { document.execCommand("copy"); setStatus("Embed code copied"); }
+    catch (e) { setStatus("Select the text and copy it manually."); }
+  };
+  var save = $("tg-save");
+  if (save) save.onclick = function () {
+    api("/telegram/connect", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bot_token: $("tg-token").value.trim() }) })
+      .then(function () { setStatus("Telegram connected"); loadChannels(); })
+      .catch(function (e) { setStatus(e.message); });
+  };
+}
+
 /* ------------------------------------------------------------ settings */
 function loadSettings() {
   renderSettings({ handoff_webhook: {}, telegram: {} });
@@ -2154,40 +2501,11 @@ function loadSettings() {
 }
 
 function renderSettings(cfg) {
-  var hw = cfg.handoff_webhook || {}, tg = cfg.telegram || {}, br = cfg.branding || {};
-  var chans = cfg.channels || [];
+  var hw = cfg.handoff_webhook || {}, br = cfg.branding || {};
+  // Channels, the embed snippet and the Telegram token used to live here.
+  // They are on the Channels page now — a setting is a preference, and where
+  // your customers can reach you is not one.
   $("main").innerHTML =
-    /* Where customers can reach the assistant, stated honestly. Greyed-out
-       logos with "coming soon" would be a promise made on the bank's behalf,
-       and the person reading this page is deciding whether to buy. */
-    '<div class="panel"><h3>Channels</h3>' +
-    '<div class="meta" style="margin-bottom:14px">The assistant does not care where a ' +
-    "message comes from, so a new channel is a small adapter rather than a rebuild — " +
-    "Telegram is 41 lines. What takes time is the account each platform requires, " +
-    "which is why that is listed rather than hidden.</div>" +
-    (chans.length ? '<table><thead><tr><th>Channel</th><th>Status</th>' +
-      "<th>What it needs</th></tr></thead><tbody>" +
-      chans.map(function (c) {
-        var cls = c.status === "live" ? "on" : (c.status === "available" ? "" : "off");
-        var label = c.status === "live" ? "Live"
-          : (c.status === "available" ? "Ready to connect" : "Not built yet");
-        return "<tr><td class='title'>" + esc(c.name) +
-          '<div class="meta">' + esc(c.blurb) + "</div></td>" +
-          '<td><span class="pill ' + cls + '">' + label + "</span></td>" +
-          "<td>" + (c.needs.length
-            ? '<ul style="margin:0;padding-left:16px">' + c.needs.map(function (n) {
-                return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
-            : '<span class="meta">Nothing</span>') + "</td></tr>";
-      }).join("") + "</tbody></table>" : "") +
-    "</div>" +
-    (cfg.embed ? '<div class="panel"><h3>Put the widget on your website</h3>' +
-      '<div class="meta" style="margin-bottom:10px">Paste this once, before the closing ' +
-      "&lt;/body&gt; tag. It adds a chat button in your own colour and loads nothing " +
-      "until a visitor opens it.</div>" +
-      '<div class="field"><textarea id="embed-snip" readonly ' +
-      'style="min-height:64px;font-family:ui-monospace,monospace;font-size:12.5px">' +
-      esc(cfg.embed) + "</textarea></div>" +
-      '<button class="btn ghost sm" id="copy-embed">Copy</button></div>' : "") +
     '<div class="panel"><h3>Branding</h3>' +
     '<div class="meta" style="margin-bottom:12px">Your colour and logo, used in this panel ' +
     'and in the chat widget on your website. Saved values apply immediately — no deploy.</div>' +
@@ -2219,13 +2537,6 @@ function renderSettings(cfg) {
     (hw.has_secret ? '<div class="meta" style="margin-bottom:10px">A signing secret is set. It cannot be shown ' +
       "again — saving a URL here issues a new one and the old one stops working.</div>" : "") +
     '<button class="btn sm" id="hw-save">Save</button></div>' +
-    '<div class="panel"><h3>Telegram</h3>' +
-    '<div style="margin-bottom:10px"><span class="pill ' + (tg.connected ? "on" : "off") + '">' +
-      (tg.connected ? "Connected" : "Not connected") + "</span></div>" +
-    '<div class="meta" style="margin-bottom:12px">Connect a bot so customers can reach the assistant on Telegram.' +
-      (tg.connected ? " Entering a new token replaces the current bot." : "") + "</div>" +
-    '<div class="field"><input id="tg-token" placeholder="Bot token from @BotFather" type="password"></div>' +
-    '<button class="btn sm" id="tg-save">' + (tg.connected ? "Replace bot" : "Connect") + "</button></div>" +
     (state.me ? '<div class="panel"><h3>Your password</h3>' +
       '<div class="grid2"><div class="field"><label>Current</label><input id="pw-old" type="password"></div>' +
       '<div class="field"><label>New (12+ characters)</label><input id="pw-new" type="password"></div></div>' +
@@ -2241,24 +2552,6 @@ function renderSettings(cfg) {
       })
       .catch(function (e) { setStatus(e.message); });
   };
-  $("tg-save").onclick = function () {
-    api("/telegram/connect", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bot_token: $("tg-token").value.trim() }) })
-      .then(function () { setStatus("Telegram connected"); loadSettings(); })
-      .catch(function (e) { setStatus(e.message); });
-  };
-  if ($("copy-embed")) {
-    $("copy-embed").onclick = function () {
-      var box = $("embed-snip");
-      box.select();
-      // execCommand rather than the clipboard API: this panel is served over
-      // plain http in local development, where navigator.clipboard does not
-      // exist, and a copy button that silently does nothing is worse than none.
-      try { document.execCommand("copy"); setStatus("Embed code copied"); }
-      catch (e) { setStatus("Select the text and copy it manually."); }
-    };
-  }
-
   // Keep the swatch and the hex box showing the same value, whichever is used.
   $("br-color").oninput = function () { $("br-hex").value = $("br-color").value; };
   $("br-hex").oninput = function () {
@@ -2315,6 +2608,28 @@ $("rail-toggle").onclick = function () {
 $("theme-toggle").onclick = function () {
   applyTheme(localStorage.getItem("ba_theme") === "light" ? "dark" : "light");
 };
+
+/* Reload whatever is on screen, without a full page load that would drop the
+   filters and the scroll position someone is working in. */
+$("refresh").innerHTML = icon("refresh", 16);
+$("refresh").onclick = function () {
+  if (!state.page) return;
+  var svg = $("refresh").firstChild;
+  if (svg && svg.classList) svg.classList.add("spin");
+  refreshBadge();
+  go(state.page);
+  // Long enough that the spin registers as an action taken. Without it a fast
+  // response looks like a dead button.
+  setTimeout(function () { if (svg && svg.classList) svg.classList.remove("spin"); }, 550);
+};
+$("queue-btn").onclick = function () {
+  if (!can("handoffs.read")) return;
+  state.hstatus = "open";
+  go("handoffs");
+};
+// Once a minute is the resolution the stamp is rounded to, so anything faster
+// would repaint the same string.
+setInterval(renderStamp, 60000);
 $("slug").value = state.slug;
 $("signin-btn").onclick = signInWithPassword;
 $("token-btn").onclick = signInWithToken;

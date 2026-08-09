@@ -151,3 +151,44 @@ def test_slots_stay_inside_the_validated_palette() -> None:
     for name in ("CHANNEL_SLOT", "LANG_SLOT"):
         for key, slot in _slots(name).items():
             assert slot in defined, f"{name}.{key} points at undefined --series-{slot}"
+
+
+# ------------------------------------------------------- one home per control
+
+
+def test_channels_is_a_destination_not_a_settings_tab() -> None:
+    """Where customers reach you is not a preference.
+
+    It was a read-only table inside Settings, which meant the page describing
+    a channel was never the page that connected it — the Telegram token field
+    sat three panels further down, under an unrelated heading.
+    """
+    src = ADMIN.read_text()
+    assert re.search(r'id:\s*"channels".*load:\s*loadChannels', src), (
+        "the Channels page is gone from the nav"
+    )
+
+
+def test_each_channel_control_has_exactly_one_home() -> None:
+    """Duplication here is silent and expensive.
+
+    Two Telegram token fields on two pages both look right; the second one to
+    render wins the id, and the handler wires itself to whichever the DOM
+    returns. Moving these out of Settings has to be a move, not a copy.
+    """
+    src = ADMIN.read_text()
+    for element in ('id="tg-token"', 'id="embed-snip"', 'id="tg-save"'):
+        assert src.count(element) == 1, f"{element} appears {src.count(element)} times"
+
+
+def test_the_topbar_controls_the_boot_block_wires_still_exist() -> None:
+    """A missing id here takes down the whole panel, not just one button.
+
+    Boot does `$("refresh").innerHTML = …` with no null guard, so renaming or
+    removing the element throws before any page loads and the admin renders as
+    a blank screen with an error only in the console.
+    """
+    src = ADMIN.read_text()
+    for element in ('id="refresh"', 'id="queue-btn"', 'id="queue-count"',
+                    'id="stamp"', 'id="theme-toggle"'):
+        assert element in src, f"{element} is wired at boot but no longer in the markup"
