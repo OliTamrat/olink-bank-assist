@@ -17,7 +17,8 @@
     "fallback_intro": "Here is what I found in {bank}'s official information:",
     "sources_label": "Sources",
     "comparison_intro": "I can't make claims about other banks, but here's what makes {bank} strong:",
-    "comparison_fallback": "I can't compare specific banks, but I'd be glad to tell you about {bank}'s accounts, services, and features — what would you like to know?"
+    "comparison_fallback": "I can't compare specific banks, but I'd be glad to tell you about {bank}'s accounts, services, and features — what would you like to know?",
+    "no_contact_yet": "I don't have contact details for you, so I can't promise a call back."
   },
   "am": {
     "greeting": "ሰላም! እኔ የ{bank} ዲጂታል ረዳት ነኝ። ስለ ሂሳቦቻችን፣ አገልግሎቶቻችን፣ ክፍያዎች ወይም አጠቃቀም ማንኛውንም ጥያቄ ይጠይቁኝ።",
@@ -37,7 +38,8 @@
     "fallback_intro": "ከ{bank} ይፋዊ መረጃ ያገኘሁት ይህ ነው፡",
     "sources_label": "ምንጮች",
     "comparison_intro": "ስለ ሌሎች ባንኮች መግለጫ መስጠት አልችልም፣ ነገር ግን {bank}ን ጠንካራ የሚያደርገው ይህ ነው፡",
-    "comparison_fallback": "የተለዩ ባንኮችን ማወዳደር አልችልም፣ ነገር ግን ስለ {bank} ሂሳቦች፣ አገልግሎቶች እና ባህሪያት በደስታ እነግርዎታለሁ — ምን ማወቅ ይፈልጋሉ?"
+    "comparison_fallback": "የተለዩ ባንኮችን ማወዳደር አልችልም፣ ነገር ግን ስለ {bank} ሂሳቦች፣ አገልግሎቶች እና ባህሪያት በደስታ እነግርዎታለሁ — ምን ማወቅ ይፈልጋሉ?",
+    "no_contact_yet": "የመገኛ መረጃዎ ስለሌለን፣ ተመልሶ እንደሚደወልልዎ ቃል መግባት አልችልም።"
   },
   "om": {
     "greeting": "Akkam! Ani gargaaraa dijitaalaa {bank} ti. Waa'ee herregaa, tajaajilaa, kaffaltii fi fayyadama keenyaa gaaffii kamiyyuu na gaafadhaa.",
@@ -57,7 +59,8 @@
     "fallback_intro": "Odeeffannoo ifaa {bank} irraa kanan argadhe kana:",
     "sources_label": "Maddawwan",
     "comparison_intro": "Waa'ee baankilee biroo ibsa kennuu hin danda'u, garuu wanti {bank} jabeessu kanaadha:",
-    "comparison_fallback": "Baankilee addaa wal bira qabuu hin danda'u, garuu waa'ee herregaa, tajaajilaa fi amaloota {bank} gammachuudhaan isinitti himuu nan barbaada — maal beekuu barbaaddu?"
+    "comparison_fallback": "Baankilee addaa wal bira qabuu hin danda'u, garuu waa'ee herregaa, tajaajilaa fi amaloota {bank} gammachuudhaan isinitti himuu nan barbaada — maal beekuu barbaaddu?",
+    "no_contact_yet": "Odeeffannoo qunnamtii keessan waan hin qabneef, deebi'anii akka isiniif bilbilan waadaa galuu hin danda'u."
   },
   "ti": {
     "greeting": "ሰላም! ኣነ ናይ {bank} ዲጂታላዊ ሓጋዚ እየ። ብዛዕባ ሕሳባትና፣ ኣገልግሎታትና፣ ክፍሊታት ወይ ኣጠቓቕማ ዝኾነ ሕቶ ሕተቱኒ።",
@@ -77,7 +80,8 @@
     "fallback_intro": "ካብ ወግዓዊ ሓበሬታ {bank} ዝረኸብክዎ እዚ እዩ፡",
     "sources_label": "ምንጭታት",
     "comparison_intro": "ብዛዕባ ካልኦት ባንክታት መግለጺ ክህብ ኣይክእልን፣ እንተኾነ ን{bank} ብርቱዕ ዝገብሮ እዚ እዩ፡",
-    "comparison_fallback": "ፍሉያት ባንክታት ከወዳድር ኣይክእልን፣ እንተኾነ ብዛዕባ ናይ {bank} ሕሳባት፣ ኣገልግሎታትን ባህርያትን ብሓጎስ ክነግረኩም እኽእል እየ — እንታይ ክትፈልጡ ትደልዩ?"
+    "comparison_fallback": "ፍሉያት ባንክታት ከወዳድር ኣይክእልን፣ እንተኾነ ብዛዕባ ናይ {bank} ሕሳባት፣ ኣገልግሎታትን ባህርያትን ብሓጎስ ክነግረኩም እኽእል እየ — እንታይ ክትፈልጡ ትደልዩ?",
+    "no_contact_yet": "ናይ ርክብ ሓበሬታኹም ስለ ዘይብልና፡ ተመሊሶም ክድውሉልኩም እዮም ኢለ ቃል ክኣቱ ኣይክእልን።"
   },
   "so": {
     "greeting": "Salaan! Waxaan ahay kaaliyaha dijitaalka ah ee {bank}. Wax kasta oo ku saabsan xisaabaadka, adeegyada, khidmadaha iyo isticmaalka i weydii.",
@@ -97,6 +101,7 @@
     "fallback_intro": "Waa kan waxa aan ka helay macluumaadka rasmiga ah ee {bank}:",
     "sources_label": "Ilaha",
     "comparison_intro": "Ma bixin karo faallo ku saabsan bangiyada kale, laakiin waa kan {bank} xoog ka dhigaya:",
-    "comparison_fallback": "Ma barbardhigi karo bangiyo gaar ah, laakiin waan kuu sheegi lahaa xisaabaadka, adeegyada, iyo astaamaha {bank} — maxaad rabtaa inaad ogaato?"
+    "comparison_fallback": "Ma barbardhigi karo bangiyo gaar ah, laakiin waan kuu sheegi lahaa xisaabaadka, adeegyada, iyo astaamaha {bank} — maxaad rabtaa inaad ogaato?",
+    "no_contact_yet": "Ma hayo macluumaad xiriir oo kuu gaar ah, sidaas darteed ma ballan qaadi karo in laguu soo wacayo."
   }
 }

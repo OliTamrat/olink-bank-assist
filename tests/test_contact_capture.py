@@ -560,3 +560,57 @@ def test_the_number_confirmation_is_its_own_paragraph(
     line = t(again["language"], "contact_on_file", contact="0911234567")
     assert again["reply"].endswith(line)
     assert f"\n\n{line}" in again["reply"], "must not continue the last bullet"
+
+
+def test_a_customer_we_cannot_reach_is_never_promised_a_callback(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Reported from the live demo. After the asks ran out, "Can I speak to a
+    manager" was answered with "I've passed you to our customer service team so
+    a person can help you directly" — a callback promised to someone whose
+    number nobody has.
+
+    The mirror of the lesson already in `_request_contact`: silence about a
+    number we hold looks like not holding one, and silence about holding none
+    looks exactly like holding one.
+    """
+    cid = None
+    replies = []
+    for message in (
+        "Can I speak to a manager",
+        "Can I speak to a manager",
+        "Can I speak to a manager",
+        "I still want a person",
+    ):
+        body: dict[str, Any] = {"message": message}
+        if cid:
+            body["conversation_id"] = cid
+        data = client.post("/chat/demo", json=body).json()
+        cid = data["conversation_id"]
+        replies.append(data)
+
+    exhausted = [r for r in replies if not r["awaiting_contact"]]
+    assert exhausted, "the ask cap was never reached, so this proves nothing"
+    for r in exhausted:
+        assert t("en", "no_contact_yet") in r["reply"], (
+            "a customer with no contact details on file was left believing "
+            "someone would call them back"
+        )
+
+
+def test_the_note_is_not_shown_once_we_can_actually_reach_them(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Telling someone we have no way to contact them, right after they gave
+    us their number, would be worse than saying nothing."""
+    first = client.post("/chat/demo", json={"message": "Can I speak to a manager"})
+    cid = first.json()["conversation_id"]
+    client.post(
+        "/chat/demo", json={"message": "Oli, 0911223344", "conversation_id": cid}
+    )
+    again = client.post(
+        "/chat/demo",
+        json={"message": "Can I speak to a manager", "conversation_id": cid},
+    ).json()
+    assert t("en", "no_contact_yet") not in again["reply"]
+    assert "0911223344" in again["reply"]
