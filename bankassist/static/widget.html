@@ -325,9 +325,141 @@
     color: var(--text-3); padding: 8px 16px 0;
   }
 
+  /* ------------------------------------------------- talk to a teller */
+  /* Offered in the thread, at the turn where a person would actually have
+     helped, rather than parked in the header where it competes with the
+     assistant on every message. The bank is paying for the assistant to
+     deflect; a permanent "skip the bot" button undercuts that. */
+  .teller-offer {
+    display: flex; align-items: center; gap: 10px;
+    margin: 2px 0 14px 35px; padding: 11px 13px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 13px; box-shadow: var(--shadow);
+    animation: rise .3s .1s cubic-bezier(.2,.7,.3,1) both;
+  }
+  .teller-offer .ico {
+    width: 30px; height: 30px; border-radius: 9px; flex: none;
+    background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+    color: var(--accent); display: grid; place-items: center;
+  }
+  .teller-offer .ico svg { width: 15px; height: 15px; }
+  .teller-offer .txt { flex: 1; min-width: 0; }
+  .teller-offer .txt b { display: block; font-size: 13px; font-weight: 600; }
+  .teller-offer .txt span { font-size: 11.5px; color: var(--text-2); }
+  .teller-offer button {
+    font-family: inherit; font-size: 12.5px; font-weight: 600; flex: none;
+    padding: 8px 14px; border-radius: 10px; cursor: pointer; border: 0;
+    background: var(--brand); color: #fff;
+    transition: transform .15s, opacity .15s;
+  }
+  .teller-offer button:hover { transform: translateY(-1px); }
+
+  /* The sheet. Covers the chat rather than replacing it, so closing it puts
+     the customer back exactly where they were mid-conversation. */
+  .sheet {
+    position: fixed; inset: 0; z-index: 20;
+    display: none; align-items: flex-end; justify-content: center;
+    background: rgba(10,12,16,.5);
+    animation: fade .2s both;
+  }
+  .sheet.open { display: flex; }
+  @keyframes fade { from { opacity: 0; } }
+  .sheet .panel {
+    width: 100%; max-width: 460px; max-height: 92%; overflow-y: auto;
+    background: var(--surface); color: var(--text);
+    border-radius: 20px 20px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+    animation: slideup .28s cubic-bezier(.2,.7,.3,1) both;
+  }
+  @keyframes slideup { from { transform: translateY(18px); opacity: 0; } }
+  .sheet h2 { font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+  .sheet .lede { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 6px; }
+
+  /* What the person on the call can and cannot do, side by side and equally
+     prominent. The "cannot" half is not a disclaimer to be buried — someone
+     who queues ten minutes to ask for a transfer and is refused live has had
+     a worse experience than being told instantly. */
+  .can { margin-top: 15px; display: flex; flex-direction: column; gap: 7px; }
+  .can .row {
+    display: flex; gap: 9px; align-items: flex-start;
+    font-size: 13px; line-height: 1.45;
+  }
+  .can .row svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+  .can .row.yes svg { color: #16a34a; }
+  .can .row.no  svg { color: #b45309; }
+  .can .row.no  { color: var(--text-2); }
+  @media (prefers-color-scheme: dark) {
+    .can .row.yes svg { color: #4ade80; }
+    .can .row.no  svg { color: #fbbf24; }
+  }
+  .can .hd {
+    font-size: 11px; font-weight: 650; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--text-3); margin-top: 4px;
+  }
+
+  .sheet .actions { display: flex; gap: 9px; margin-top: 18px; }
+  .sheet .actions button {
+    flex: 1; font-family: inherit; font-size: 14px; font-weight: 600;
+    padding: 13px; border-radius: 12px; cursor: pointer;
+    transition: transform .15s, opacity .15s;
+  }
+  .sheet .actions button:hover:not(:disabled) { transform: translateY(-1px); }
+  .sheet .actions button:disabled { opacity: .5; cursor: default; }
+  .btn-primary { border: 0; background: var(--brand); color: #fff; }
+  .btn-quiet {
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--line);
+  }
+
+  /* Media choice. Audio first and preselected — outside Addis it is the
+     common case, and defaulting to video quietly makes the product worse for
+     the customers with the weakest connections. */
+  .media { display: flex; gap: 9px; margin-top: 15px; }
+  .media label {
+    flex: 1; display: flex; align-items: center; gap: 8px; cursor: pointer;
+    padding: 11px 12px; border-radius: 12px; font-size: 13px; font-weight: 550;
+    background: var(--surface-2); border: 1px solid var(--line);
+    transition: border-color .15s, background .15s;
+  }
+  /* An inline <svg> with only a viewBox has no intrinsic size, so it fills its
+     flex line — these rendered at 109px before this rule. Every other icon in
+     the widget is sized by its own container's rule; this one needs its own. */
+  .media label svg { width: 16px; height: 16px; flex: none; opacity: .8; }
+  .media label:has(input:checked) {
+    border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+    background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  }
+  .media label:has(input:checked) svg { opacity: 1; color: var(--accent); }
+  .media input { accent-color: var(--brand); }
+
+  /* Waiting. The number is the whole point — someone told they are third will
+     wait; someone shown a spinner leaves. */
+  .queue { text-align: center; padding: 10px 0 4px; }
+  .queue .pos {
+    font-size: 40px; font-weight: 300; letter-spacing: -.03em; line-height: 1.1;
+    color: var(--accent);
+  }
+  .queue .posl { font-size: 13.5px; color: var(--text-2); margin-top: 4px; }
+  .queue .timer {
+    font-size: 12px; color: var(--text-3); margin-top: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ring {
+    width: 26px; height: 26px; margin: 0 auto 12px; border-radius: 50%;
+    border: 2.5px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    border-top-color: var(--accent);
+    animation: spin .9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ring { animation: none; }
+    .bubble, .meta, .suggest, .teller-offer, .sheet, .sheet .panel { animation: none; }
+  }
+
   @media (max-width: 420px) {
     .bubble { max-width: 92%; font-size: 14px; }
-    .meta, .cites, .suggest { margin-left: 0; }
+    .meta, .cites, .suggest, .teller-offer { margin-left: 0; }
   }
 </style>
 </head>
@@ -356,6 +488,10 @@
     </button>
   </form>
   <div class="notice">Answers are drawn from this bank's official information and cited. General education only — not personal investment advice.</div>
+</div>
+
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="panel" id="sheetPanel"></div>
 </div>
 
 <script>
@@ -419,8 +555,36 @@
     globe:  '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/>',
     doc:    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
     user:   '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
-    spark:  '<path d="M12 3l1.9 5.4L19 10l-5.1 1.6L12 17l-1.9-5.4L5 10l5.1-1.6z"/>'
+    spark:  '<path d="M12 3l1.9 5.4L19 10l-5.1 1.6L12 17l-1.9-5.4L5 10l5.1-1.6z"/>',
+    head:   '<path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M21 15a2 2 0 0 1-2 2h-1v-5h1a2 2 0 0 1 2 2zM3 15a2 2 0 0 0 2 2h1v-5H5a2 2 0 0 0-2 2z"/><path d="M18 17v1a3 3 0 0 1-3 3h-3"/>',
+    cam:    '<path d="M23 7l-7 5 7 5z"/><rect x="1" y="5" width="15" height="14" rx="2"/>',
+    mic:    '<rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/>',
+    check:  '<path d="M20 6L9 17l-5-5"/>',
+    cross:  '<path d="M18 6L6 18M6 6l12 12"/>'
   };
+
+  // Server-side capability keys (teller.py) -> what to tell the customer.
+  // A key with no entry is skipped rather than printed raw: a new capability
+  // shipped on the API should not surface as "dispute_intake" in a bank's
+  // customer-facing widget before anyone has written the sentence for it.
+  var CAPABILITY = {
+    general_guidance: "Explain products, fees and eligibility",
+    own_records:      "Look up your own application or account records",
+    document_capture: "Take a copy of your ID or a completed form",
+    dispute_intake:   "File a complaint or dispute on your behalf"
+  };
+
+  // What no session can do, at any level of verification. Shown up front and
+  // as prominently as the "can" list, not tucked into small print.
+  //
+  // This is a product boundary, not a limitation being apologised for: the
+  // assistant never touches money, so a compromised session cannot move any.
+  // A customer who queues ten minutes to ask for a transfer and is refused
+  // live has had a far worse experience than one told before they waited.
+  var CANNOT = [
+    "Move money — deposits, withdrawals or transfers",
+    "Change your PIN, password or security details"
+  ];
 
   function svg(name, extra) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
@@ -470,7 +634,10 @@
     scroll();
   }
 
-  function addBot(text, reveal) {
+  // `done` fires when the text has finished revealing — not when the request
+  // returned. Anything appended below the reply has to wait for that, or it
+  // sits under a half-written sentence looking like it interrupted.
+  function addBot(text, reveal, done) {
     var turn = el("div", "turn bot");
     var row = el("div", "botrow");
     var sp = el("div", "spark", svg("spark", ' style="fill:currentColor;stroke:none" class="brandfill"'));
@@ -480,14 +647,14 @@
     turn.appendChild(row);
     chat.appendChild(turn);
 
-    if (!reveal) { b.textContent = text; scroll(); return turn; }
+    if (!reveal) { b.textContent = text; scroll(); if (done) done(); return turn; }
 
     // Progressive reveal. The response arrives complete from a single POST —
     // this is a presentation choice, not true token streaming. It reads as
     // live generation, which is what a prospect expects from an AI product.
     var words = text.split(/(\s+)/), i = 0;
     (function step() {
-      if (i >= words.length) { scroll(); return; }
+      if (i >= words.length) { scroll(); if (done) done(); return; }
       b.textContent += words[i++];
       scroll();
       setTimeout(step, words[i - 1] && words[i - 1].trim() ? 16 : 8);
@@ -608,6 +775,12 @@
         d.style.display = "block";
       }
 
+      // Both halves: the tenant has the feature on AND somebody is watching
+      // the queue. The server decides; the widget never infers availability
+      // from the feature merely existing, because a button that queues a
+      // customer behind nobody is worse than no button.
+      tellerAvailable = !!cfg.teller_available;
+
       var auto = el("option"); auto.value = ""; auto.textContent = "Auto";
       langSel.appendChild(auto);
       (cfg.languages || []).forEach(function (l) {
@@ -659,7 +832,12 @@
       .then(function (data) {
         conversationId = data.conversation_id;
         t.remove();
-        var turn = addBot(data.reply, true);
+        var turn = addBot(data.reply, true, function () {
+          // After the reply has finished writing itself, not before — see
+          // addBot. The offer is a response to what the assistant just said,
+          // and appearing mid-sentence makes it read as an interruption.
+          if (shouldOfferTeller(data)) offerTeller();
+        });
         addMeta(turn, data);
         // Offered when retrieval found nothing confident. Tapping one asks
         // about that topic, so a customer whose phrasing missed the
@@ -693,6 +871,275 @@
       })
       .finally(function () { send.disabled = false; input.focus(); });
   }
+
+  // ------------------------------------------------------- talk to a teller
+  //
+  // The escape hatch from the assistant to a person, for the cases the
+  // assistant is designed NOT to handle: anything about this customer's own
+  // account, complaints, and the gaps where the knowledge base has nothing.
+  //
+  // Deliberately not a permanent header button. The bank is paying for the
+  // assistant to deflect volume, and a standing "skip the bot" control on
+  // every screen is how a deflection product becomes a queue product. It is
+  // offered at the turn where a person would genuinely have helped, which is
+  // also the moment the customer is most likely to accept it.
+
+  var tellerAvailable = false;   // set from /public — enabled AND someone on
+  var session = null;            // the live session, once requested
+  var pollTimer = null;
+  var tickTimer = null;
+  var sheet = document.getElementById("sheet");
+  var sheetPanel = document.getElementById("sheetPanel");
+
+  function mmss(sec) {
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  // Offer a person after a turn the assistant could not carry. Which turns
+  // those are is decided by what the API already reports, not by guessing at
+  // the text: an explicit handoff, an admitted knowledge gap, and the two
+  // guardrails that exist precisely because a human is the right answer.
+  function shouldOfferTeller(data) {
+    return tellerAvailable && !session && (
+      data.handoff_created ||
+      data.outcome === "unanswered" ||
+      data.intent === "account_specific" ||
+      data.intent === "complaint"
+    );
+  }
+
+  function offerTeller() {
+    var card = el("div", "teller-offer",
+      '<div class="ico">' + svg("head") + '</div>' +
+      '<div class="txt"><b>Speak to a ' + bankName + ' teller</b>' +
+      '<span>Available now — audio or video</span></div>' +
+      '<button type="button">Connect</button>');
+    card.querySelector("button").addEventListener("click", function () {
+      card.remove();
+      openPreflight();
+    });
+    chat.appendChild(card);
+    scroll();
+  }
+
+  function openSheet(html) {
+    sheetPanel.innerHTML = html;
+    sheet.classList.add("open");
+  }
+  function closeSheet() {
+    sheet.classList.remove("open");
+  }
+
+  // What the teller will and will not be able to do — BEFORE the customer
+  // commits to waiting. Both tiers are shown, because the second one explains
+  // why they are about to be asked for an ID: arriving at that request with no
+  // warning reads as an interrogation rather than a verification step.
+  function openPreflight() {
+    var yes = ["general_guidance"].map(function (k) {
+      return '<div class="row yes">' + svg("check") + '<span>' + CAPABILITY[k] + '</span></div>';
+    }).join("");
+    var more = ["own_records", "document_capture", "dispute_intake"].map(function (k) {
+      return '<div class="row yes">' + svg("check") + '<span>' + CAPABILITY[k] + '</span></div>';
+    }).join("");
+    var no = CANNOT.map(function (label) {
+      return '<div class="row no">' + svg("cross") + '<span>' + label + '</span></div>';
+    }).join("");
+
+    openSheet(
+      '<h2 id="sheetTitle">Speak to a teller</h2>' +
+      '<p class="lede">A ' + bankName + ' teller will join you on a call. ' +
+      'They will ask to see your Fayda ID and check a detail on your account ' +
+      'before discussing anything specific to you.</p>' +
+      '<div class="can">' +
+        '<div class="hd">Straight away</div>' + yes +
+        '<div class="hd">Once they have checked your ID</div>' + more +
+        '<div class="hd">Not on this call, ever</div>' + no +
+      '</div>' +
+      '<div class="media">' +
+        '<label>' + svg("mic") + '<input type="radio" name="media" value="audio" checked hidden>Audio</label>' +
+        '<label>' + svg("cam") + '<input type="radio" name="media" value="video" hidden>Video</label>' +
+      '</div>' +
+      '<div class="actions">' +
+        '<button type="button" class="btn-quiet" id="tCancel">Not now</button>' +
+        '<button type="button" class="btn-primary" id="tGo">Join the queue</button>' +
+      '</div>'
+    );
+    // The radios are visually hidden but still the source of truth, so the
+    // label's :has(input:checked) styling and the value read here cannot
+    // disagree with each other.
+    Array.prototype.forEach.call(sheetPanel.querySelectorAll(".media label"),
+      function (lab) {
+        lab.addEventListener("click", function () {
+          lab.querySelector("input").checked = true;
+        });
+      });
+    document.getElementById("tCancel").addEventListener("click", closeSheet);
+    document.getElementById("tGo").addEventListener("click", function (e) {
+      e.target.disabled = true;
+      var picked = sheetPanel.querySelector('input[name=media]:checked');
+      requestSession(picked ? picked.value : "audio");
+    });
+  }
+
+  function requestSession(media) {
+    fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId, media: media })
+    })
+      .then(function (r) {
+        if (!r.ok) { var e = new Error("session"); e.status = r.status; throw e; }
+        return r.json();
+      })
+      .then(function (data) {
+        session = data;
+        // The clock starts here, in the client. The customer-facing session
+        // payload deliberately carries no timestamps — it is served to anyone
+        // holding the id — so the elapsed time on screen is time since this
+        // browser asked, which is also the number the customer cares about.
+        session.waited_from = Date.now();
+        renderQueue();
+        startPolling();
+      })
+      .catch(function (err) {
+        // 409 is the tenant having the feature switched off between the page
+        // loading and the tap. Named separately because it is the one failure
+        // where retrying is pointless and the customer should be sent back to
+        // the assistant rather than left tapping.
+        var msg = (err && err.status === 409)
+          ? "Live teller sessions aren't available right now."
+          : "Sorry — we couldn't reach a teller. Please try again in a moment.";
+        closeSheet();
+        addBot(msg, false);
+      });
+  }
+
+  function renderQueue() {
+    if (!session) return;
+    if (session.state === "queued") {
+      var ahead = session.ahead;
+      var pos = (ahead == null) ? "" :
+        '<div class="pos">' + (ahead + 1) + '</div>' +
+        // Not "a teller is joining" — being first in the queue is not the same
+        // as someone having picked up, and copy that implies an imminent
+        // answer is a promise nothing here can keep.
+        '<div class="posl">' + (ahead === 0
+          ? "You're first in the queue"
+          : "in the queue, " + ahead + " ahead of you") + '</div>';
+      openSheet(
+        '<h2 id="sheetTitle">Waiting for a teller</h2>' +
+        '<div class="queue"><div class="ring"></div>' + pos +
+        '<div class="timer" id="tTimer">0:00</div></div>' +
+        '<div class="actions">' +
+          '<button type="button" class="btn-quiet" id="tLeave">Leave the queue</button>' +
+        '</div>'
+      );
+      document.getElementById("tLeave").addEventListener("click", leaveQueue);
+      startTicking();
+      return;
+    }
+    if (session.state === "active") {
+      stopTicking();
+      // The media layer mounts here. Until it does, this state is only
+      // reachable on a tenant with `teller_enabled` switched on by hand —
+      // which is exactly why that flag defaults to off.
+      openSheet(
+        '<h2 id="sheetTitle">A teller has joined</h2>' +
+        '<p class="lede">' + bankName + ' has picked up your request and is ' +
+        'connecting to you now. Please have your Fayda ID to hand.</p>' +
+        '<div class="actions">' +
+          '<button type="button" class="btn-quiet" id="tClose">Close</button>' +
+        '</div>'
+      );
+      document.getElementById("tClose").addEventListener("click", closeSheet);
+      return;
+    }
+    // Terminal. The session is over however it ended; drop it so the customer
+    // can ask for another one rather than being stuck against a dead record.
+    stopPolling();
+    stopTicking();
+    closeSheet();
+    session = null;
+  }
+
+  function startTicking() {
+    stopTicking();
+    tickTimer = setInterval(function () {
+      var t = document.getElementById("tTimer");
+      if (!t || !session) return stopTicking();
+      t.textContent = mmss(
+        Math.round((Date.now() - session.waited_from) / 1000));
+    }, 1000);
+  }
+  function stopTicking() {
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+  }
+
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(poll, 3000);
+  }
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  function poll() {
+    if (!session) return stopPolling();
+    var from = session.waited_from;
+    fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" + session.id)
+      .then(function (r) {
+        if (!r.ok) { var e = new Error("poll"); e.status = r.status; throw e; }
+        return r.json();
+      })
+      .then(function (data) {
+        if (!session) return;
+        var changed = data.state !== session.state || data.ahead !== session.ahead;
+        session = data;
+        session.waited_from = from;
+        // Only re-render when something the customer can see has changed.
+        // Rebuilding the panel every three seconds would restart the spinner
+        // and steal focus from the Leave button mid-tap.
+        if (changed) renderQueue();
+      })
+      .catch(function (err) {
+        // A 404 means the session is genuinely gone — stop, rather than poll a
+        // record that will never exist again.
+        //
+        // Everything else is treated as a blip and retried. A dropped poll is
+        // not an ended session, and tearing the panel down on one failed
+        // request would eject a customer from a queue they are still in.
+        if (err && err.status === 404) {
+          stopPolling(); stopTicking(); closeSheet();
+          session = null;
+        }
+      });
+  }
+
+  function leaveQueue() {
+    if (!session) return closeSheet();
+    var id = session.id;
+    stopPolling(); stopTicking();
+    session = null;
+    closeSheet();
+    fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" + id,
+      { method: "DELETE" }).catch(function () {});
+    // No "say teller to try again" — nothing listens for that word, and copy
+    // that promises a command which does not exist is worse than none. Leaving
+    // clears `session`, so the next turn a person would genuinely have helped
+    // with offers the queue again on its own.
+    addBot("You've left the queue. I'm here if there's anything else I can help with.", false);
+  }
+
+  // Closing the tab is the commonest way a queue is abandoned, and a session
+  // nobody cancels sits in the teller's queue as a customer who is not there.
+  // `keepalive` is what lets the request outlive the page; sendBeacon cannot
+  // be used because it only issues POST.
+  window.addEventListener("pagehide", function () {
+    if (!session || session.state !== "queued") return;
+    fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" + session.id,
+      { method: "DELETE", keepalive: true }).catch(function () {});
+  });
 
   document.getElementById("form").addEventListener("submit", function (e) {
     e.preventDefault();

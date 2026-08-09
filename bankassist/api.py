@@ -53,6 +53,7 @@ from .models import (
     Handoff,
     Message,
     Role,
+    RolePermission,
     TellerSession,
     User,
     UserCredential,
@@ -402,6 +403,44 @@ def health(response: Response) -> HealthOut:
     )
 
 
+# How stale a teller's last queue poll may be before we stop counting them as
+# present. The queue page polls every 4s, so this tolerates a laptop sleeping
+# through a coffee break's worth of stalls without the button flickering on and
+# off — while still going dark within a minute and a half of the last person
+# closing the tab.
+TELLER_PRESENCE_WINDOW = timedelta(seconds=90)
+
+
+def _teller_available(db: Session, bank: Bank) -> bool:
+    """Is there a live teller to hand this customer to, right now?
+
+    Two independent facts, and the button needs both. `teller_enabled` is the
+    bank's decision; presence is the truth about this minute. Selling the
+    feature does not staff it, and a queue with nobody watching is worse than
+    no button at all — the customer waits, watches a counter climb, and leaves
+    with a worse impression than an honest "I can't help with that".
+
+    Scoped by permission rather than by role name, so a bank that renames
+    `teller` to `agent` or splits it into two roles keeps working.
+    """
+    if not bank.teller_enabled:
+        return False
+    cutoff = datetime.now(UTC) - TELLER_PRESENCE_WINDOW
+    return db.execute(
+        select(User.id)
+        .join(Role, Role.id == User.role_id)
+        .join(RolePermission, RolePermission.role_id == Role.id)
+        .where(
+            User.bank_id == bank.id,
+            User.disabled_at.is_(None),
+            User.teller_seen_at.is_not(None),
+            User.teller_seen_at >= cutoff,
+            RolePermission.permission == permissions.Perm.TELLER_SERVE,
+        )
+        .limit(1)
+    ).first() is not None
+
+
 @app.get("/banks/{slug}/public")
 def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     bank = _get_bank(db, slug)
@@ -420,6 +459,11 @@ def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         "languages": [
             {"code": code, "name": LANGUAGE_NAMES[code]} for code in SUPPORTED_LANGUAGES
         ],
+        # Whether to offer a live teller right now — enabled AND somebody
+        # actually watching the queue. A boolean rather than a headcount: how
+        # thinly a bank staffs its queue is its business, not the public
+        # internet's, and the customer only needs to know whether to wait.
+        "teller_available": _teller_available(db, bank),
     }
 
 
@@ -2028,6 +2072,31 @@ def _session_public(session: TellerSession) -> dict[str, Any]:
     }
 
 
+def _session_public_queued(
+    db: Session, bank: Bank, session: TellerSession
+) -> dict[str, Any]:
+    """The customer's view, plus their place in the queue when they're waiting.
+
+    Shared by the create and the poll routes rather than living only on the
+    poll. Returning it from only one of them left the customer looking at a
+    spinner with no number until the first poll landed — three seconds of the
+    exact screen this panel exists to avoid. A number beats a spinner: someone
+    told they are third will wait; someone shown a spinner leaves.
+    """
+    data = _session_public(session)
+    if session.state == teller.QUEUED:
+        data["ahead"] = db.execute(
+            select(func.count())
+            .select_from(TellerSession)
+            .where(
+                TellerSession.bank_id == bank.id,
+                TellerSession.state == teller.QUEUED,
+                TellerSession.requested_at < session.requested_at,
+            )
+        ).scalar_one()
+    return data
+
+
 def _session_admin(db: Session, session: TellerSession) -> dict[str, Any]:
     """What a teller or supervisor sees. Adds the internal record."""
     data = _session_public(session)
@@ -2073,6 +2142,14 @@ def request_teller_session(
         raise HTTPException(status_code=429, detail="Too many requests, please slow down")
 
     bank = _get_bank(db, slug)
+    # Enforced here, not only by hiding the button. The widget is public
+    # JavaScript on a bank's own website — anyone can read it, find this route
+    # and POST to it. A tenant that has not turned the feature on must not
+    # accumulate a queue of customers no employee can see.
+    if not bank.teller_enabled:
+        raise HTTPException(
+            status_code=409, detail="Live teller sessions are not enabled"
+        )
     conversation = db.get(Conversation, payload.conversation_id)
     # Tenancy: a conversation id from another bank must not open a session here.
     if conversation is None or conversation.bank_id != bank.id:
@@ -2088,7 +2165,7 @@ def request_teller_session(
         )
     ).scalars().first()
     if existing is not None:
-        return _session_public(existing)
+        return _session_public_queued(db, bank, existing)
 
     session = TellerSession(
         bank_id=bank.id,
@@ -2107,7 +2184,7 @@ def request_teller_session(
         {"media": session.media}, actor="customer",
     )
     db.commit()
-    return _session_public(session)
+    return _session_public_queued(db, bank, session)
 
 
 @app.get("/chat/{slug}/teller-session/{session_id}")
@@ -2119,21 +2196,7 @@ def poll_teller_session(
     session = db.get(TellerSession, session_id)
     if session is None or session.bank_id != bank.id:
         raise HTTPException(status_code=404, detail="Unknown session")
-    data = _session_public(session)
-    if session.state == teller.QUEUED:
-        # Position, counted from sessions that arrived earlier and are still
-        # waiting. A number beats a spinner: someone told they are third will
-        # wait; someone shown a spinner leaves.
-        data["ahead"] = db.execute(
-            select(func.count())
-            .select_from(TellerSession)
-            .where(
-                TellerSession.bank_id == bank.id,
-                TellerSession.state == teller.QUEUED,
-                TellerSession.requested_at < session.requested_at,
-            )
-        ).scalar_one()
-    return data
+    return _session_public_queued(db, bank, session)
 
 
 @app.delete("/chat/{slug}/teller-session/{session_id}")
@@ -2162,6 +2225,57 @@ def abandon_teller_session(
     return {"state": session.state}
 
 
+class TellerSettingsIn(BaseModel):
+    enabled: bool
+
+
+@app.get("/admin/api/{slug}/teller/settings")
+def get_teller_settings(
+    principal: Principal = NeedsSessionsRead, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Whether this tenant offers live sessions, and whether anyone is on now.
+
+    `available` is what the customer's widget is actually deciding on, so it is
+    returned here too — a bank that has switched the feature on and sees
+    "nobody watching" has the answer to why no button appeared, without anyone
+    reading a log.
+    """
+    bank = principal.bank
+    return {
+        "enabled": bank.teller_enabled,
+        "available": _teller_available(db, bank),
+        "presence_window_seconds": int(TELLER_PRESENCE_WINDOW.total_seconds()),
+    }
+
+
+@app.put("/admin/api/{slug}/teller/settings")
+def set_teller_settings(
+    payload: TellerSettingsIn,
+    principal: Principal = NeedsIntegrationsManage,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Turn live teller sessions on or off for this tenant.
+
+    `integrations.manage` rather than `teller.serve`: this decides whether the
+    bank offers the service at all, which is the same class of decision as
+    repointing the handoff webhook. A teller answering calls should not be able
+    to switch the product on for the whole tenant.
+
+    Switching it off leaves sessions already in the queue alone. Those are real
+    people waiting, and dropping them silently to make a toggle tidy is the
+    kind of cleanup that loses a customer mid-conversation; the queue drains
+    and no new sessions can start.
+    """
+    bank = principal.bank
+    bank.teller_enabled = payload.enabled
+    _audit(
+        db, bank, "teller_settings_updated", "bank", bank.id,
+        {"enabled": payload.enabled}, actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"enabled": bank.teller_enabled, "available": _teller_available(db, bank)}
+
+
 @app.get("/admin/api/{slug}/teller/queue")
 def teller_queue(
     principal: Principal = NeedsSessionsRead, db: Session = Depends(get_db)
@@ -2173,6 +2287,19 @@ def teller_queue(
     it was built to prevent.
     """
     bank = principal.bank
+    # Watching the queue IS the presence signal — it is the only evidence that
+    # a person is at a desk ready to take a call, and it costs nothing to
+    # collect because the page is already polling. This is what turns the
+    # customer's "Talk to a teller" button on.
+    #
+    # Only for a principal who can actually answer: a supervisor with
+    # `sessions.read` watching the queue is not somebody who can take the call,
+    # and counting them would light the button with nobody behind it.
+    if principal.user is not None and roles.user_has(
+        db, principal.user, permissions.Perm.TELLER_SERVE
+    ):
+        principal.user.teller_seen_at = datetime.now(UTC)
+        db.commit()
     rows = db.execute(
         select(TellerSession)
         .where(

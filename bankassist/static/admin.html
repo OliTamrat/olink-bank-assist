@@ -2616,11 +2616,41 @@ function waited(sec) {
   return m < 60 ? m + "m " + (sec % 60) + "s" : Math.floor(m / 60) + "h " + (m % 60) + "m";
 }
 
+// Whether the tenant offers live sessions at all, and whether customers can
+// see the button right now. Read once per visit rather than on every 4s poll:
+// it changes only when somebody toggles it, and re-reading it fifteen times a
+// minute per teller would be a request per teller for a value nobody touched.
+var tellerSettings = null;
+// Refresh the settings strip about every 40s, not on every 4s poll: it changes
+// only when someone toggles it or the last teller leaves, and re-reading it
+// fifteen times a minute per teller is a request per teller for a value nobody
+// touched.
+var TELLER_SETTINGS_EVERY = 10;
+
 function loadTellerQueue() {
   stopTellerPolling();
   renderTellerQueue(null);
+  var ticks = 0;
+
+  // AFTER the queue call, never beside it. Reading availability in parallel
+  // with the first poll asks "is anyone watching?" before this teller's own
+  // poll has recorded that they are — so the page greeted them with "nobody
+  // is watching the queue" while they sat looking at it, and stayed wrong
+  // until they navigated away and back.
+  var settings = function () {
+    // The queue still renders if this fails. A settings read going down must
+    // not take the page away from a teller with customers waiting on it.
+    api("/teller/settings")
+      .then(function (s) { tellerSettings = s; })
+      .catch(function () {});
+  };
+
   var draw = function () {
-    api("/teller/queue").then(renderTellerQueue).catch(function (e) {
+    api("/teller/queue").then(function (rows) {
+      if (ticks % TELLER_SETTINGS_EVERY === 0) settings();
+      ticks += 1;
+      renderTellerQueue(rows);
+    }).catch(function (e) {
       stopTellerPolling();
       $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
     });
@@ -2640,7 +2670,45 @@ function renderTellerQueue(rows) {
   var waiting = rows.filter(function (r) { return r.state === "queued"; });
   var live = rows.filter(function (r) { return r.state === "active"; });
 
-  var h = '<div class="row row-half">' +
+  // On duty, and what that means. The non-obvious fact about this page is
+  // that WATCHING IT is what puts the "Speak to a teller" button in front of
+  // customers — close the tab and the offer disappears within ninety seconds.
+  // A teller who does not know that will close it at lunch and wonder why the
+  // afternoon was quiet, so it is said here rather than in an induction deck.
+  var h = "";
+  if (tellerSettings) {
+    var on = tellerSettings.enabled;
+    var live_ = tellerSettings.available;
+    var mins = Math.round((tellerSettings.presence_window_seconds || 90) / 30) / 2;
+    // `chanlist rich` rather than a bare row: this line carries a sentence of
+    // explanation, and the plain row ellipsises it — the truncated half was
+    // the half that says closing the tab takes the button away.
+    h += '<div class="panel"><h3>Live sessions</h3>' +
+      '<div class="chanlist rich"><div class="chan q">' +
+      '<span class="dot" style="background:var(' +
+        (live_ ? "--ok" : on ? "--warn" : "--faint") + ')"></span>' +
+      '<span class="cname">' +
+        (!on ? "Switched off for this bank"
+             : live_ ? "Customers can reach a teller now"
+                     : "Switched on — but nobody is watching the queue") +
+      '<div class="meta">' +
+        (!on
+          ? "No “Speak to a teller” button appears in your widget."
+          : canServe
+            ? "This page is what keeps you visible. Leave it open while you are on " +
+              "duty — the offer disappears from your widget about " + mins +
+              " minute" + (mins === 1 ? "" : "s") + " after the last teller closes it."
+            : "A colleague with permission to take calls has to have this page " +
+              "open before customers are offered one.") +
+      "</div></span>" +
+      (can("integrations.manage")
+        ? '<button class="btn sm" id="teller-toggle">' +
+          (on ? "Switch off" : "Switch on") + "</button>"
+        : "") +
+      "</div></div></div>";
+  }
+
+  h += '<div class="row row-half">' +
     '<div class="panel"><h3>Waiting</h3>' +
     (waiting.length
       ? '<div class="chanlist">' + waiting.map(function (r) {
@@ -2689,6 +2757,25 @@ function renderTellerQueue(rows) {
     "call.</div></div>";
 
   $("main").innerHTML = h;
+  var toggle = $("teller-toggle");
+  if (toggle) {
+    toggle.onclick = function () {
+      toggle.disabled = true;
+      // api() hands opts straight to fetch — it does not serialise a body, so
+      // passing an object here would POST the string "[object Object]".
+      api("/teller/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !tellerSettings.enabled })
+      })
+        .then(function (s) {
+          tellerSettings = s;
+          setStatus(s.enabled ? "Live sessions on" : "Live sessions off");
+          renderTellerQueue(rows);
+        })
+        .catch(function (e) { toggle.disabled = false; setStatus(e.message); });
+    };
+  }
   Array.prototype.forEach.call(document.querySelectorAll("[data-claim]"), function (b) {
     b.onclick = function () {
       b.disabled = true;   // a double-tap would 409, and the second looks broken

@@ -266,7 +266,20 @@ def seed() -> tuple[Bank, bool]:
             ensure_builtin_roles(db, existing.id)
             db.commit()
             return existing, False
-        bank = Bank(slug=DEMO_SLUG, name="Demo Bank Ethiopia", primary_color="#0f766e")
+        bank = Bank(
+            slug=DEMO_SLUG,
+            name="Demo Bank Ethiopia",
+            primary_color="#0f766e",
+            # On for the demo tenant and only the demo tenant. This is the
+            # showcase account — the whole tier-3 story is what we walk a bank
+            # through here, and a feature switched off in the demo does not
+            # exist as far as a prospect is concerned.
+            #
+            # Real tenants keep the model default (off) and turn it on when
+            # they have staffed a queue. Note that switching it on does not
+            # make the button appear: a teller still has to be watching.
+            teller_enabled=True,
+        )
         db.add(bank)
         db.flush()
         ensure_builtin_roles(db, bank.id)

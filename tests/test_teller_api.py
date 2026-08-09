@@ -104,8 +104,16 @@ def test_tapping_twice_does_not_queue_twice(
 def test_a_conversation_from_another_bank_cannot_open_a_session(
     client: TestClient, demo_bank: Any, cbe_bank: Any
 ) -> None:
-    cid = _conversation(client, "demo")
-    resp = client.post("/chat/cbe/teller-session", json={"conversation_id": cid})
+    """Direction matters: the CBE conversation is posted at demo, the tenant
+    with live sessions switched on.
+
+    Posting demo's conversation at CBE would now be refused by the feature
+    gate (409) before the tenancy check ran, so the test would pass without
+    the tenancy check existing at all — green for a reason that has nothing to
+    do with what it claims to prove.
+    """
+    cid = _conversation(client, "cbe")
+    resp = client.post("/chat/demo/teller-session", json={"conversation_id": cid})
     assert resp.status_code == 404
 
 
