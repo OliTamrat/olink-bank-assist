@@ -1679,6 +1679,17 @@ def faq_suggestions(
         asked = asked or text
         if len(asked) < 8:
             continue        # "ok", "yes", "thanks" — not questions
+        # Only what a curated answer could actually be SERVED for.
+        #
+        # The lookup in `respond()` sits behind every guardrail, so an answer
+        # published for a greeting, a complaint, an account request or "can I
+        # speak to a manager" is unreachable — it would sit in the admin
+        # looking published and never reach a customer. Offering those here is
+        # offering work that does nothing, and the operator who does it
+        # concludes the feature is broken rather than that the suggestion was
+        # wrong. Seen in production on the first real list.
+        if classifier.classify_intent(asked) not in classifier.CURATABLE_INTENTS:
+            continue
         k = (lang, faq.normalise(asked))
         counts[k] += 1
         original.setdefault(k, asked)
