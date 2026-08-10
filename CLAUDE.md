@@ -591,11 +591,53 @@ customers actually ask and nobody can answer. This is product intelligence
 that sells renewals, and it is the shortest path to knowing what to write
 next. Surfaced as the **Content Gaps** tab in `admin.html`.
 
-## The live teller (ITM) — Tier 3
+## The live teller — ITA (Interactive Teller Assistant), Tier 3
 
 A customer who needs a person gets one, on a call, inside the same chat. This
 is the feature that makes the product a banking channel rather than an FAQ
 bot, and `docs/video-teller.md` is the design document.
+
+**The name is ITA, and the M is deliberately gone** (renamed 2026-08-10; it
+was ITM in earlier commits). *ITM — Interactive Teller **Machine*** is an
+established banking category, and borrowing it looked free: say "ITM" to a
+bank and they instantly picture a video call with a remote teller, no
+explanation needed. The cost is that an ITM is a **kiosk**. Hardware, capex,
+floor space, a procurement cycle, an incumbent vendor list with NCR and
+Diebold on it. We sell software that reaches a customer on the phone already
+in their hand, deployable in a week with no capex. Being filed under the wrong
+category means being evaluated against a purchase we are not offering, and
+losing on criteria that do not apply to us. A borrowed term that costs a
+category is not free.
+
+**A is Assistant, not Agent**, and this is market-specific rather than
+stylistic:
+
+- In Ethiopia **"agent" means agent banking** — the shop or kiosk doing
+  cash-in/cash-out on a bank's behalf. CBE, Awash and Dashen all run agent
+  networks; CBE publishes an "Agent Remittance Service". "Interactive Teller
+  Agent" would read here as something about that network.
+- In 2026 **"agent" also means autonomous AI**. Naming the one feature whose
+  entire selling point is *a human being answers* after the industry's word
+  for *software acting alone* inverts the message.
+
+Assistant carries its own hazard — this product's AI is also "the assistant" —
+so the prose discipline is: **ITA is the feature, and the actor is always
+named as a person.** Never write "the ITA said"; write "the teller said".
+
+**ITA never appears in the product. It is an internal and sales name only**
+(decided 2026-08-10, by Oli, and deliberately not a default that drifted in).
+Customers see "Connect to a teller"; the dashboard says "Live". *Teller* is
+the word an Ethiopian bank customer already owns — it is what the person
+behind the counter has always been called, in every branch, for their whole
+life. An acronym in its place teaches nothing and asks the customer to learn
+our vocabulary at the exact moment they want help. ITA earns its keep in a
+pitch deck and a contract, where the thing being named is a *capability the
+bank is buying*; in the widget the thing being named is a *person the
+customer is about to talk to*, and that person is a teller.
+
+**Do not "finish" this rename by threading ITA through the UI or the i18n
+strings.** That is the obvious-looking tidy-up, and it is backwards.
+Anywhere a reader could think the AI is on the call, say "a real person".
 
 **The media path is verified against real traffic** (LiveKit Cloud console,
 2026-08-10): 51 WebRTC participant minutes over the preceding week and a 100%
@@ -775,7 +817,7 @@ lender (smaller, faster procurement, hungrier).
   fallback); LLM intent refinement **above** the rules floor, never replacing
   it.
 - ~~Human-agent console for the handoff queue~~ **Shipped** — desks, priority,
-  a live queue and the ITM call. The webhook into a bank's existing
+  a live queue and the ITA call. The webhook into a bank's existing
   contact-center tool (`handoff_webhook.py`) is also in, for banks that would
   rather work the queue in the tool they already own.
 - **Move hosting in-country (Ethio Telecom ECS) before real customer chat logs
