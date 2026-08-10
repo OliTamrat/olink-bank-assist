@@ -343,3 +343,170 @@ def test_importing_needs_permission_to_write_documents(
     assert client.post(
         "/admin/api/demo/ingest/commit", json={"html": PAGE, "titles": []}
     ).status_code == 403
+
+
+# ------------------------------------------------- what the first real import taught
+#
+# A CBE page — https://combanketh.et/ways-of-banking/internet-banking — was
+# imported and produced exactly ONE section: a related-services widget reading
+# "Mobile Banking / Easy to use / Go Ahead / CBE Cards", 127 characters. The
+# page's actual content never appeared, and a menu became an article in a
+# bank's knowledge base.
+#
+# Two separate faults, and only one of them was mine to fix in extraction.
+
+LINK_BLOCK = """
+<html><body>
+  <h2>Other Relevant Services</h2>
+  <div>
+    <a href="/mobile">Mobile Banking</a><p>Easy to use</p><a href="/m">Go Ahead</a>
+    <a href="/cards">CBE Cards</a><p>Shop, travel, and pay easily</p><a href="/c">Go Ahead</a>
+    <a href="/atm">CBE ATM</a><p>Find one near you</p><a href="/a">Go Ahead</a>
+  </div>
+</body></html>
+"""
+
+
+def test_a_card_grid_is_a_menu_however_long_it_is() -> None:
+    """It cleared the length floor by seven characters.
+
+    The link ratio alone does NOT catch this, and finding that out is the
+    point: the card blurbs — "Easy to use", "Shop, travel, and pay easily" —
+    are not links, so only 37% of the block is anchor text. What actually
+    distinguishes it is that nothing in it is a sentence.
+    """
+    assert ingest.link_ratio(LINK_BLOCK) < ingest.MAX_LINK_RATIO, (
+        "the obvious rule does not catch this one — that is why there are two"
+    )
+    assert ingest.longest_run(ingest.to_text(LINK_BLOCK)) < ingest.MIN_PROSE_RUN
+    assert ingest.sections(LINK_BLOCK) == []
+
+
+def test_a_pure_navigation_block_is_caught_by_the_link_ratio() -> None:
+    """The other rule still earns its place: a menu of long link labels has a
+    long line and would otherwise pass the prose test."""
+    nav = "<h2>Our Services</h2><div>" + "".join(
+        f'<a href="/{i}">Personal banking services and products number {i}</a> '
+        for i in range(6)
+    ) + "</div>"
+    assert ingest.link_ratio(nav) > ingest.MAX_LINK_RATIO
+    assert ingest.sections(nav) == []
+
+
+def test_an_article_that_links_freely_is_still_an_article() -> None:
+    """The other half, and why the threshold is generous. A real savings page
+    links to the opening form and to three other products; a rule that
+    punished linking would drop the pages worth importing most."""
+    article = (
+        "<h2>Ordinary Savings Account</h2><p>Open an ordinary savings account "
+        "at any branch with your Fayda ID. The minimum opening balance is 100 "
+        "birr and interest is paid quarterly on the average daily balance. "
+        'See our <a href="/fees">fee schedule</a> or the '
+        '<a href="/form">application form</a> for the full details, and read '
+        "about eligibility before you visit a branch.</p>"
+    )
+    assert [s.title for s in ingest.sections(article)] == ["Ordinary Savings Account"]
+
+
+def test_a_javascript_shell_is_diagnosed_rather_than_shrugged_at() -> None:
+    """"Nothing importable" is true and useless. The operator is looking at a
+    page they can SEE has content, with no idea whether to try another page,
+    another button, or give up on the feature."""
+    shell = (
+        "<html><head><title>Internet Banking</title></head><body>"
+        '<div id="root"></div><script>' + "x" * 5000 + "</script></body></html>"
+    )
+    note = ingest.diagnose(shell, ingest.sections(shell))
+    assert note is not None
+    assert "browser" in note.lower()
+    # And it must NOT repeat the advice that does not work here.
+    assert "view source will not work" in note.lower()
+
+
+def test_a_landing_page_is_diagnosed_differently_from_a_shell() -> None:
+    """Three different failures need three different next steps, or the
+    message is decoration."""
+    landing = "<html><body><h2>Products</h2>" + "".join(
+        f'<a href="/{i}">Product {i}</a> ' for i in range(40)
+    ) + "</body></html>"
+    note = ingest.diagnose(landing, ingest.sections(landing))
+    assert note is not None and "landing" in note.lower()
+
+
+def test_the_preview_carries_the_diagnosis(
+    client: TestClient, demo_bank: Any
+) -> None:
+    shell = (
+        "<html><head><title>x</title></head><body>"
+        '<div id="root"></div><script>' + "x" * 5000 + "</script></body></html>"
+    )
+    body = client.post(
+        "/admin/api/demo/ingest/preview",
+        json={"html": shell},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    ).json()
+    assert body["sections"] == []
+    assert body["note"] and "browser" in body["note"].lower()
+
+
+# ---------------------------------------------------------- copied text
+#
+# The escape hatch that makes the feature usable on a site that builds itself
+# in the browser. Telling an operator to dig HTML out of the developer tools
+# is an instruction most people will not follow; selecting the page and
+# copying it is the thing everybody can do.
+
+COPIED = """Internet Banking
+
+CBE internet banking lets you check balances, move money between your own
+accounts and pay bills from a browser without visiting a branch.
+
+To register, visit any branch with your Fayda ID and ask for internet banking.
+You will receive a username and a one-time password to set on first login.
+
+Back to top
+"""
+
+
+def test_copied_text_imports_under_a_title_the_operator_gives(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    resp = client.post(
+        "/admin/api/demo/ingest/commit",
+        json={"html": COPIED, "title": "Internet Banking", "titles": []},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["created"] == 1
+    doc = db_session.execute(
+        select(Document).where(Document.title == "Internet Banking")
+    ).scalars().one()
+    assert "one-time password" in doc.content
+
+
+def test_copied_text_is_not_mistaken_for_markup() -> None:
+    """Prose that happens to contain an angle bracket is still prose."""
+    assert not ingest.looks_like_markup(COPIED)
+    assert not ingest.looks_like_markup("Transfers under 5000 birr < 1 minute")
+    assert ingest.looks_like_markup("<html><body><p>hi</p></body></html>")
+
+
+def test_copied_text_keeps_its_paragraphs() -> None:
+    """`chunk_text` splits on blank lines, so a paste flattened into one line
+    would become one enormous chunk and destroy retrieval precision on
+    everything imported this way."""
+    section = ingest.plain_text_section(COPIED, "Internet Banking")[0]
+    assert "\n\n" in section.body
+
+
+def test_copied_text_drops_the_furniture_that_came_with_it() -> None:
+    """A selection always picks up "Back to top" and friends."""
+    section = ingest.plain_text_section(COPIED, "Internet Banking")[0]
+    assert "Back to top" not in section.body
+
+
+def test_pasted_text_with_no_title_still_gets_a_usable_one() -> None:
+    """A document called "Untitled page" is one nobody can find again — but
+    refusing the import outright would lose content over a blank field."""
+    section = ingest.plain_text_section(COPIED, "")[0]
+    assert section.title and section.title != ""

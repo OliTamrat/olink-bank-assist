@@ -1431,10 +1431,14 @@ def list_handoffs(
 
 
 class IngestIn(BaseModel):
-    """Either a URL to fetch, or markup somebody pasted. Not both."""
+    """A URL to fetch, or something somebody pasted. Not both."""
 
     url: str | None = None
     html: str | None = None
+    # Used only when the pasted content is plain text rather than markup —
+    # copied text has no <title> and no headings to take a name from, and a
+    # document called "Untitled page" is one nobody can find again.
+    title: str = ""
     language: str = "en"
     category: str = "general"
 
@@ -1502,7 +1506,12 @@ def _proposed(payload: IngestIn) -> tuple[list[ingest.Section], str | None]:
         markup = _fetch_page(payload.url)
         return ingest.sections(markup, fallback_title=""), payload.url.strip()
     if payload.html:
-        return ingest.sections(payload.html, fallback_title=""), None
+        pasted = payload.html
+        if not ingest.looks_like_markup(pasted):
+            # Somebody selected the page and copied it, which is the only
+            # thing that works on a site that builds itself in the browser.
+            return ingest.plain_text_section(pasted, payload.title), None
+        return ingest.sections(pasted, fallback_title=payload.title), None
     raise HTTPException(status_code=422, detail="Nothing to import")
 
 
@@ -1526,6 +1535,16 @@ def ingest_preview(
     """
     bank = principal.bank
     found, source = _proposed(payload)
+    # When nothing came back, say WHY. "Nothing importable on that page" is
+    # true and useless: the operator is looking at a page they can see has
+    # content, with no idea whether to try a different page, a different
+    # button, or give up on the feature.
+    note = None
+    if not found:
+        markup = payload.html or ""
+        if payload.url:
+            markup = _fetch_page(payload.url)
+        note = ingest.diagnose(markup, found)
     existing = {
         row.title: row
         for row in db.execute(
@@ -1534,6 +1553,7 @@ def ingest_preview(
     }
     return {
         "source_url": source,
+        "note": note,
         "sections": [
             {
                 "title": s.title,
