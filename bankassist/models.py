@@ -169,6 +169,14 @@ class Faq(Base):
     approved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # The answer this one was translated from, when it was. Lets the review
+    # sheet put a question and its four translations on one row, and lets a
+    # repeat translation batch tell "already covered" from "not yet" without
+    # relying on the lookup key — which changes the moment a reviewer corrects
+    # the wording of the translated question.
+    source_faq_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
     # How often it has actually been served. The number that tells a bank
     # whether curating more of these is worth anybody's afternoon.
     served: Mapped[int] = mapped_column(Integer, default=0)
