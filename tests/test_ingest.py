@@ -510,3 +510,41 @@ def test_pasted_text_with_no_title_still_gets_a_usable_one() -> None:
     refusing the import outright would lose content over a blank field."""
     section = ingest.plain_text_section(COPIED, "")[0]
     assert section.title and section.title != ""
+
+
+def test_a_navigation_strip_does_not_survive_a_copy_paste() -> None:
+    """Seen the moment the paste route was driven for real.
+
+    Selecting a rendered page collapses the whole menu onto ONE line —
+    "Home Personal Business Diaspora About Contact" — which the furniture
+    list cannot catch, because every entry in that list is a single word and
+    this is six of them. It became the opening line of the imported article
+    and therefore the first thing the assistant quoted back to a customer.
+    """
+    section = ingest.plain_text_section(
+        "Home  Personal  Business  Diaspora  About  Contact\n\n" + COPIED,
+        "Internet Banking",
+    )[0]
+    assert "Diaspora  About" not in section.body
+    assert not section.body.startswith("Home")
+    # And the article itself is untouched.
+    assert "one-time password" in section.body
+
+
+@pytest.mark.parametrize("line", [
+    "Internet Banking",                      # a heading
+    "CBE Noor Interest Free Banking",        # a product name, four words
+])
+def test_a_heading_is_not_mistaken_for_a_navigation_strip(line: str) -> None:
+    """The rule has to leave real headings and product names alone. Four
+    capitalised words is the point where "several nouns in a row" stops being
+    a heading — three is still a name."""
+    kept = ingest.plain_text_section(line + "\n\n" + COPIED, "x")[0].body
+    assert line in kept or line.split()[0] in kept
+
+
+def test_a_sentence_of_capitalised_words_is_not_a_navigation_strip() -> None:
+    """Punctuation is what separates a sentence from a menu."""
+    sentence = "Visit Any Branch In Addis Ababa With Your Fayda ID."
+    kept = ingest.plain_text_section(sentence + "\n\n" + COPIED, "x")[0].body
+    assert sentence in kept

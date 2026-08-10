@@ -105,6 +105,22 @@ MAX_LINK_RATIO: Final = 0.5
 # search from then on.
 MIN_PROSE_RUN: Final = 60
 
+# A navigation strip as it survives a copy-paste.
+#
+# Selecting a rendered page collapses the whole menu onto one line —
+# "Home Personal Business Diaspora About Contact" — which the line-by-line
+# furniture list cannot catch, because every entry in that list is a SINGLE
+# word and this is six of them. Seen immediately on the first pasted page,
+# where it became the opening sentence of the imported article and therefore
+# the first thing the assistant quoted back.
+#
+# Four capitalised words with no sentence punctuation between them. A real
+# sentence has a verb and a full stop; a heading is one or two words. Four is
+# the point where "several nouns in a row" stops being either.
+_NAV_STRIP: Final[re.Pattern[str]] = re.compile(
+    r"^(?:[A-Z][^\s.,:;?!]*\s+){3,}[A-Z][^\s.,:;?!]*$"
+)
+
 
 def longest_run(text: str) -> int:
     """The longest single line, which is the best available proxy for "is
@@ -257,11 +273,20 @@ def plain_text_section(text: str, title: str) -> list[Section]:
     The chunker still splits it for retrieval, so a long page is not one
     enormous chunk.
     """
-    body = "\n\n".join(
-        block.strip()
-        for block in re.split(r"\n\s*\n", text)
-        if block.strip() and not _FURNITURE.match(block.strip())
-    )
+    kept: list[str] = []
+    for block in re.split(r"\n\s*\n", text):
+        lines = [
+            _SPACES.sub(" ", line).strip()
+            for line in block.splitlines()
+            if line.strip()
+        ]
+        lines = [
+            line for line in lines
+            if not _FURNITURE.match(line) and not _NAV_STRIP.match(line)
+        ]
+        if lines:
+            kept.append("\n".join(lines))
+    body = "\n\n".join(kept)
     if len(body) < MIN_SECTION_CHARS:
         return []
     return [Section(title=(title.strip() or "Imported page")[:MAX_TITLE_CHARS], body=body)]
