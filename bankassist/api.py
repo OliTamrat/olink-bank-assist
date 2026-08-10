@@ -739,6 +739,11 @@ def _identity(db: Session, user: User) -> dict[str, Any]:
         "role": role.name if role is not None else None,
         "permissions": sorted(roles.permissions_for_user(db, user)),
         "bank_id": user.bank_id,
+        # Every admin label in every language, sent with the identity the
+        # panel already fetches on boot. Same reasoning as the widget: a
+        # teller switching language mid-shift should not wait on a request,
+        # and fifty-eight short labels across five languages is nothing.
+        "ui": i18n.all_admin_strings(),
     }
 
 
@@ -880,6 +885,22 @@ def logout(
         db.commit()
     response.delete_cookie(admin_auth.COOKIE_NAME, path="/admin")
     return {"signed_out": True}
+
+
+@app.get("/admin/strings")
+def admin_ui_strings() -> dict[str, dict[str, str]]:
+    """The admin panel's labels, in every language it serves.
+
+    Unauthenticated on purpose. These are interface strings — "Live queue",
+    "End session" — and contain nothing about a tenant, a customer or a
+    person. Requiring a session for them would be security theatre with a real
+    cost: they were originally hung off the signed-in identity, and the
+    break-glass token path has no user, so it rendered raw key names in the
+    sidebar. A label table that only works when you are already signed in is a
+    label table that fails on the one screen most likely to be reached in a
+    hurry.
+    """
+    return i18n.all_admin_strings()
 
 
 @app.get("/admin/api/{slug}/me")

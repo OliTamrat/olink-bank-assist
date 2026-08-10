@@ -107,7 +107,15 @@ def test_choosing_an_answer_fills_the_composer_rather_than_sending() -> None:
 def test_the_search_is_wired_once_not_per_call() -> None:
     """Re-binding on every open stacks handlers, so the list re-renders once
     per call ever taken — invisible on the first call and unusable by the
-    twentieth."""
+    twentieth.
+
+    Asserts the HANDLER is attached once, not that the node is looked up once.
+    Counting lookups broke the moment the admin's language repaint also needed
+    to reach this input to set its placeholder, which is a legitimate second
+    reference to the same element and not the defect this guards.
+    """
     html = ADMIN.read_text(encoding="utf-8")
     assert "wireAnswerSearch" in html
-    assert html.count('getElementById("ansQ")') == 1
+    assert html.count('ansQ").addEventListener') + html.count(
+        'box.addEventListener("input"'
+    ) == 1
