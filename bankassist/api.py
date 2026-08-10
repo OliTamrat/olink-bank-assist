@@ -1697,18 +1697,29 @@ def _faq_row(row: Faq) -> dict[str, Any]:
 
 @app.get("/admin/api/{slug}/faq")
 def list_faq(
-    principal: Principal = NeedsDocumentsRead, db: Session = Depends(get_db)
+    status: str | None = None,
+    principal: Principal = NeedsDocumentsRead,
+    db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """Every curated answer, most-served first.
 
     Most-served rather than newest: the list is read to decide what to write
     next, and the answer carrying a thousand customers a month is the one
     whose wording is worth an argument.
+
+    `status=published` is what the teller console asks for. A teller reading
+    an answer aloud to a customer must be handed only wording the bank stands
+    behind — a draft is somebody's half-written afternoon, and reading it out
+    is precisely the harm draft status exists to prevent. Filtering here
+    rather than in the browser means the drafts are never sent at all.
     """
+    query = select(Faq).where(Faq.bank_id == principal.bank.id)
+    if status is not None:
+        if status not in ("draft", "published"):
+            raise HTTPException(status_code=422, detail="Unknown status")
+        query = query.where(Faq.status == status)
     rows = db.execute(
-        select(Faq)
-        .where(Faq.bank_id == principal.bank.id)
-        .order_by(Faq.served.desc(), Faq.updated_at.desc())
+        query.order_by(Faq.served.desc(), Faq.updated_at.desc())
     ).scalars().all()
     return [_faq_row(r) for r in rows]
 
@@ -2012,6 +2023,74 @@ def faq_import(
     )
     db.commit()
     return {"created": created, "skipped": skipped}
+
+
+class FaqPublishIn(BaseModel):
+    """Which drafts to approve in one action."""
+
+    # Empty means every language. Named explicitly in the normal case, so the
+    # audit record says what somebody actually decided rather than "all".
+    languages: list[str] = Field(default_factory=list)
+    faq_ids: list[str] = Field(default_factory=list)
+
+
+@app.post("/admin/api/{slug}/faq/publish")
+def faq_publish(
+    payload: FaqPublishIn,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Approve drafts in bulk, and record who did it.
+
+    Eight hundred answers is not a queue anybody clears one row at a time, so
+    without this the honest choice is between publishing nothing and clicking
+    for an afternoon — and nothing is what actually happens.
+
+    `approved_by` and `approved_at` are stamped exactly as the single-answer
+    path stamps them. That is the whole point: bulk approval is still
+    approval, and it must leave the same record a careful one-at-a-time pass
+    would. The audit entry additionally counts how many of these were machine
+    translations nobody had read, because the person running a linguist review
+    later needs to know what went out and in which languages, and
+    reconstructing that from timestamps afterwards is guesswork.
+    """
+    bank = principal.bank
+    for code in payload.languages:
+        if code not in SUPPORTED_LANGUAGES:
+            raise HTTPException(status_code=422, detail=f"Unsupported language {code}")
+
+    query = select(Faq).where(Faq.bank_id == bank.id, Faq.status == "draft")
+    if payload.languages:
+        query = query.where(Faq.language.in_(payload.languages))
+    if payload.faq_ids:
+        query = query.where(Faq.id.in_(payload.faq_ids))
+    rows = list(db.execute(query).scalars().all())
+
+    now = datetime.now(UTC)
+    by_language: dict[str, int] = {}
+    machine = 0
+    for row in rows:
+        row.status = "published"
+        row.approved_by = principal.user.id if principal.user else None
+        row.approved_at = now
+        by_language[row.language] = by_language.get(row.language, 0) + 1
+        # Written by translate_curated rather than by a person. Counted, not
+        # blocked — but counted, because "we published 640 machine
+        # translations on the tenth" is the sentence a reviewer needs.
+        if row.source_faq_id is not None:
+            machine += 1
+    _audit(
+        db, bank, "faq_published_bulk", "bank", bank.id,
+        {"published": len(rows), "by_language": by_language,
+         "machine_translations": machine},
+        actor=principal.audit_actor,
+    )
+    db.commit()
+    return {
+        "published": len(rows),
+        "by_language": by_language,
+        "machine_translations": machine,
+    }
 
 
 class FaqTranslateIn(BaseModel):

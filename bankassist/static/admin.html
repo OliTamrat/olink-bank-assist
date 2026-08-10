@@ -901,6 +901,28 @@ td.title { color: var(--ink); font-weight: 550; }
 .callroom .composer2 button { flex: none; }
 
 .callroom .verify { border-top: 1px solid var(--line); padding: 14px 16px; }
+/* The approved-answer search. Scrolls on its own rather than pushing the
+   composer off screen — a teller must always be able to type, even mid-search. */
+.callroom .answers { border-top: 1px solid var(--line); padding: 14px 16px;
+  display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.callroom .answers h4 { margin: 0 0 8px; }
+.callroom .answers input[type="search"] { width: 100%; margin-bottom: 8px; }
+.callroom .ansList { overflow-y: auto; min-height: 0; }
+.callroom .ansItem {
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+  margin-bottom: 7px; cursor: pointer; background: var(--surface);
+}
+.callroom .ansItem:hover { border-color: var(--brand); }
+.callroom .ansItem b { display: block; font-size: 12.5px; margin-bottom: 3px; }
+.callroom .ansItem span {
+  display: block; font-size: 12px; line-height: 1.45; color: var(--body);
+  /* Three lines is enough to recognise the answer; the teller opens the one
+     they want. A wall of text here is unreadable at a glance, and a glance is
+     all they have while somebody is talking to them. */
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.callroom .ansEmpty { font-size: 12px; color: var(--muted); padding: 6px 2px; }
 .callroom .verify label {
   display: flex; gap: 9px; align-items: flex-start;
   font-size: 12.5px; line-height: 1.45; color: var(--body);
@@ -1174,6 +1196,17 @@ td.title { color: var(--ink); font-weight: 550; }
       <button class="btn sm" type="submit">Send</button>
     </form>
     <div class="verify" id="callVerify"></div>
+    <!-- The bank's approved wording, one search away while the teller is
+         talking. No teller holds a hundred and sixty answers in their head,
+         and improvising a fee or an eligibility rule is how a call becomes a
+         complaint. Published only — a draft is half-written wording and
+         reading it aloud is the harm draft status exists to prevent. -->
+    <div class="answers" id="callAnswers">
+      <h4>Approved answers</h4>
+      <input id="ansQ" type="search" autocomplete="off"
+             placeholder="Search the bank's approved answers…">
+      <div class="ansList" id="ansList"></div>
+    </div>
   </div>
   <div class="controls">
     <button type="button" id="cMic" title="Mute"></button>
@@ -3873,6 +3906,7 @@ function openCall(session) {
   paintCallControls();
   renderVerify();
   startCallChat();
+  loadApprovedAnswers(session.language);
 
   Promise.all([
     loadCallSdk(),
@@ -3959,6 +3993,92 @@ function openCall(session) {
    switched off in the token on purpose, so no words pass between a customer
    and a bank employee outside the record. */
 var chatPoll = null;
+
+/* The bank's approved wording, searchable while the teller is talking.
+ *
+ * No teller carries a hundred and sixty answers in their head. Today the
+ * bank's own approved text sits one table away from somebody improvising a
+ * fee from memory, which is how a call becomes a complaint — and it is the
+ * same text the bot serves, so the human and the machine giving different
+ * answers to the same question is a bank's worst outcome from both at once.
+ *
+ * Fetched ONCE when the call opens and filtered in the browser. A teller
+ * mid-sentence must not wait on a network round trip, and the connection this
+ * is used on is the one that drops. A hundred and sixty short rows is nothing
+ * to hold.
+ *
+ * Published only, and the server does that filtering — see list_faq. A draft
+ * is half-written wording and reading it aloud is exactly what draft status
+ * exists to prevent.
+ */
+var approvedAnswers = [];
+
+function loadApprovedAnswers(language) {
+  approvedAnswers = [];
+  renderAnswers("");
+  api("/faq?status=published").then(function (rows) {
+    // The customer's language first, then everything else. A teller serving
+    // an Amharic speaker wants the Amharic wording at the top, but must still
+    // be able to reach the English one — plenty of answers exist in only one
+    // language while the translations are still in review.
+    approvedAnswers = rows.sort(function (a, b) {
+      var am = (a.language === language) ? 0 : 1;
+      var bm = (b.language === language) ? 0 : 1;
+      if (am !== bm) return am - bm;
+      return b.served - a.served;
+    });
+    renderAnswers($("ansQ") ? $("ansQ").value : "");
+  }).catch(function () {
+    // A failure here must never interrupt a live call. The teller loses a
+    // convenience, not the customer.
+    var list = $("ansList");
+    if (list) list.innerHTML = '<div class="ansEmpty">Approved answers unavailable.</div>';
+  });
+}
+
+function renderAnswers(query) {
+  var list = $("ansList");
+  if (!list) return;
+  var q = (query || "").trim().toLowerCase();
+  // Plain substring over question and answer. Rules, not a model: this runs
+  // on every keystroke while somebody is speaking, it has to be instant, and
+  // a teller mistyping and seeing nothing is easier to recover from than a
+  // clever match putting the wrong fee in front of them.
+  var hits = approvedAnswers.filter(function (f) {
+    if (!q) return true;
+    return (f.question + " " + f.answer).toLowerCase().indexOf(q) !== -1;
+  }).slice(0, 40);
+
+  if (!approvedAnswers.length) {
+    list.innerHTML = '<div class="ansEmpty">No approved answers yet.</div>';
+    return;
+  }
+  if (!hits.length) {
+    list.innerHTML = '<div class="ansEmpty">Nothing matches “' + esc(query) + '”.</div>';
+    return;
+  }
+  list.innerHTML = hits.map(function (f) {
+    return '<div class="ansItem" data-ans="' + esc(f.id) + '">' +
+      "<b>" + esc(f.question) + "</b>" +
+      "<span>" + esc(f.answer) + "</span></div>";
+  }).join("");
+
+  Array.prototype.forEach.call(list.querySelectorAll("[data-ans]"), function (node) {
+    node.onclick = function () {
+      var row = approvedAnswers.filter(function (f) {
+        return f.id === node.getAttribute("data-ans");
+      })[0];
+      if (!row) return;
+      // Fills the composer; never sends. The teller reads it, adapts it to
+      // what was actually asked, and takes responsibility for what goes out.
+      // Auto-sending would make this a bot with a person watching, which is
+      // the opposite of what a customer asked for when they asked for a human.
+      var say = $("callSay");
+      say.value = row.answer;
+      say.focus();
+    };
+  });
+}
 
 function startCallChat() {
   drawThread();
@@ -4181,6 +4301,14 @@ function paintCallControls() {
   cam.classList.toggle("off", !camOn);
   $("cHang").innerHTML = cicon("hang");
 }
+
+// Wired once at load rather than per call: the node is in the page markup and
+// outlives any single session, so re-binding on every open would stack
+// handlers and re-render the list once per call ever taken.
+(function wireAnswerSearch() {
+  var box = document.getElementById("ansQ");
+  if (box) box.addEventListener("input", function () { renderAnswers(box.value); });
+})();
 
 function closeCall() {
   if (callRoom) { try { callRoom.disconnect(); } catch (e) {} callRoom = null; }
