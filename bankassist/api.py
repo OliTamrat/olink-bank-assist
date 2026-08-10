@@ -1697,18 +1697,29 @@ def _faq_row(row: Faq) -> dict[str, Any]:
 
 @app.get("/admin/api/{slug}/faq")
 def list_faq(
-    principal: Principal = NeedsDocumentsRead, db: Session = Depends(get_db)
+    status: str | None = None,
+    principal: Principal = NeedsDocumentsRead,
+    db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """Every curated answer, most-served first.
 
     Most-served rather than newest: the list is read to decide what to write
     next, and the answer carrying a thousand customers a month is the one
     whose wording is worth an argument.
+
+    `status=published` is what the teller console asks for. A teller reading
+    an answer aloud to a customer must be handed only wording the bank stands
+    behind — a draft is somebody's half-written afternoon, and reading it out
+    is precisely the harm draft status exists to prevent. Filtering here
+    rather than in the browser means the drafts are never sent at all.
     """
+    query = select(Faq).where(Faq.bank_id == principal.bank.id)
+    if status is not None:
+        if status not in ("draft", "published"):
+            raise HTTPException(status_code=422, detail="Unknown status")
+        query = query.where(Faq.status == status)
     rows = db.execute(
-        select(Faq)
-        .where(Faq.bank_id == principal.bank.id)
-        .order_by(Faq.served.desc(), Faq.updated_at.desc())
+        query.order_by(Faq.served.desc(), Faq.updated_at.desc())
     ).scalars().all()
     return [_faq_row(r) for r in rows]
 
