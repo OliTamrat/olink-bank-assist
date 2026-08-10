@@ -76,6 +76,11 @@ banking (a shop doing cash-in/cash-out), and in 2026 "agent" also reads as
 autonomous AI — the worst possible misread for the one feature whose entire
 point is that a human being answers.
 
+**ITA is an internal and sales name; it never appears in the product.**
+Customers see "Connect to a teller", the dashboard says "Live". *Teller* is
+the word an Ethiopian bank customer already owns, and asking them to learn an
+acronym at the moment they want help trades their vocabulary for ours.
+
 - **Presence is declared, not inferred.** A teller flips an On-duty toggle;
   the shell heartbeats every 30s against a 90s staleness window
   (`presence.py`). The Connect button appears to customers only when a teller

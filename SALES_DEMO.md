@@ -59,6 +59,13 @@ What most can't offer:
    hardware, no kiosk — it runs on the phone your customer already has, and
    your teller takes the call from the desk they already sit at."*
 
+   **ITA is your word, not the customer's.** Use it in the deck and the
+   contract, where you are naming a capability the bank is buying. On screen
+   the customer just sees "Connect to a teller" — and if anyone asks why,
+   that is the answer worth giving out loud: their customers have called that
+   person a teller their whole lives, and we are not going to make them learn
+   an acronym at the moment they need help.
+
 ## Demo flow (7 minutes)
 
 1. **Point out the disclaimer banner first, unprompted.** "This banner is

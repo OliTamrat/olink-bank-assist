@@ -623,6 +623,20 @@ stylistic:
 Assistant carries its own hazard — this product's AI is also "the assistant" —
 so the prose discipline is: **ITA is the feature, and the actor is always
 named as a person.** Never write "the ITA said"; write "the teller said".
+
+**ITA never appears in the product. It is an internal and sales name only**
+(decided 2026-08-10, by Oli, and deliberately not a default that drifted in).
+Customers see "Connect to a teller"; the dashboard says "Live". *Teller* is
+the word an Ethiopian bank customer already owns — it is what the person
+behind the counter has always been called, in every branch, for their whole
+life. An acronym in its place teaches nothing and asks the customer to learn
+our vocabulary at the exact moment they want help. ITA earns its keep in a
+pitch deck and a contract, where the thing being named is a *capability the
+bank is buying*; in the widget the thing being named is a *person the
+customer is about to talk to*, and that person is a teller.
+
+**Do not "finish" this rename by threading ITA through the UI or the i18n
+strings.** That is the obvious-looking tidy-up, and it is backwards.
 Anywhere a reader could think the AI is on the call, say "a real person".
 
 **The media path is verified against real traffic** (LiveKit Cloud console,
