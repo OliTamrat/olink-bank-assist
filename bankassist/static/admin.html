@@ -3348,11 +3348,42 @@ var chatPoll = null;
 
 function startCallChat() {
   drawThread();
+  watchSession();
   stopCallChat();
   chatPoll = setInterval(function () {
     if (!callSession) { stopCallChat(); return; }
     drawThread();
+    watchSession();
   }, 3000);
+}
+
+/* Has this session ended underneath us?
+ *
+ * LiveKit's participant-left event is the fast path and it is best-effort: a
+ * phone that loses signal, gets backgrounded or is simply switched off never
+ * produces a clean disconnect, and the browser waits out a timeout it cannot
+ * see. Reported from the field — the customer hung up and this screen stayed
+ * in the call, showing a live session with nobody on the other end.
+ *
+ * So the database is the authority and this asks it every three seconds, on
+ * the poll that is already running. Cheap, and it cannot miss.
+ */
+function watchSession() {
+  if (!callSession) return;
+  var id = callSession.id;
+  api("/teller/sessions/" + id).then(function (s) {
+    if (!callSession || callSession.id !== id) return;   // already moved on
+    if (s.state === "ended" || s.state === "abandoned" || s.state === "failed") {
+      callMsg("The customer has left the call.");
+      // Closed rather than left open with a notice: a finished session on
+      // screen is one a teller can keep typing into, and every message after
+      // this point goes to somebody who is not there.
+      setStatus("The customer ended the call");
+      closeCall();
+    }
+  }).catch(function () {
+    // A dropped poll is not an ended call. Retried on the next tick.
+  });
 }
 function stopCallChat() {
   if (chatPoll) { clearInterval(chatPoll); chatPoll = null; }

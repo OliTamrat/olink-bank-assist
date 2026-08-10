@@ -2064,7 +2064,31 @@ class SessionEndIn(BaseModel):
     resolution: str | None = Field(default=None, max_length=4000)
 
 
-def _session_public(session: TellerSession) -> dict[str, Any]:
+def first_name(display_name: str | None) -> str | None:
+    """The name a customer is told, and no more of it.
+
+    A first name, never the full one. Both directions of that matter:
+
+    - A voice with no name at all is a call centre. "Meron from Demo Bank" is
+      a person who is accountable for what they say, and the customer reported
+      the current screen — a nameless "teller" — as the thing that felt wrong.
+    - A SURNAME is what turns an ordinary support call into a person who can
+      be looked up, turned up at, or impersonated to a colleague. Bank staff
+      take calls from people who are angry about money. The trust is in the
+      first name; the risk is all in the rest.
+
+    Returns None for a blank, so the caller falls back to the generic label
+    rather than rendering an empty gap where a name should be.
+    """
+    if not display_name:
+        return None
+    first = display_name.strip().split()
+    return first[0] if first else None
+
+
+def _session_public(
+    session: TellerSession, teller_name: str | None = None
+) -> dict[str, Any]:
     """What the CUSTOMER may see about their own session.
 
     Deliberately not the teller's user id and not the verification reference.
@@ -2077,12 +2101,24 @@ def _session_public(session: TellerSession) -> dict[str, Any]:
         "state": session.state,
         "scope": session.scope,
         "media": session.media,
+        # Who they are talking to, first name only — see `first_name`. Null
+        # until somebody has claimed the session, because until then there is
+        # nobody to name and inventing one would be worse than the gap.
+        "teller_name": teller_name,
         # What this session can actually cover, so the customer is told the
         # boundary BEFORE they wait rather than after. Someone who queues for
         # ten minutes to ask for a transfer and is refused live has had a
         # worse experience than the assistant refusing instantly.
         "can_help_with": teller.capabilities(session.scope),
     }
+
+
+def _teller_first_name(db: Session, session: TellerSession) -> str | None:
+    """The claiming teller's first name, or None while nobody has claimed it."""
+    if session.teller_user_id is None:
+        return None
+    user = db.get(User, session.teller_user_id)
+    return first_name(user.display_name) if user is not None else None
 
 
 def _session_public_queued(
@@ -2096,7 +2132,7 @@ def _session_public_queued(
     exact screen this panel exists to avoid. A number beats a spinner: someone
     told they are third will wait; someone shown a spinner leaves.
     """
-    data = _session_public(session)
+    data = _session_public(session, _teller_first_name(db, session))
     if session.state == teller.QUEUED:
         data["ahead"] = db.execute(
             select(func.count())
@@ -2112,7 +2148,7 @@ def _session_public_queued(
 
 def _session_admin(db: Session, session: TellerSession) -> dict[str, Any]:
     """What a teller or supervisor sees. Adds the internal record."""
-    data = _session_public(session)
+    data = _session_public(session, _teller_first_name(db, session))
     # The language the customer has been chatting in. A teller opening a
     # session needs to know whether to greet in Amharic or Afaan Oromoo before
     # they speak, not after — and the conversation already knows.
@@ -2373,6 +2409,39 @@ def customer_says(
     return _thread(db, session)[-1]
 
 
+@app.get("/admin/api/{slug}/teller/sessions/{session_id}")
+def teller_session_state(
+    session_id: str,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """This session as the database has it, polled by the open call room.
+
+    Deliberately NOT `_live_session`: the whole point is to be able to read a
+    session that has just STOPPED being active. A route that 409s the moment
+    the call ends cannot be the one that tells the teller it ended.
+
+    This exists because of a field report. A customer hung up and the teller's
+    screen stayed in the call — a live session with nobody on the other end.
+    LiveKit's own participant-left event is best-effort: a phone that loses
+    signal, gets backgrounded, or is simply switched off produces no clean
+    disconnect, and a browser that never hears it waits out a timeout it
+    cannot see. The database always knows. Polling it is how the teller finds
+    out for certain rather than eventually.
+    """
+    bank = principal.bank
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    # The claiming teller only, matching every other route on this session —
+    # a finished session is still a record of a named customer's business.
+    if principal.user is None or session.teller_user_id != principal.user.id:
+        raise HTTPException(
+            status_code=403, detail="That session belongs to another teller"
+        )
+    return _session_admin(db, session)
+
+
 @app.get("/admin/api/{slug}/teller/sessions/{session_id}/messages")
 def teller_thread(
     session_id: str,
@@ -2435,22 +2504,45 @@ def teller_says(
 def abandon_teller_session(
     slug: str, session_id: str, db: Session = Depends(get_db)
 ) -> dict[str, Any]:
-    """The customer gave up, or closed the tab.
+    """The customer left — gave up in the queue, hung up, or closed the tab.
 
-    Recorded rather than left to expire, because queue abandonment is the most
-    useful number this feature produces and the one that justifies staffing.
-    A session that simply goes quiet tells a bank nothing.
+    Both exits, because from the customer's side it is one action and the
+    server has to be told either way. Which state it lands in is not:
+
+    - waiting -> ABANDONED. Queue abandonment is the most useful number this
+      feature produces and the one that justifies staffing.
+    - on a call -> ENDED. The call happened; it simply finished without the
+      teller writing a resolution.
+
+    Reported from the field, and the reason this now accepts an active
+    session at all: a customer hung up and the teller's screen stayed in the
+    call, showing a live session with nobody on the other end. The widget
+    disconnected from the media layer and told nobody, so the row stayed
+    ACTIVE forever — it would still have been ACTIVE the next morning, in the
+    teller's In-progress list, above the people actually waiting.
+
+    The audit action distinguishes the two, so a bank can tell "the customer
+    hung up" from "the teller wrapped up" without inferring it from a null
+    resolution.
     """
     bank = _get_bank(db, slug)
     session = db.get(TellerSession, session_id)
     if session is None or session.bank_id != bank.id:
         raise HTTPException(status_code=404, detail="Unknown session")
+    # Idempotent: a hang-up and a closing tab both fire this, and the second
+    # one must not be an error the customer's browser reports.
     if session.state in teller.TERMINAL:
         return {"state": session.state}
-    session.state = teller.move(session.state, teller.ABANDONED)
+    on_a_call = session.state == teller.ACTIVE
+    session.state = teller.move(
+        session.state, teller.ENDED if on_a_call else teller.ABANDONED
+    )
     session.ended_at = datetime.now(UTC)
     _audit(
-        db, bank, "teller_session_abandoned", "teller_session", session.id,
+        db, bank,
+        "teller_session_customer_hung_up" if on_a_call
+        else "teller_session_abandoned",
+        "teller_session", session.id,
         {"waited_seconds": session.waited_seconds}, actor="customer",
     )
     db.commit()
