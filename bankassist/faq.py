@@ -236,6 +236,25 @@ def pairs(text: str) -> list[QAPair]:
     Pairs arrive with no status of their own — the caller stores them as
     drafts, because an import has nobody's name on it and `approved_by` is the
     entire difference between a curated answer and a cache.
+
+    **Known gap: two-column tables.** A large part of a real bank FAQ is laid
+    out as a table, and those questions frequently carry no question mark at
+    all — "Can I use the app abroad", "Are there any fees for using the Super
+    App". On the real Dashen FAQ that is roughly 137 further questions this
+    reader does not see.
+
+    Two attempts at it were written and thrown away, and the reason is worth
+    keeping. Flattened text loses the column boundary, so recovering it means
+    guessing from line length or from a line "looking like a question", and a
+    guessed boundary puts half an answer under the wrong question — served
+    verbatim, with nothing downstream to catch it. Extracting with the PDF
+    layout preserved does keep the columns, but it also keeps the justification
+    spacing inside each cell and misaligns rows against section headers, which
+    produced 308 pairs of visibly worse text than the 160 this returns.
+
+    Closing it properly needs a real table extractor working from the PDF's own
+    cell geometry, not heuristics over text. Until then this reads what it can
+    read correctly, which is the trade this module always makes.
     """
     found: list[QAPair] = []
     question: str | None = None
