@@ -4,10 +4,10 @@
 `https://bankassist-430565798339.us-east1.run.app/widget?bank=<slug>`.**
 You can send a link rather than open a laptop. It also runs locally via
 `uvicorn` if you want it offline in a room with bad wifi. **These are
-private pitch materials for a sales meeting
-with the specific bank named — never a live public product, and never
-presented as anything other than a prototype you built.** See CLAUDE.md
-for why that distinction is load-bearing, not a formality.
+private pitch materials for a sales meeting with the specific bank named —
+never a live public product, and never presented as anything other than a
+prototype you built.** See CLAUDE.md for why that distinction is
+load-bearing, not a formality.
 
 | Bank | Slug | Seed command | Brand color | Lead with |
 |---|---|---|---|---|
