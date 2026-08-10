@@ -19,10 +19,15 @@ def client(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestCl
     # test can never quietly disable it for the real app.
     monkeypatch.setenv("BANKASSIST_ADMIN_COOKIE_INSECURE", "1")
 
-    from bankassist import config, db
+    from bankassist import config, db, index
 
     config.reset_settings()
     db.reset_engine()
+    # The search index is a process-level cache keyed by bank id, and every
+    # test builds a brand-new database. Ids are uuids so a collision is
+    # vanishingly unlikely, but "vanishingly unlikely" is how you get one
+    # flaky test a month that nobody can reproduce.
+    index.clear()
 
     from bankassist.api import app
 
