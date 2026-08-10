@@ -404,7 +404,56 @@ textarea { min-height: 170px; resize: vertical; }
 }
 .topbar h2 { font-size: 17px; }
 .topbar .spacer { flex: 1; }
-#status { font-size: 12.5px; color: var(--muted); }
+/* ------------------------------------------------------------------ toasts
+   Bottom-right on a desktop, full width along the bottom on a phone — out of
+   the way of the content being worked on, and nowhere near the topbar where
+   the old status text was competing with the page title for attention.
+
+   Ordinary body text, deliberately. The complaint was never that the words
+   were small; it was that they sat in furniture nobody looks at. A card with
+   its own background, border and shadow reads at a glance without shouting. */
+.toasts {
+  position: fixed; z-index: 10050; right: 20px; bottom: 20px;
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+  /* The container spans the corner but must not swallow clicks on what is
+     underneath it; each card turns pointer events back on for itself. */
+  pointer-events: none; max-width: min(420px, calc(100vw - 40px));
+}
+.toast {
+  pointer-events: auto; display: flex; align-items: flex-start; gap: 10px;
+  /* --surface-2, not --surface: on the dark theme the panels and table rows
+     underneath ARE --surface, so a card in that colour read flat, and a drop
+     shadow on a near-black page is invisible. The step up is what lifts it
+     off the page; on light the shadow does that work by itself. */
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 10px; padding: 12px 14px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .38);
+  font-size: 13.5px; line-height: 1.45; color: var(--ink);
+  animation: toastIn .18s ease-out;
+}
+.toast.out { animation: toastOut .18s ease-in forwards; }
+/* Both themes define these, so a dispatcher on light mode gets a colour
+   picked for light mode rather than one chosen against the dark surface. */
+.toast.ok  { border-left-color: var(--ok); }
+.toast.bad { border-left-color: var(--bad); }
+.toast .ico { flex: none; margin-top: 1px; color: var(--muted); }
+.toast.ok  .ico { color: var(--ok); }
+.toast.bad .ico { color: var(--bad); }
+.toast .body { flex: 1; min-width: 0; word-wrap: break-word; }
+.toast .x {
+  flex: none; background: none; border: 0; color: var(--muted);
+  cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px;
+}
+.toast .x:hover { color: var(--ink); }
+@keyframes toastIn  { from { opacity: 0; transform: translateY(8px); } }
+@keyframes toastOut { to   { opacity: 0; transform: translateY(8px); } }
+@media (max-width: 640px) {
+  .toasts { left: 12px; right: 12px; bottom: 12px; max-width: none; align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast.out { animation: none; }
+}
 
 /* ----------------------------------------------------------- topbar tools
    Two controls, each answering a question the page could not answer before.
@@ -921,7 +970,7 @@ td.title { color: var(--ink); font-weight: 550; }
   display: inline-block; padding: 7px 12px; border-radius: 8px;
   border: 1px dashed var(--line); color: var(--body); font-size: 12.5px;
 }
-.filepick:hover span { border-color: var(--brand); color: var(--text); }
+.filepick:hover span { border-color: var(--brand); color: var(--ink); }
 
 .callroom .answers { border-top: 1px solid var(--line); padding: 14px 16px;
   display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -1046,8 +1095,8 @@ td.title { color: var(--ink); font-weight: 550; }
 .desks .desk:hover { color: var(--ink); }
 .desks .desk.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 .desks .desk b { font-variant-numeric: tabular-nums; font-weight: 700; }
-.desks .desk.hot { border-color: var(--danger, #dc2626); }
-.desks .desk .u { color: var(--danger, #dc2626); font-size: 11px; font-weight: 600; }
+.desks .desk.hot { border-color: var(--bad); }
+.desks .desk .u { color: var(--bad); font-size: 11px; font-weight: 600; }
 .desks .desk.on .u { color: #fff; }
 .pill.urgent { background: rgba(220, 38, 38, .15); color: #ef4444; }
 .pill.desk { background: var(--surface-2); color: var(--muted); }
@@ -1088,6 +1137,18 @@ td.title { color: var(--ink); font-weight: 550; }
 </style>
 </head>
 <body>
+
+<!-- Confirmations used to be 12.5px muted text wedged into the topbar beside
+     the refresh button. "160 imported as drafts" and a failed save looked
+     identical, and on a laptop screen in daylight neither was readable. A
+     toast is its own surface with its own weight, which is what makes it land.
+
+     A direct child of the document body, deliberately. Sitting inside the shell looked
+     tidier and hid the one message that most needs showing: a request that
+     fails on an expired session hides the shell and reports "Signed out",
+     so the toast was being removed from the page at the same instant it was
+     written to it. -->
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
 <!-- ------------------------------------------------------------ sign in -->
 <div class="gate" id="gate">
@@ -1181,7 +1242,6 @@ td.title { color: var(--ink); font-weight: 550; }
     <div class="topbar">
       <h2 id="page-title">Dashboard</h2>
       <div class="spacer"></div>
-      <span id="status"></span>
       <div class="tools">
         <span class="stamp" id="stamp" aria-live="polite"></span>
         <button class="iconbtn" id="refresh" title="Reload this page's data"
@@ -1358,7 +1418,73 @@ var state = {
 /* ------------------------------------------------------------- plumbing */
 function $(id) { return document.getElementById(id); }
 function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
-function setStatus(t) { $("status").textContent = t || ""; }
+/* Confirmations, as a card rather than as text in the furniture.
+ *
+ * Same signature as the status line it replaces, so all fifty-three call
+ * sites keep working unchanged and none of them had to be touched to get a
+ * better confirmation. The optional second argument is what lets a failure
+ * look like a failure: twenty-one of those sites pass an error message, and
+ * until now a failed publish and a successful one produced identical grey
+ * text.
+ *
+ * Everything auto-dismisses. Nothing here is important enough to make
+ * somebody click it away, and a confirmation that demands dismissal is one
+ * people learn to dismiss without reading. Errors get the full ten seconds
+ * because they are the ones worth finishing; routine confirmations get six.
+ */
+var TOAST_MS = { bad: 10000, ok: 6000, info: 6000 };
+// Inline rather than through the nav's icon() helper: these are 16px glyphs
+// for a card, not 18px sidebar icons, and routing them through a function
+// built for another purpose is how the two drift apart.
+var TOAST_ICON = {
+  ok:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  bad: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+  info:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>'
+};
+var TOAST_MAX = 3;
+
+function setStatus(text, kind) {
+  var host = $("toasts");
+  if (!host) return;
+  // The old contract: an empty message cleared the line. go() calls this on
+  // every page change, and a stale confirmation following somebody to another
+  // screen is exactly what it was clearing.
+  if (!text) { host.innerHTML = ""; return; }
+
+  var cls = kind === "error" || kind === "bad" ? "bad"
+          : kind === "success" || kind === "ok" ? "ok" : "info";
+
+  var card = document.createElement("div");
+  card.className = "toast " + cls;
+  // Errors interrupt; confirmations wait their turn. A screen reader
+  // announcing "Saved" over what somebody is typing is the same rudeness as
+  // a modal.
+  card.setAttribute("role", cls === "bad" ? "alert" : "status");
+  card.innerHTML =
+    '<span class="ico">' + TOAST_ICON[cls] + "</span>" +
+    '<span class="body">' + esc(text) + "</span>" +
+    '<button type="button" class="x" aria-label="' + esc(A("close", "Close")) + '">&times;</button>';
+
+  host.appendChild(card);
+  // Oldest first, so a burst of saves does not push the newest off screen.
+  while (host.children.length > TOAST_MAX) host.removeChild(host.firstChild);
+
+  var timer = setTimeout(function () { dismissToast(card); }, TOAST_MS[cls] || 6000);
+  card.querySelector(".x").onclick = function () {
+    clearTimeout(timer);
+    dismissToast(card);
+  };
+}
+
+function dismissToast(card) {
+  if (!card.parentNode) return;
+  card.className += " out";
+  // Matches the animation; removed on a timer rather than animationend so a
+  // browser with animations disabled still cleans up.
+  setTimeout(function () {
+    if (card.parentNode) card.parentNode.removeChild(card);
+  }, 200);
+}
 
 function api(path, opts) {
   opts = opts || {};
@@ -2620,9 +2746,9 @@ function toggleHandoffDetail(id) {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ department: sel.value })
       }).then(function (r) {
-        setStatus("Moved to " + r.department_label);
+        setStatus("Moved to " + r.department_label, "ok");
         loadHandoffs();
-      }).catch(function (e) { setStatus(e.message); });
+      }).catch(function (e) { setStatus(e.message, "error"); });
     };
   }
 }
@@ -2688,7 +2814,7 @@ function importForm() {
       if (url) body.source_url = url;
     } else if (url) {
       body.url = url;
-    } else { setStatus("An address or some page source, please."); return; }
+    } else { setStatus("An address or some page source, please.", "error"); return; }
 
     $("imp-out").innerHTML = '<div class="meta" style="margin-top:12px">Reading…</div>';
     api("/ingest/preview", {
@@ -2737,18 +2863,18 @@ function importForm() {
         body.titles = Array.prototype.slice
           .call(document.querySelectorAll(".imp-pick:checked"))
           .map(function (c) { return c.value; });
-        if (!body.titles.length) { setStatus("Nothing ticked."); return; }
+        if (!body.titles.length) { setStatus("Nothing ticked.", "error"); return; }
         $("imp-commit").disabled = true;
         api("/ingest/commit", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body)
         }).then(function (out) {
-          setStatus(out.created + " added, " + out.updated + " updated");
+          setStatus(out.created + " added, " + out.updated + " updated", "ok");
           $("doc-form").innerHTML = "";
           loadDocs();
         }).catch(function (e) {
           $("imp-commit").disabled = false;
-          setStatus(e.message);
+          setStatus(e.message, "error");
         });
       };
     }).catch(function (e) {
@@ -2915,7 +3041,7 @@ function faqImportForm() {
     var body = {
       text: $("fi-text").value, language: $("fi-lang").value
     };
-    if (!body.text.trim()) { setStatus("Paste the page first."); return; }
+    if (!body.text.trim()) { setStatus("Paste the page first.", "error"); return; }
     $("fi-out").innerHTML = '<div class="meta" style="margin-top:12px">Reading…</div>';
     api("/faq/import/preview", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -2954,17 +3080,17 @@ function faqImportForm() {
         body.questions = Array.prototype.slice
           .call(document.querySelectorAll(".fi-pick:checked"))
           .map(function (c) { return c.value; });
-        if (!body.questions.length) { setStatus("Nothing ticked."); return; }
+        if (!body.questions.length) { setStatus("Nothing ticked.", "error"); return; }
         $("fi-commit").disabled = true;
         api("/faq/import", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body)
         }).then(function (out) {
-          setStatus(out.created + " imported as drafts — approve them to go live");
+          setStatus(out.created + " imported as drafts — approve them to go live", "ok");
           loadFaq();
         }).catch(function (e) {
           $("fi-commit").disabled = false;
-          setStatus(e.message);
+          setStatus(e.message, "error");
         });
       };
     }).catch(function (e) {
@@ -3004,15 +3130,15 @@ function faqForm(row, question, language, box) {
       question: $("fq-q").value.trim(), answer: $("fq-a").value.trim(),
       language: $("fq-l").value, status: status
     };
-    if (!body.question || !body.answer) { setStatus("A question and an answer, please."); return; }
+    if (!body.question || !body.answer) { setStatus("A question and an answer, please.", "error"); return; }
     api("/faq" + (row ? "/" + row.id : ""), {
       method: row ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     }).then(function () {
-      setStatus(status === "published" ? "Published" : "Saved");
+      setStatus(status === "published" ? "Published" : "Saved", "ok");
       loadFaq();
-    }).catch(function (e) { setStatus(e.message); });
+    }).catch(function (e) { setStatus(e.message, "error"); });
   }
   $("fq-save").onclick = function () { send("draft"); };
   $("fq-pub").onclick = function () { send("published"); };
@@ -3020,8 +3146,8 @@ function faqForm(row, question, language, box) {
     $("fq-del").onclick = function () {
       if (!confirm("Delete this answer? The question goes back to the assistant.")) return;
       api("/faq/" + row.id, { method: "DELETE" })
-        .then(function () { setStatus("Deleted"); loadFaq(); })
-        .catch(function (e) { setStatus(e.message); });
+        .then(function () { setStatus("Deleted", "ok"); loadFaq(); })
+        .catch(function (e) { setStatus(e.message, "error"); });
     };
   }
 }
@@ -3080,14 +3206,14 @@ function closeHandoff(id) {
   api("/handoffs/" + id + "/close", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ resolution: input && input.value ? input.value : null })
-  }).then(function () { setStatus("Escalation closed"); loadHandoffs(); refreshBadge(); })
-    .catch(function (e) { setStatus(e.message); });
+  }).then(function () { setStatus("Escalation closed", "ok"); loadHandoffs(); refreshBadge(); })
+    .catch(function (e) { setStatus(e.message, "error"); });
 }
 
 function reopenHandoff(id) {
   api("/handoffs/" + id + "/reopen", { method: "POST" })
     .then(function () { loadHandoffs(); refreshBadge(); })
-    .catch(function (e) { setStatus(e.message); });
+    .catch(function (e) { setStatus(e.message, "error"); });
 }
 
 function exportHandoffs() {
@@ -3281,15 +3407,15 @@ function saveDoc(id) {
   var opts = { method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
                body: JSON.stringify(body) };
   api("/documents" + (id ? "/" + id : ""), opts)
-    .then(function () { setStatus("Saved"); loadDocs(); })
-    .catch(function (e) { setStatus(e.message); });
+    .then(function () { setStatus("Saved", "ok"); loadDocs(); })
+    .catch(function (e) { setStatus(e.message, "error"); });
 }
 
 function deleteDoc(id) {
   if (!confirm("Delete this article? The assistant will stop using it.")) return;
   api("/documents/" + id, { method: "DELETE" })
-    .then(function () { setStatus("Deleted"); loadDocs(); })
-    .catch(function (e) { setStatus(e.message); });
+    .then(function () { setStatus("Deleted", "ok"); loadDocs(); })
+    .catch(function (e) { setStatus(e.message, "error"); });
 }
 
 function bulkForm() {
@@ -3310,11 +3436,11 @@ function bulkForm() {
   $("bulk-go").onclick = function () {
     var parsed;
     try { parsed = JSON.parse($("bulk-json").value); }
-    catch (err) { setStatus("That is not valid JSON: " + err.message); return; }
+    catch (err) { setStatus("That is not valid JSON: " + err.message, "error"); return; }
     api("/documents/bulk", { method: "POST", headers: { "Content-Type": "application/json" },
                              body: JSON.stringify({ documents: parsed }) })
-      .then(function (res) { setStatus("Imported " + res.created + " articles"); loadDocs(); })
-      .catch(function (e) { setStatus(e.message); });
+      .then(function (res) { setStatus("Imported " + res.created + " articles", "ok"); loadDocs(); })
+      .catch(function (e) { setStatus(e.message, "error"); });
   };
 }
 
@@ -3593,8 +3719,8 @@ function userForm() {
         email: $("u-email").value.trim(), display_name: $("u-name").value.trim() || null,
         role: $("u-role").value, password: $("u-pw").value
       })
-    }).then(function () { setStatus("Account created"); loadTeam(); })
-      .catch(function (e) { setStatus(e.message); });
+    }).then(function () { setStatus("Account created", "ok"); loadTeam(); })
+      .catch(function (e) { setStatus(e.message, "error"); });
   };
   $("u-email").focus();
 }
@@ -3604,9 +3730,9 @@ function setUserActive(id, active) {
   api("/users/" + id + "/active", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ is_active: active }) })
     .then(function (r) {
-      setStatus(active ? "Account restored" : "Account disabled, " + r.sessions_revoked + " session(s) ended");
+      setStatus(active ? "Account restored" : "Account disabled, " + r.sessions_revoked + " session(s) ended", "ok");
       loadTeam();
-    }).catch(function (e) { setStatus(e.message); });
+    }).catch(function (e) { setStatus(e.message, "error"); });
 }
 
 /* ------------------------------------------------------------ channels
@@ -3742,15 +3868,15 @@ function wireChannelForms(cfg) {
     // execCommand rather than the clipboard API: this panel is served over
     // plain http in local development, where navigator.clipboard does not
     // exist, and a copy button that silently does nothing is worse than none.
-    try { document.execCommand("copy"); setStatus("Embed code copied"); }
-    catch (e) { setStatus("Select the text and copy it manually."); }
+    try { document.execCommand("copy"); setStatus("Embed code copied", "ok"); }
+    catch (e) { setStatus("Select the text and copy it manually.", "error"); }
   };
   var save = $("tg-save");
   if (save) save.onclick = function () {
     api("/telegram/connect", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bot_token: $("tg-token").value.trim() }) })
-      .then(function () { setStatus("Telegram connected"); loadChannels(); })
-      .catch(function (e) { setStatus(e.message); });
+      .then(function () { setStatus("Telegram connected", "ok"); loadChannels(); })
+      .catch(function (e) { setStatus(e.message, "error"); });
   };
 }
 
@@ -3987,10 +4113,10 @@ function renderTellerQueue(rows) {
       })
         .then(function (s) {
           tellerSettings = s;
-          setStatus(s.enabled ? "Live sessions on" : "Live sessions off");
+          setStatus(s.enabled ? "Live sessions on" : "Live sessions off", "ok");
           renderTellerQueue(rows);
         })
-        .catch(function (e) { toggle.disabled = false; setStatus(e.message); });
+        .catch(function (e) { toggle.disabled = false; setStatus(e.message, "error"); });
     };
   }
   Array.prototype.forEach.call(document.querySelectorAll("[data-lang]"), function (b) {
@@ -4005,12 +4131,12 @@ function renderTellerQueue(rows) {
         body: JSON.stringify({ languages: mine })
       }).then(function (res) {
         tellerSettings.languages = res.languages;
-        setStatus("Languages updated");
+        setStatus("Languages updated", "ok");
         // Redraw from the server's answer, not the optimistic local copy —
         // it normalises order and drops duplicates, and a list that disagrees
         // with what routing uses is worse than no list.
         loadTellerQueue();
-      }).catch(function (e) { b.disabled = false; setStatus(e.message); });
+      }).catch(function (e) { b.disabled = false; setStatus(e.message, "error"); });
     };
   });
   Array.prototype.forEach.call(document.querySelectorAll("[data-claim]"), function (b) {
@@ -4021,8 +4147,8 @@ function renderTellerQueue(rows) {
         // Straight into the call. Claiming and then having to find a second
         // button would leave a customer who has already waited listening to
         // silence while the teller hunts for the way in.
-        .then(function (s) { setStatus("Session taken"); openCall(s); })
-        .catch(function (e) { b.disabled = false; setStatus(e.message); loadTellerQueue(); });
+        .then(function (s) { setStatus("Session taken", "ok"); openCall(s); })
+        .catch(function (e) { b.disabled = false; setStatus(e.message, "error"); loadTellerQueue(); });
     };
   });
 }
@@ -4342,7 +4468,7 @@ $("callComposer").onsubmit = function (e) {
     // Restore it rather than lose it — a teller retyping a reference number
     // because a send failed silently is the worst version of this.
     input.value = text;
-    setStatus(err.message);
+    setStatus(err.message, "error");
   });
 };
 
@@ -4409,13 +4535,13 @@ function renderVerify() {
       body: JSON.stringify({ checks: checks, fayda_number: fayda || null })
     }).then(function (s) {
       callSession = s;
-      setStatus("Identity confirmed");
+      setStatus("Identity confirmed", "ok");
       renderVerify();
     }).catch(function (e) {
       $("vGo").disabled = false;
       // The server's own words. It names which check is missing, and
       // paraphrasing it here would drift from the rule being enforced.
-      setStatus(e.message);
+      setStatus(e.message, "error");
     });
   };
 }
@@ -4522,8 +4648,8 @@ function hangUpCall() {
   api("/teller/sessions/" + id + "/end", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ resolution: note || null })
-  }).then(function () { setStatus("Session ended"); })
-    .catch(function (e) { setStatus(e.message); })
+  }).then(function () { setStatus("Session ended", "ok"); })
+    .catch(function (e) { setStatus(e.message, "error"); })
     .then(closeCall, closeCall);
 }
 
@@ -4601,10 +4727,10 @@ function renderSettings(cfg) {
     api("/handoff-webhook", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: $("hw-url").value.trim() || null }) })
       .then(function (r) {
-        setStatus(r.connected ? "Webhook connected" : "Webhook disconnected");
+        setStatus(r.connected ? "Webhook connected" : "Webhook disconnected", "ok");
         loadSettings();
       })
-      .catch(function (e) { setStatus(e.message); });
+      .catch(function (e) { setStatus(e.message, "error"); });
   };
   // Keep the swatch and the hex box showing the same value, whichever is used.
   $("br-color").oninput = function () { $("br-hex").value = $("br-color").value; };
@@ -4620,15 +4746,15 @@ function renderSettings(cfg) {
         logo_url: $("br-logo").value.trim() || null,
         short_name: $("br-short").value.trim() || null
       }) })
-      .then(function () { setStatus("Branding saved"); applyBrand(state.slug); loadSettings(); })
-      .catch(function (e) { setStatus(e.message); });
+      .then(function () { setStatus("Branding saved", "ok"); applyBrand(state.slug); loadSettings(); })
+      .catch(function (e) { setStatus(e.message, "error"); });
   };
   if ($("pw-save")) {
     $("pw-save").onclick = function () {
       api("/me/password", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ current_password: $("pw-old").value, new_password: $("pw-new").value }) })
-        .then(function () { setStatus("Password changed. Other sessions were signed out."); $("pw-old").value = ""; $("pw-new").value = ""; })
-        .catch(function (e) { setStatus(e.message); });
+        .then(function () { setStatus("Password changed. Other sessions were signed out.", "ok"); $("pw-old").value = ""; $("pw-new").value = ""; })
+        .catch(function (e) { setStatus(e.message, "error"); });
     };
   }
 }
