@@ -50,6 +50,17 @@ STRINGS_PATH = Path(__file__).with_name("strings.json")
 # in English at exactly the moment they needed a person.
 UI_STRINGS_PATH = Path(__file__).with_name("ui_strings.json")
 
+# The admin panel's own labels. A third table rather than more keys in the
+# widget's, because the audiences differ: a bank customer reads the widget and
+# bank staff read this, and a reviewer correcting "End session" for a teller
+# should not be scrolling past strings a customer sees.
+#
+# Covers the teller console and the shell around it — the Live queue, the call
+# room, navigation and the shared buttons. That is where staff actually spend
+# their day and what a bank watches in a demo. Dashboard, Settings and Team
+# are still English and tracked as the remaining batch.
+ADMIN_STRINGS_PATH = Path(__file__).with_name("admin_strings.json")
+
 
 def _load() -> dict[str, dict[str, str]]:
     with STRINGS_PATH.open(encoding="utf-8") as fh:
@@ -80,6 +91,33 @@ def ui_strings(language: str) -> dict[str, str]:
     table = dict(_UI_STRINGS["en"])
     table.update(_UI_STRINGS.get(language, {}))
     return table
+
+
+def _load_admin() -> dict[str, dict[str, str]]:
+    with ADMIN_STRINGS_PATH.open(encoding="utf-8") as fh:
+        data: dict[str, dict[str, str]] = json.load(fh)
+    return data
+
+
+_ADMIN_STRINGS: dict[str, dict[str, str]] = _load_admin()
+
+
+def admin_strings(language: str) -> dict[str, str]:
+    """Every admin label in one language, falling back to English key by key.
+
+    Key-by-key rather than table-by-table, so a language that covers most of
+    the console still shows the rest in English instead of dropping back
+    wholesale the moment one string is missing.
+    """
+    table = dict(_ADMIN_STRINGS["en"])
+    table.update(_ADMIN_STRINGS.get(language, {}))
+    return table
+
+
+def all_admin_strings() -> dict[str, dict[str, str]]:
+    """Every language at once, for the same reason the widget gets them all:
+    a teller switching language mid-shift should not wait on a request."""
+    return {lang: admin_strings(lang) for lang in SUPPORTED_LANGUAGES}
 
 
 def all_ui_strings() -> dict[str, dict[str, str]]:

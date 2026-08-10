@@ -203,6 +203,16 @@ textarea { min-height: 170px; resize: vertical; }
 /* On duty / off duty. Sits in the sidebar, on every page, because that is
    what it now means — presence follows the person around the console instead
    of living on one screen they have to keep open. */
+/* Matches the duty toggle above it — same surface, same radius — because the
+   two sit together and a select styled like a form field would read as
+   something that belongs to the page rather than to the person. */
+.langpick {
+  background: var(--side-2); border: 1px solid transparent; color: var(--side-text);
+  cursor: pointer; padding: 8px 10px; border-radius: 10px; width: 100%;
+  font-size: 13px; margin-bottom: 8px;
+}
+.langpick option { background: var(--side); color: var(--side-text); }
+
 .dutytoggle {
   background: var(--side-2); border: 1px solid transparent; color: var(--side-text);
   cursor: pointer; padding: 9px 11px; border-radius: 10px; width: 100%;
@@ -1143,6 +1153,16 @@ td.title { color: var(--ink); font-weight: 550; }
         <span class="lamp" id="duty-lamp"></span>
         <span class="label" id="duty-text">On duty</span>
       </button>
+      <!-- Sits beside the duty toggle because both belong to the person
+           rather than to the page: this is where a teller reaches for the
+           thing that follows them across every screen. -->
+      <select id="adminLang" class="langpick" title="Language">
+        <option value="en">English</option>
+        <option value="am">አማርኛ</option>
+        <option value="om">Afaan Oromoo</option>
+        <option value="ti">ትግርኛ</option>
+        <option value="so">Soomaali</option>
+      </select>
       <button class="railtoggle" id="rail-toggle" title="Collapse or expand the sidebar">
         <span id="rail-glyph">‹‹</span><span class="label">Collapse</span>
       </button>
@@ -1186,7 +1206,7 @@ td.title { color: var(--ink); font-weight: 550; }
       <div>
         <div class="av" id="callAv">·</div>
         <div class="lang" id="callLang"></div>
-        <div class="msg" id="callMsg">Connecting…</div>
+        <div class="msg" id="callMsg"></div>
       </div>
     </div>
     <div class="self" id="callSelf" style="display:none"></div>
@@ -1199,7 +1219,7 @@ td.title { color: var(--ink); font-weight: 550; }
     </button>
   </div>
   <div class="work">
-    <h4>Conversation</h4>
+    <h4 id="lblConversation">Conversation</h4>
     <div class="transcript" id="callTranscript"></div>
     <form class="composer2" id="callComposer">
       <input id="callSay" type="text" autocomplete="off" placeholder="Message the customer…">
@@ -1212,7 +1232,7 @@ td.title { color: var(--ink); font-weight: 550; }
          complaint. Published only — a draft is half-written wording and
          reading it aloud is the harm draft status exists to prevent. -->
     <div class="answers" id="callAnswers">
-      <h4>Approved answers</h4>
+      <h4 id="lblApproved">Approved answers</h4>
       <input id="ansQ" type="search" autocomplete="off"
              placeholder="Search the bank's approved answers…">
       <div class="ansList" id="ansList"></div>
@@ -1233,25 +1253,70 @@ td.title { color: var(--ink); font-weight: 550; }
    only decides what is OFFERED — hiding a button is a courtesy, never a
    control, and every route re-checks on the server. A tampered response can
    hide a link; it cannot grant anything. */
+/* Admin labels in the signed-in person's language.
+ *
+ * Sent with the identity the panel already fetches on boot, every language at
+ * once — a teller switching language mid-shift should not wait on a request.
+ * Falls back to English key by key, so a language covering most of the
+ * console still shows the rest in English rather than dropping back wholesale
+ * the moment one string is missing.
+ *
+ * Covers the teller console and the shell around it. Dashboard, Settings and
+ * Team are still English and tracked as the remaining batch — no new
+ * customer- or staff-facing literal should be added to either without its
+ * five languages. */
+var adminLang = localStorage.getItem("ba_lang") || "en";
+
+// Fetched once, without auth, because these are interface labels rather than
+// anything belonging to a tenant. Hanging them off the signed-in identity
+// meant the break-glass token path — which has no user — rendered raw key
+// names in the sidebar.
+var adminUI = null;
+
+function loadAdminStrings() {
+  return fetch("/admin/strings", { credentials: "same-origin" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (tables) { if (tables) adminUI = tables; })
+    .catch(function () { /* English defaults stay in the markup */ });
+}
+
+function A(key, fallback) {
+  var tables = adminUI || (state.me && state.me.ui) || {};
+  var table = tables[adminLang] || tables.en || {};
+  // The key name is the LAST resort, not the second. Returning it put
+  // "nav_dashboard" in the sidebar the first time this ran under token
+  // sign-in, where no identity — and so no table — had been fetched.
+  return table[key] || (tables.en || {})[key] || fallback || key;
+}
+
+function setAdminLanguage(code) {
+  adminLang = code || "en";
+  localStorage.setItem("ba_lang", adminLang);
+  document.documentElement.lang = adminLang;
+  renderNav();
+  paintAdminChrome();
+  if (state.page) go(state.page);
+}
+
 var PAGES = [
-  { id: "dashboard", label: "Dashboard",     perm: "analytics.read",     load: loadDashboard },
-  { id: "handoffs",  label: "Escalations",   perm: "handoffs.read",      load: loadHandoffs, badge: true },
+  { id: "dashboard", key: "nav_dashboard", label: "Dashboard",     perm: "analytics.read",     load: loadDashboard },
+  { id: "handoffs", key: "nav_escalations",  label: "Escalations",   perm: "handoffs.read",      load: loadHandoffs, badge: true },
   // Directly under Escalations, because it is the same work in a different
   // tense: the queue of people waiting NOW rather than the queue of people
   // to call back. A teller lives on this page all day.
-  { id: "teller",    label: "Live queue",    perm: "sessions.read",      load: loadTellerQueue },
-  { id: "convos",    label: "Conversations", perm: "conversations.read", load: loadConvos },
-  { id: "docs",      label: "Knowledge Base",perm: "documents.read",     load: loadDocs },
-  { id: "faq",       label: "Curated Answers", perm: "documents.read",   load: loadFaq },
-  { id: "gaps",      label: "Content Gaps",  perm: "gaps.read",          load: loadGaps },
-  { id: "audit",     label: "Audit log",     perm: "audit.read",         load: loadAudit },
-  { id: "team",      label: "Team",          perm: "users.manage",       load: loadTeam },
+  { id: "teller", key: "nav_live_queue",    label: "Live queue",    perm: "sessions.read",      load: loadTellerQueue },
+  { id: "convos", key: "nav_conversations",    label: "Conversations", perm: "conversations.read", load: loadConvos },
+  { id: "docs", key: "nav_knowledge_base",      label: "Knowledge Base",perm: "documents.read",     load: loadDocs },
+  { id: "faq", key: "nav_curated_answers",       label: "Curated Answers", perm: "documents.read",   load: loadFaq },
+  { id: "gaps", key: "nav_content_gaps",      label: "Content Gaps",  perm: "gaps.read",          load: loadGaps },
+  { id: "audit", key: "nav_audit_log",     label: "Audit log",     perm: "audit.read",         load: loadAudit },
+  { id: "team", key: "nav_team",      label: "Team",          perm: "users.manage",       load: loadTeam },
   // Channels is its own destination rather than a tab inside Settings. Where
   // customers can reach you is a standing part of the product, not a
   // preference — and burying it meant the answer to "can we do WhatsApp" was
   // three clicks deep behind a gear icon.
-  { id: "channels",  label: "Channels",      perm: "integrations.manage",load: loadChannels, kids: true },
-  { id: "settings",  label: "Settings",      perm: "integrations.manage",load: loadSettings }
+  { id: "channels", key: "nav_channels",  label: "Channels",      perm: "integrations.manage",load: loadChannels, kids: true },
+  { id: "settings", key: "nav_settings",  label: "Settings",      perm: "integrations.manage",load: loadSettings }
 ];
 
 var ICONS = {
@@ -1551,10 +1616,10 @@ function scheduleBeat() {
 function paintDuty() {
   var b = $("duty");
   b.setAttribute("aria-pressed", dutyOn ? "true" : "false");
-  $("duty-text").textContent = dutyOn ? "On duty" : "Off duty";
+  $("duty-text").textContent = dutyOn ? A("on_duty") : A("off_duty");
   b.title = dutyOn
-    ? "Customers can ask to speak to you. Click to stop taking calls."
-    : "Customers are not offered a live session with you. Click to start taking calls.";
+    ? A("customers_can_reach_teller")
+    : A("customers_reach_colleague");
 }
 
 function setDuty(on) {
@@ -1613,10 +1678,54 @@ function landingPage() {
   return allowed.length ? allowed[0].id : null;
 }
 
+// Wired once at load. The node lives in the page shell and outlives any
+// sign-in, so binding it per session would stack handlers.
+loadAdminStrings().then(function () {
+  renderNav();
+  paintAdminChrome();
+});
+
+(function wireAdminLanguage() {
+  var sel = document.getElementById("adminLang");
+  if (!sel) return;
+  sel.value = adminLang;
+  sel.addEventListener("change", function () { setAdminLanguage(sel.value); });
+})();
+
+// Everything in the shell that is not a page's own content. Re-run whenever
+// the language changes, so the chrome follows the picker rather than only
+// what loads next.
+function paintAdminChrome() {
+  var m = {
+    lblConversation: "conversation", lblApproved: "approved_answers"
+  };
+  Object.keys(m).forEach(function (id) {
+    var n = document.getElementById(id);
+    if (n) n.textContent = A(m[id]);
+  });
+  var t = {
+    cMic: "mute", cCam: "camera", cHang: "end_session", adminLang: "search"
+  };
+  Object.keys(t).forEach(function (id) {
+    var n = document.getElementById(id);
+    if (n && id !== "adminLang") n.title = A(t[id]);
+  });
+  var say = document.getElementById("callSay");
+  if (say) say.placeholder = A("message_customer");
+  var ans = document.getElementById("ansQ");
+  if (ans) ans.placeholder = A("search_approved_answers");
+  var freeze = document.getElementById("callFreeze");
+  if (freeze) {
+    var span = freeze.querySelector("span") || freeze;
+    if (span !== freeze) span.textContent = A("freeze_frame");
+  }
+  paintDuty();
+}
+
 function renderNav() {
   $("nav").innerHTML = PAGES.filter(function (p) { return can(p.perm); }).map(function (p) {
     var item = '<button class="navitem" id="nav-' + p.id + '" data-page="' + p.id + '">' +
-      icon(p.id) + '<span class="label">' + esc(p.label) + "</span>" +
+      icon(p.id) + '<span class="label">' + esc(A(p.key, p.label)) + "</span>" +
       (p.badge ? '<span class="badge hidden" id="badge-' + p.id + '"></span>' : "") +
       "</button>";
     // Only Channels nests today, and only once its catalogue has arrived —
