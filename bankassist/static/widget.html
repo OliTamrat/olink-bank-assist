@@ -549,6 +549,21 @@
     text-align: center; font-size: 11px; color: rgba(255,255,255,.5);
     padding: 0 16px 10px; background: #0a0c10;
   }
+  /* The banner that appears while the ID camera is on. It says two things a
+     customer holding their national ID at a phone deserves to be told without
+     having to ask: nothing is being recorded, and this turns itself off. */
+  .call .idhint {
+    display: none; background: #0a0c10; padding: 0 16px 12px; text-align: center;
+  }
+  .call .idhint.on { display: block; }
+  .call .idhint b { display: block; font-size: 13px; color: #fff; margin-bottom: 3px; }
+  .call .idhint span { font-size: 11px; color: rgba(255,255,255,.6); line-height: 1.45; }
+  .call .idhint i { font-style: normal; font-variant-numeric: tabular-nums; }
+  .call .idhint button {
+    margin-top: 9px; background: #fff; color: #0a0c10; border: 0;
+    border-radius: 999px; padding: 7px 20px; font: inherit; font-size: 12.5px;
+    font-weight: 600; cursor: pointer;
+  }
   /* Chat, during the call. Not a nicety: account numbers, reference codes and
      names are the things people cannot say clearly over a bad line, and they
      are exactly what a banking call is about. It also keeps the session
@@ -685,8 +700,19 @@
   <div class="controls">
     <button type="button" id="btnMic" title="Mute" aria-label="Mute"></button>
     <button type="button" id="btnCam" title="Camera" aria-label="Camera"></button>
+    <!-- Shown only when the camera is off, which on an audio-only call is
+         always. It is the whole reason this exists: the teller has to
+         establish who they are talking to, and on audio there was nothing to
+         look at. -->
+    <button type="button" id="btnId" title="Show my ID" aria-label="Show my ID"></button>
     <button type="button" id="btnChat" class="chatbtn" title="Messages" aria-label="Messages"><span class="badge" id="chatBadge">0</span></button>
     <button type="button" id="btnHang" class="hang" title="End call" aria-label="End call"></button>
+  </div>
+  <div class="idhint" id="idHint">
+    <b>Hold your Fayda ID up to the camera</b>
+    <span>The teller can see it while your camera is on. Nothing is recorded
+    or saved. Your camera turns itself off again in <i id="idLeft">60</i>s.</span>
+    <button type="button" id="idDone">Done</button>
   </div>
   <div class="note2">This teller cannot move money. Never share your PIN or password.</div>
 </div>
@@ -1361,7 +1387,10 @@
     cam:    '<path d="M23 7l-7 5 7 5z"/><rect x="1" y="5" width="15" height="14" rx="2"/>',
     camoff: '<path d="M16 16v2a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2m5 0h4a2 2 0 0 1 2 2v2l6-4v10"/><path d="M2 2l20 20"/>',
     hang:   '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/><path d="M23 1L1 23"/>',
-    chat:   '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-4.6A8.4 8.4 0 1 1 21 11.5z"/><path d="M8 10h8M8 14h5"/>'
+    chat:   '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-4.6A8.4 8.4 0 1 1 21 11.5z"/><path d="M8 10h8M8 14h5"/>',
+    // An ID card with a face on it. Reads as "show your document" rather than
+    // as a second camera button, which is what it would be mistaken for.
+    idcard: '<rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M5 16.2a3.6 3.6 0 0 1 7 0M14.5 10h4M14.5 14h4"/>'
   };
   function callIcon(name) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
@@ -1646,6 +1675,10 @@
     });
   });
 
+  // Declared before paintControls, which reads idTimer to decide whether the
+  // ID button is showing "start" or "stop".
+  var idTimer = null, idLeft = 0, camWasOn = false;
+
   function paintControls() {
     // `hasCam` comes from what the customer CHOSE, not from whether a room
     // exists yet. Reading it off `room` hid the camera button for the whole
@@ -1667,6 +1700,21 @@
     cam.innerHTML = callIcon(camOn ? "cam" : "camoff");
     cam.classList.toggle("off", !camOn);
 
+    // Offered whenever the camera is not already showing the teller a face —
+    // which on an audio call is always, and on a video call is whenever they
+    // have muted it.
+    //
+    // Keyed on `session`, NOT on `room`, for the reason written three lines
+    // above about the camera button: a room does not exist until the connect
+    // completes, so keying on it hides the control for the whole of the one
+    // stretch where the customer is staring at the screen wondering what to
+    // do. This was written the wrong way first and caught by driving it.
+    var idBtn = document.getElementById("btnId");
+    idBtn.style.display = (session && !camOn) || idTimer ? "grid" : "none";
+    idBtn.innerHTML = callIcon("idcard");
+    idBtn.classList.toggle("off", !!idTimer);
+    idBtn.title = idTimer ? "Stop showing your ID" : "Show my ID";
+
     document.getElementById("btnHang").innerHTML = callIcon("hang");
     var chatBtn = document.getElementById("btnChat");
     // Preserve the badge element — innerHTML would drop it.
@@ -1687,6 +1735,81 @@
       .setCameraEnabled(!room.localParticipant.isCameraEnabled)
       .then(paintControls);
   });
+  /* ------------------------------------------------------- showing an ID
+   *
+   * The teller has to establish who they are talking to before they may
+   * discuss anything belonging to this customer. On a video call the ID is
+   * simply held up to the camera. On an audio call there was nothing to hold
+   * it up to — and audio is the common case outside Addis, so the check that
+   * gated everything was unsatisfiable on most calls. Reported from the
+   * field: a real session connected, carried the conversation across, and
+   * arrived at a verification step with nothing the teller could honestly do.
+   *
+   * What this is NOT: an upload. No image is captured, posted or stored
+   * anywhere. The camera turns on for up to a minute, the picture travels the
+   * same live path the call already uses, and it turns itself off. The rule
+   * the product is sold on — the ID is SHOWN, never stored — is exactly the
+   * rule this keeps. A server-side upload would have made us the holder of a
+   * library of national identity documents in exchange for nothing, since the
+   * bank's own system is the system of record.
+   *
+   * It also needs no new permission: the customer's token already grants
+   * publish, and `canPublishData` stays off. A data channel would have been
+   * an unaudited side channel between a stranger and a bank employee's
+   * browser, which is a far larger thing to open than this feature is worth.
+   */
+  var ID_SECONDS = 60;
+
+  function paintIdHint() {
+    document.getElementById("idLeft").textContent = String(idLeft);
+  }
+
+  function stopIdShare() {
+    if (idTimer) { clearInterval(idTimer); idTimer = null; }
+    document.getElementById("idHint").classList.remove("on");
+    if (room && !camWasOn) {
+      room.localParticipant.setCameraEnabled(false).then(paintControls, paintControls);
+    } else {
+      paintControls();
+    }
+  }
+
+  function startIdShare() {
+    if (!room) {
+      // Pressed during the connect. Saying nothing would read as a dead
+      // button, which is what the customer will believe the whole product is.
+      document.getElementById("callStatus").textContent =
+        "One moment — you can show your ID as soon as the call connects.";
+      return;
+    }
+    camWasOn = room.localParticipant.isCameraEnabled;
+    room.localParticipant.setCameraEnabled(true).then(function () {
+      idLeft = ID_SECONDS;
+      paintIdHint();
+      document.getElementById("idHint").classList.add("on");
+      paintControls();
+      // Turns itself off. A camera a customer forgot to close is a camera
+      // pointed at their home for the rest of the call, and the one thing
+      // they were told is that this is temporary.
+      idTimer = setInterval(function () {
+        idLeft -= 1;
+        paintIdHint();
+        if (idLeft <= 0) stopIdShare();
+      }, 1000);
+    }).catch(function () {
+      // Denied permission, or no camera at all. Say so where they are looking
+      // rather than leaving a button that does nothing.
+      document.getElementById("callStatus").textContent =
+        "Your camera is not available — read the number on your ID to the teller instead.";
+    });
+  }
+
+  document.getElementById("btnId").addEventListener("click", function () {
+    if (idTimer) { stopIdShare(); return; }
+    startIdShare();
+  });
+  document.getElementById("idDone").addEventListener("click", stopIdShare);
+
   document.getElementById("btnHang").addEventListener("click", function () {
     endCall("You ended the call.");
   });

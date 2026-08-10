@@ -70,6 +70,16 @@ ID_DOCUMENT: Final = "id_document"
 ID_PHOTO_MATCHES: Final = "id_photo_matches"
 """The face on the ID is the face on the call."""
 
+FAYDA_MATCHED: Final = "fayda_matched"
+"""The customer gave their Fayda number and it matches the account record.
+
+The teller reads it back against their own core-banking screen. This is the
+check that makes identity verification possible on an audio-only call, and it
+is not a consolation prize for one: a number checked against the system of
+record is stronger evidence than a human's judgement of a laminated card held
+up to a phone camera on a bad connection.
+"""
+
 ACCOUNT_DETAIL: Final = "account_detail"
 """A question only the account holder could answer — recent activity, the
 branch it was opened at, details the bank holds and a stranger does not.
@@ -79,27 +89,44 @@ holds and with what has leaked, and a fixed list in our source would become a
 script for the very people it is meant to exclude.
 """
 
-CHECKS: Final[tuple[str, ...]] = (ID_DOCUMENT, ID_PHOTO_MATCHES, ACCOUNT_DETAIL)
+CHECKS: Final[tuple[str, ...]] = (
+    ID_DOCUMENT, ID_PHOTO_MATCHES, FAYDA_MATCHED, ACCOUNT_DETAIL,
+)
 
 CHECK_LABELS: Final[dict[str, str]] = {
     ID_DOCUMENT: "Fayda ID shown and matches the account name",
     ID_PHOTO_MATCHES: "Photo on the ID matches the person on the call",
+    FAYDA_MATCHED: "Fayda number matches the account record",
     ACCOUNT_DETAIL: "Answered a question only the account holder could",
 }
 
-# The bar for a teller-attested verification.
+# The bar for a teller-attested verification, in two legs.
 #
-# Both, not either. An ID held to a camera is a picture of a document, and a
-# picture can be of somebody else's document — the photo match is what ties it
-# to the person on the call. And the document alone proves who they are, not
-# that the account is theirs; the account question is what closes that gap.
+# **The account leg, always.** Establishing who somebody is does not establish
+# that the account is theirs, and the question only the holder could answer is
+# what closes that gap. Nothing substitutes for it.
 #
-# ID_PHOTO_MATCHES is not required: on an audio-only session — which outside
-# Addis is the common case, not the exception — there is no face to compare,
-# and requiring it would mean identity verification silently stopped working
-# for the customers with the worst connections. It is recorded when it happens
-# and it strengthens the record; it is not the load-bearing check.
-REQUIRED_CHECKS: Final[frozenset[str]] = frozenset({ID_DOCUMENT, ACCOUNT_DETAIL})
+# **The identity leg, either way.** The ID seen, or the Fayda number matched
+# against the account record. This is the fix to a hole that shipped: the
+# original rule required the ID to be SEEN, and the same file argued — rightly
+# — that audio-only is the common case outside Addis. So the required check
+# was unsatisfiable on the commonest kind of call, which leaves a teller two
+# options, neither acceptable: verify nobody, or tick a box for something they
+# never saw. A control that can only be honoured dishonestly is worse than no
+# control, because it produces records that look like diligence.
+#
+# Keyed on what was actually established, NOT on `session.media`. Media is
+# chosen when the call is requested and the customer can turn their camera on
+# afterwards — a rule computed from it would be judging the call that was
+# asked for rather than the one that happened.
+#
+# ID_PHOTO_MATCHES stays optional for its original reason: on audio there is
+# no face to compare. It strengthens a record; it is not load-bearing.
+REQUIRED_CHECKS: Final[frozenset[str]] = frozenset({ACCOUNT_DETAIL})
+
+IDENTITY_LEG: Final[frozenset[str]] = frozenset({ID_DOCUMENT, FAYDA_MATCHED})
+"""Any one of these satisfies the identity half. Both is better and neither
+is enough."""
 
 
 class AttestationRejected(ValueError):
@@ -179,11 +206,25 @@ def attest(
             "not enough was checked to call this verified — missing: "
             + ", ".join(CHECK_LABELS[c] for c in CHECKS if c in missing)
         )
+    if not checks & IDENTITY_LEG:
+        raise AttestationRejected(
+            "nothing establishes who this is — either see the Fayda ID, or "
+            "match the Fayda number against the account record"
+        )
+    reference = tail(fayda_number)
+    if FAYDA_MATCHED in checks and reference is None:
+        # "I matched the number" with no number is unfalsifiable, and on an
+        # audio call it would be the only thing standing between a stranger
+        # and a verified session. The tail is what a dispute reconciles
+        # against later; without it the claim leaves no trace at all.
+        raise AttestationRejected(
+            "to record that the Fayda number matched, enter the number"
+        )
     if not teller_user_id:
         raise AttestationRejected("an attestation must name the teller making it")
     return Attestation(
         method=TELLER_ATTESTED,
         checks=checks,
         teller_user_id=teller_user_id,
-        reference=tail(fayda_number),
+        reference=reference,
     )
