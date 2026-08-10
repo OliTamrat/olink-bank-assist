@@ -960,6 +960,26 @@ lender (smaller, faster procurement, hungrier).
   test. Playwright plus the preinstalled Chromium at
   `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` drives the real page in
   the sandbox — `playwright install` is not needed and will fail.
+  **Drive the path, do not just look at the page.** The browser check that
+  cleared the commit which broke chat covered the greeting and the language
+  picker and never sent a message. The toast work found three bugs the same
+  way — a host hidden with the shell, a colour token that does not exist, a
+  card the same colour as the panel under it — and none of them were visible
+  in the diff.
+- **`tests/test_static_pages.py` resolves scopes; keep it that way.** It
+  parses the inline script and asserts every function called is in scope where
+  it is called. The first version used one flat set of names, so a local
+  `var el = ...` inside an unrelated function made `el(...)` look defined
+  everywhere — which is exactly the bug it exists to catch, and it let one
+  through. It also asserts no stylesheet reaches for a `var(--x)` nothing
+  defines: CSS treats that as `unset`, so `var(--text)` on a page whose token
+  is `--ink` inherits, usually looks right, and hides for months.
+- **Confirmations are toasts, not text in the furniture.** `setStatus(text,
+  kind)` in `admin.html` — `"ok"`, `"error"`, or omitted for neutral. The host
+  is a direct child of `<body>`, deliberately: inside the shell it vanished at
+  the moment a session expired, which is the message that most needs showing.
+  Everything auto-dismisses (10s for a failure, 6s otherwise) and `setStatus("")`
+  still clears, which is the contract `go()` relies on.
 - **Schema changes need an Alembic migration** (never edit a committed one).
   Migrations live in `migrations/versions/` (`0001`–`0007`);
   `init_db()`/create_all is for tests and throwaway dev DBs only. CI asserts
