@@ -7,11 +7,14 @@ screen all day is the teller, and a teller in Bahir Dar reading "Off duty /
 Take / End session" in English is being asked to work in a second language for
 no reason.
 
-Scoped on purpose to the teller console and the shell around it: the Live
-queue, the call room, navigation and the shared buttons. Dashboard, Settings
-and Team are still English and tracked. That is a scope decision, not a rule
-exemption — and the test below fails if the strings that ARE covered drift out
-of any language.
+Originally scoped to the teller console and the shell around it. Dashboard,
+Settings and Team followed, so every page of the panel now reads in all five.
+
+What is deliberately NOT translated, so the gap is a decision on the record
+rather than an oversight: role names and role descriptions (they come from the
+database per tenant, and translating them is a server-side job), permission
+identifiers like `documents.write` (they are identifiers, not prose), channel
+names, and anything a customer actually typed.
 """
 
 from __future__ import annotations
@@ -66,7 +69,7 @@ def test_identity_carries_the_labels(client: TestClient, demo_bank: Any) -> None
 
 def test_the_nav_reads_from_the_table() -> None:
     html = ADMIN_HTML.read_text(encoding="utf-8")
-    assert "function A(key, fallback)" in html
+    assert "function A(key, fallback" in html
     assert "A(p.key, p.label)" in html
     # Every nav entry carries a key, or its label can never be translated.
     assert html.count('key: "nav_') >= 11
@@ -125,7 +128,7 @@ def test_a_missing_label_falls_back_to_english_not_the_key_name() -> None:
     is the last resort, not the second — a nav reading in key names is more
     broken than a nav reading in English."""
     html = ADMIN_HTML.read_text(encoding="utf-8")
-    assert "function A(key, fallback)" in html
+    assert "function A(key, fallback" in html
     assert "fallback || key" in html
 
 
@@ -137,3 +140,70 @@ def test_the_language_switch_calls_the_function_that_exists() -> None:
     block = html.split("function setAdminLanguage")[1].split("var PAGES")[0]
     assert "go(state.page)" in block
     assert "showPage(" not in block
+
+
+# ------------------------------------------------- the rest of the panel
+#
+# Dashboard, Settings and Team were the last English-only pages. The work
+# turned up two structural problems that a string table cannot express, and
+# both are pinned below: sentences assembled from fragments, and a heading
+# that never followed the language because only the nav had been wired.
+
+
+def test_the_dashboard_pages_are_translated_too() -> None:
+    """A spot check per page. Not exhaustive — the browser drive is what
+    proves coverage — but enough that deleting the wiring fails here."""
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    for key in (
+        "questions_asked", "resolved_without_person", "conversations_per_day",
+        "most_asked", "recent_activity", "live_preview",       # dashboard
+        "branding", "escalation_webhook", "change_password",    # settings
+        "add_person", "what_each_role_can_do", "temp_password_help",  # team
+    ):
+        assert f'A("{key}"' in html, f"{key} is in the table but nothing renders it"
+
+
+def test_no_sentence_is_assembled_from_fragments() -> None:
+    """The bug this class of change hides.
+
+    `"All " + n + " " + unit + " " + verb + " " + label` reads correctly only
+    in a language that happens to use the English order, and three of the five
+    here do not. Both one-line summaries take a whole template with {n} and
+    {label} in it, so a translator can put the verb where their language puts
+    it. The old `verb:` option is gone; if it comes back, so has the bug.
+    """
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    assert "verb:" not in html, "a sentence is being built from a verb fragment again"
+    for key in ("donut_all_in", "channel_all_from"):
+        template = json.loads(ADMIN_JSON.read_text(encoding="utf-8"))["en"][key]
+        assert "{n}" in template and "{label}" in template
+
+
+def test_placeholders_survive_every_translation() -> None:
+    """A dropped {n} does not fail loudly — it renders the literal text
+    "{n} escalations waiting" to a bank."""
+    import re
+
+    table = json.loads(ADMIN_JSON.read_text(encoding="utf-8"))
+    for key, english in table["en"].items():
+        want = set(re.findall(r"\{(\w+)\}", english))
+        for lang in SUPPORTED_LANGUAGES:
+            got = set(re.findall(r"\{(\w+)\}", table[lang][key]))
+            assert got == want, f"{key} [{lang}]: placeholders {got} != {want}"
+
+
+def test_the_page_heading_follows_the_language() -> None:
+    """Found by driving the panel, not by reading it. The sidebar entry was
+    translated and the heading beside it was not, so an Amharic panel read
+    "ዳሽቦርድ" in the rail and "Dashboard" in the topbar."""
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    assert "A(page.key, page.label)" in html
+    assert 'textContent = chan ? chan.name : page.label' not in html
+
+
+def test_a_placeholder_interpolates() -> None:
+    """A() grew a third argument for this; without it every sentence with a
+    number in it goes back to being three fragments."""
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    block = html.split("function A(key, fallback")[1].split("function setAdminLanguage")[0]
+    assert 'split("{" + name + "}")' in block

@@ -1224,8 +1224,8 @@ td.title { color: var(--ink); font-weight: 550; }
         <option value="ti">ትግርኛ</option>
         <option value="so">Soomaali</option>
       </select>
-      <button class="railtoggle" id="rail-toggle" title="Collapse or expand the sidebar">
-        <span id="rail-glyph">‹‹</span><span class="label">Collapse</span>
+      <button class="railtoggle" id="rail-toggle">
+        <span id="rail-glyph">‹‹</span><span class="label" id="rail-label">Collapse</span>
       </button>
       <div class="who">
         <div class="avatar" id="who-avatar">?</div>
@@ -1234,7 +1234,7 @@ td.title { color: var(--ink); font-weight: 550; }
           <div class="r" id="who-role">—</div>
         </div>
       </div>
-      <button class="navitem" id="signout"><span class="label">Sign out</span></button>
+      <button class="navitem" id="signout"><span class="label" id="signout-label">Sign out</span></button>
     </div>
   </aside>
 
@@ -1248,7 +1248,7 @@ td.title { color: var(--ink); font-weight: 550; }
                 aria-label="Reload this page's data"></button>
         <button class="qbtn hidden" id="queue-btn"
                 title="Open the escalation queue">
-          <span class="lbl">Queue</span><span class="cnt" id="queue-count">0</span>
+          <span class="lbl" id="queue-lbl">Queue</span><span class="cnt" id="queue-count">0</span>
         </button>
         <button class="iconbtn" id="theme-toggle" title="Switch between dark and light"
                 aria-label="Switch between dark and light">
@@ -1340,13 +1340,23 @@ function loadAdminStrings() {
     .catch(function () { /* English defaults stay in the markup */ });
 }
 
-function A(key, fallback) {
+function A(key, fallback, vars) {
   var tables = adminUI || (state.me && state.me.ui) || {};
   var table = tables[adminLang] || tables.en || {};
   // The key name is the LAST resort, not the second. Returning it put
   // "nav_dashboard" in the sidebar the first time this ran under token
   // sign-in, where no identity — and so no table — had been fetched.
-  return table[key] || (tables.en || {})[key] || fallback || key;
+  var text = table[key] || (tables.en || {})[key] || fallback || key;
+  // Placeholders, so a sentence with a number in it stays ONE string. Building
+  // "Last " + n + " days" from fragments only reads correctly in a language
+  // that puts them in that order — Amharic and Tigrinya do not, and the
+  // dashboard had a dozen of these. Mirrors T() in widget.html.
+  if (vars) {
+    Object.keys(vars).forEach(function (name) {
+      text = text.split("{" + name + "}").join(vars[name]);
+    });
+  }
+  return text;
 }
 
 function setAdminLanguage(code) {
@@ -1823,7 +1833,8 @@ loadAdminStrings().then(function () {
 // what loads next.
 function paintAdminChrome() {
   var m = {
-    lblConversation: "conversation", lblApproved: "approved_answers"
+    lblConversation: "conversation", lblApproved: "approved_answers",
+    "queue-lbl": "queue", "signout-label": "sign_out"
   };
   Object.keys(m).forEach(function (id) {
     var n = document.getElementById(id);
@@ -1836,6 +1847,15 @@ function paintAdminChrome() {
     var n = document.getElementById(id);
     if (n && id !== "adminLang") n.title = A(t[id]);
   });
+  // The rail toggle says what it will DO, so its label flips with the state
+  // as well as with the language.
+  var rail = document.getElementById("rail-label");
+  if (rail) {
+    rail.textContent = A(
+      document.documentElement.getAttribute("data-rail") === "mini" ? "expand" : "collapse");
+  }
+  var railBtn = document.getElementById("rail-toggle");
+  if (railBtn) railBtn.title = A("collapse_or_expand");
   var say = document.getElementById("callSay");
   if (say) say.placeholder = A("message_customer");
   var ans = document.getElementById("ansQ");
@@ -1861,7 +1881,7 @@ function renderNav() {
     return '<div class="navrow">' + item +
       '<button class="disclose" id="disclose-' + p.id + '" aria-expanded="' +
       (state.railOpen ? "true" : "false") + '" aria-controls="sub-' + p.id +
-      '" aria-label="Show or hide the channel list">' + icon("chevron", 14) + "</button></div>" +
+      '" aria-label="' + esc(A("show_hide_channels")) + '">' + icon("chevron", 14) + "</button></div>" +
       '<div class="subnav" id="sub-' + p.id + '"' + (state.railOpen ? "" : " hidden") + ">" +
       state.channels.map(function (c) {
         return '<button class="subitem' + (c.status === "live" ? "" : " idle") +
@@ -1927,8 +1947,12 @@ function go(id) {
   markNav();
   var chan = state.page === "channels" && state.channel
     ? channelByKey(state.channel) : null;
-  $("page-title").textContent = chan ? chan.name : page.label;
-  $("main").innerHTML = '<div class="empty">Loading…</div>';
+  // A(), not page.label — the sidebar entry was translated and the heading
+  // beside it was not, so an Amharic panel read "ዳሽቦርድ" in the rail and
+  // "Dashboard" in the topbar. A channel keeps its own name: that is the
+  // bank's word for it, not ours to translate.
+  $("page-title").textContent = chan ? chan.name : A(page.key, page.label);
+  $("main").innerHTML = '<div class="empty">' + esc(A("loading")) + "</div>";
   setStatus("");
   state.loadedAt = Date.now();
   renderStamp();
@@ -1949,9 +1973,9 @@ function renderStamp() {
   if (!el) return;
   if (!state.loadedAt) { el.textContent = ""; return; }
   var mins = Math.floor((Date.now() - state.loadedAt) / 60000);
-  el.textContent = mins < 1 ? "Up to date"
-    : (mins < 60 ? "Updated " + mins + "m ago"
-                 : "Updated " + Math.floor(mins / 60) + "h ago");
+  el.textContent = mins < 1 ? A("up_to_date")
+    : (mins < 60 ? A("updated_m_ago", null, { n: mins })
+                 : A("updated_h_ago", null, { n: Math.floor(mins / 60) }));
 }
 
 /* The queue count on the rail, so waiting work is visible from any page. */
@@ -2097,10 +2121,20 @@ function donut(rows, opts) {
       "</div>" + coverage();
   }
   if (live.length === 1) {
-    // The stat-tile case: one value, stated. Not a one-slice pie.
-    return '<div class="oneline">All <b>' + num(total) + "</b> " +
-      esc(opts.unit || "conversations") + " " + esc(opts.verb || "were in") +
-      " <b>" + esc(live[0].label) + "</b>.</div>" + coverage();
+    /* The stat-tile case: one value, stated. Not a one-slice pie.
+     *
+     * ONE template rather than "All " + n + unit + verb + label. A sentence
+     * built from fragments only reads correctly in a language that puts them
+     * in the English order, and three of the five here do not — Amharic,
+     * Tigrinya and Somali all place the verb differently. Escaping the
+     * template first is safe because esc() leaves braces alone, so the
+     * placeholders survive and the two values can be bolded wherever the
+     * translator chose to put them. */
+    var line = esc(opts.oneline || "All {n} {unit} were in {label}.")
+      .split("{n}").join("<b>" + num(total) + "</b>")
+      .split("{unit}").join(esc(opts.unit || "conversations"))
+      .split("{label}").join("<b>" + esc(live[0].label) + "</b>");
+    return '<div class="oneline">' + line + "</div>" + coverage();
   }
 
   var size = 132, r = 52, cx = size / 2, cy = size / 2, thick = 20;
@@ -2154,9 +2188,9 @@ function donut(rows, opts) {
 var CHANNEL_PILL = {
   // Live but quiet is not the same as never switched on, and "planned" is not
   // a promise — it is "the adapter is small, the account paperwork is not".
-  live: ["on", "Live"],
-  available: ["next", "Ready to connect"],
-  planned: ["", "Needs setup"]
+  live: ["on", "channel_live", "Live"],
+  available: ["next", "channel_ready", "Ready to connect"],
+  planned: ["", "channel_needs_setup", "Needs setup"]
 };
 function channelPanel(rows, opts) {
   opts = opts || {};
@@ -2165,12 +2199,16 @@ function channelPanel(rows, opts) {
 
   var head = "";
   if (!total) {
-    head = '<div class="empty">No conversations yet in this window.</div>';
+    head = '<div class="empty">' + esc(A("no_conversations_window")) + "</div>";
   } else if (live.length === 1) {
-    head = '<div class="oneline">All <b>' + num(total) +
-      "</b> conversations came from <b>" + esc(live[0].name) + "</b>.</div>";
+    // One template rather than four fragments — see donut() for why.
+    head = '<div class="oneline">' +
+      esc(A("channel_all_from", "All {n} conversations came from {label}."))
+        .split("{n}").join("<b>" + num(total) + "</b>")
+        .split("{label}").join("<b>" + esc(live[0].name) + "</b>") +
+      "</div>";
   } else {
-    head = '<div class="sharebar" role="img" aria-label="Share of conversations by channel">' +
+    head = '<div class="sharebar" role="img" aria-label="' + esc(A("share_by_channel")) + '">' +
       live.map(function (row) {
         return '<span style="flex:' + row.count + ";background:" +
           seriesColor(CHANNEL_SLOT[row.channel]) + '" title="' +
@@ -2179,7 +2217,7 @@ function channelPanel(rows, opts) {
   }
 
   return head + '<div class="chanlist">' + rows.map(function (row) {
-    var pill = CHANNEL_PILL[row.status] || ["", row.status];
+    var pill = CHANNEL_PILL[row.status] || ["", null, row.status];
     // A channel with traffic opens that traffic; one without opens the page
     // where it gets switched on. "Needs setup" as a label with nowhere to go
     // is the reader being told about a job and not shown where to do it.
@@ -2196,7 +2234,7 @@ function channelPanel(rows, opts) {
       (row.count
         ? '<span class="n">' + num(row.count) + "</span>"
         : '<span class="pill' + (pill[0] ? " " + pill[0] : "") + '">' +
-          esc(pill[1]) + "</span>") +
+          esc(A(pill[1], pill[2])) + "</span>") +
       "</" + tag + ">";
   }).join("") + "</div>";
 }
@@ -2257,29 +2295,34 @@ function loadDashboard() {
 
     // Brand in the heading so the page is recognisable across a table; the
     // registered name beneath it so the document is exact when read closely.
-    var h = '<div class="printonly stamp"><h1>' + esc(a.bank_name) + " — assistant report</h1>" +
+    var h = '<div class="printonly stamp"><h1>' +
+      esc(A("assistant_report", null, { bank: a.bank_name })) + "</h1>" +
       (a.bank_legal_name && a.bank_legal_name !== a.bank_name
         ? "<div>" + esc(a.bank_legal_name) + "</div>" : "") +
-      "<div>" + (a.window_days ? "Last " + a.window_days + " days" : "All time") +
-      " · generated " + new Date().toLocaleString() + "</div></div>";
+      "<div>" + esc(a.window_days
+        ? A("last_n_days", null, { n: a.window_days }) : A("all_time")) +
+      " · " + esc(A("generated_at", null, { when: new Date().toLocaleString() })) +
+      "</div></div>";
 
     h += '<div class="tools noprint">' +
-      '<div class="seg">' + [[7, "7 days"], [30, "30 days"], [90, "90 days"], [0, "All"]].map(function (d) {
-        return '<button class="' + (state.days === d[0] ? "on" : "") + '" data-days="' + d[0] + '">' + d[1] + "</button>";
+      '<div class="seg">' + [[7, "days_7"], [30, "days_30"], [90, "days_90"], [0, "days_all"]].map(function (d) {
+        return '<button class="' + (state.days === d[0] ? "on" : "") + '" data-days="' + d[0] + '">' +
+          esc(A(d[1])) + "</button>";
       }).join("") + "</div>" +
       '<div style="flex:1"></div>' +
-      '<button class="btn ghost sm" id="dl-csv">Export CSV</button>' +
-      '<button class="btn ghost sm" id="do-print">Print</button></div>';
+      '<button class="btn ghost sm" id="dl-csv">' + esc(A("export_csv")) + "</button>" +
+      '<button class="btn ghost sm" id="do-print">' + esc(A("print")) + "</button></div>";
 
     var openNow = a.handoffs.open;
     h += '<div class="hello noprint"><div>' +
       "<h2>" + esc(greeting()) + (state.me && state.me.display_name
         ? ", " + esc(state.me.display_name.split(/\s+/)[0]) : "") + "</h2>" +
-      "<p>" + (openNow
-        ? esc(openNow + " escalation" + (openNow === 1 ? "" : "s") + " waiting for someone.")
-        : "Nothing is waiting in the queue.") + "</p></div>" +
+      "<p>" + esc(openNow
+        ? A(openNow === 1 ? "escalation_waiting" : "escalations_waiting", null, { n: openNow })
+        : A("queue_empty")) + "</p></div>" +
       '<div class="right"><div class="big">' + num(a.conversations) + "</div>" +
-      '<div class="cap">' + (a.window_days ? "last " + a.window_days + " days" : "all time") +
+      '<div class="cap">' + esc(a.window_days
+        ? A("last_n_days_lower", null, { n: a.window_days }) : A("all_time_lower")) +
       "</div></div></div>";
 
     /* Four numbers a bank actually decides on. Not "leads" — every one of
@@ -2287,25 +2330,30 @@ function loadDashboard() {
        a rate with no denominator prints as an em dash rather than 0%. */
     var prev = a.previous;
     h += '<div class="kpis">' +
-      kpi("Conversations", num(a.conversations),
-          a.window_days ? "last " + a.window_days + " days" : "all time", false, "convos",
+      kpi(A("conversations"), num(a.conversations),
+          a.window_days ? A("last_n_days_lower", null, { n: a.window_days }) : A("all_time_lower"),
+          false, "convos",
           prev && delta(a.conversations, prev.conversations),
           can("conversations.read") && "convos") +
-      kpi("Questions asked", num(a.substantive_questions),
-          "greetings and thanks excluded", false, "gaps",
+      kpi(A("questions_asked"), num(a.substantive_questions),
+          A("greetings_excluded"), false, "gaps",
           prev && delta(a.substantive_questions, prev.substantive_questions),
           can("conversations.read") && "convos") +
       /* The rate itself has no page behind it, but the failures it is short of
          do: what did not get resolved went to the queue. */
-      kpi("Resolved without a person", pct(a.deflection_rate),
-          a.substantive_questions ? num(a.resolved_without_a_person) + " of " + num(a.substantive_questions) : "no questions yet",
+      kpi(A("resolved_without_person"), pct(a.deflection_rate),
+          a.substantive_questions
+            ? A("n_of_m", null, { n: num(a.resolved_without_a_person), m: num(a.substantive_questions) })
+            : A("no_questions_yet"),
           a.deflection_rate == null, "handoffs",
           prev && delta(a.deflection_rate, prev.deflection_rate, true),
           can("handoffs.read") && "handoffs") +
       /* Short of 100% means questions your published content did not cover,
          which is precisely what Content Gaps lists. */
-      kpi("Answered from your own content", pct(a.own_content_rate),
-          a.substantive_questions ? num(a.answered_from_own_content) + " of " + num(a.substantive_questions) : "no questions yet",
+      kpi(A("answered_own_content"), pct(a.own_content_rate),
+          a.substantive_questions
+            ? A("n_of_m", null, { n: num(a.answered_from_own_content), m: num(a.substantive_questions) })
+            : A("no_questions_yet"),
           a.own_content_rate == null, "docs",
           prev && delta(a.own_content_rate, prev.own_content_rate, true),
           can("gaps.read") && "gaps") +
@@ -2315,27 +2363,27 @@ function loadDashboard() {
        weight: queue + channels together come out within a few pixels of the
        chart, so nothing stretches into empty space. */
     h += '<div class="row row-main">' +
-      '<div class="panel"><h3>Conversations per day</h3>' + sparkArea(a.daily) + "</div>" +
+      '<div class="panel"><h3>' + esc(A("conversations_per_day")) + "</h3>" + sparkArea(a.daily) + "</div>" +
       '<div class="stack">' +
-      '<div class="panel"><h3>Escalation queue</h3>' +
+      '<div class="panel"><h3>' + esc(A("escalation_queue")) + "</h3>" +
       '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
         (can("handoffs.read") ? ' data-drill="handoffs:open" role="button" tabindex="0"' : "") +
-        '><span>Open</span><span class="track"><span class="fill warn" style="width:' +
+        '><span>' + esc(A("open_label")) + '</span><span class="track"><span class="fill warn" style="width:' +
         (a.handoffs.open + a.handoffs.closed ? (a.handoffs.open / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
         '%"></span></span><span class="n">' + a.handoffs.open + "</span></div>" +
       '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
         (can("handoffs.read") ? ' data-drill="handoffs:closed" role="button" tabindex="0"' : "") +
-        '><span>Closed</span><span class="track"><span class="fill" style="width:' +
+        '><span>' + esc(A("closed_label")) + '</span><span class="track"><span class="fill" style="width:' +
         (a.handoffs.open + a.handoffs.closed ? (a.handoffs.closed / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
         '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div>" +
       (a.handoffs.open
-        ? '<div class="note">' + num(a.handoffs.open_reachable) + " reachable" +
+        ? '<div class="note">' + esc(A("n_reachable", null, { n: num(a.handoffs.open_reachable) })) +
           (a.handoffs.open_unreachable
-            ? " · " + num(a.handoffs.open_unreachable) + " with no contact details"
+            ? " · " + esc(A("n_no_contact", null, { n: num(a.handoffs.open_unreachable) }))
             : "") + "</div>"
         : "") +
       "</div>" +
-      '<div class="panel"><h3>Channels</h3>' +
+      '<div class="panel"><h3>' + esc(A("nav_channels")) + "</h3>" +
       channelPanel(a.channels, {
         canRead: can("conversations.read"),
         canSetup: can("integrations.manage")
@@ -2345,7 +2393,7 @@ function loadDashboard() {
     /* Row 2 — the two mid-weight lists, which measured within 12px of each
        other, so this row needs almost no stretching at all. */
     h += '<div class="row row-half">' +
-      '<div class="panel"><h3>What happened to each question</h3>' +
+      '<div class="panel"><h3>' + esc(A("what_happened")) + "</h3>" +
       bars(qRows, a.substantive_questions, function (r) {
         var cls = r.outcome === "unanswered" ? "bad"
           : (["human_request", "complaint", "account_blocked"].indexOf(r.outcome) > -1 ? "warn" : "");
@@ -2354,14 +2402,17 @@ function loadDashboard() {
         // inventing one that filtered nothing would be a link that lies.
         var to = r.outcome === "unanswered" ? (can("gaps.read") && "gaps")
           : (r.outcome === "human_request" ? (can("handoffs.read") && "handoffs") : null);
-        return [OUTCOME_LABEL[r.outcome] || r.outcome, cls, to];
+        return [A("outcome_" + r.outcome, OUTCOME_LABEL[r.outcome] || r.outcome), cls, to];
       }) +
-      (otherRows.length ? '<div class="note">Also recorded: ' + otherRows.map(function (r) {
-        return esc((OUTCOME_LABEL[r.outcome] || r.outcome) + " (" + r.count + ")"); }).join(", ") + "</div>" : "") +
-      (a.unclassified_turns ? '<div class="note">' + num(a.unclassified_turns) +
-        " earlier replies carry no outcome and are not counted above.</div>" : "") +
+      (otherRows.length ? '<div class="note">' + esc(A("also_recorded", null, {
+        items: otherRows.map(function (r) {
+          return A("outcome_" + r.outcome, OUTCOME_LABEL[r.outcome] || r.outcome) +
+            " (" + r.count + ")"; }).join(", ")
+      })) + "</div>" : "") +
+      (a.unclassified_turns ? '<div class="note">' +
+        esc(A("unclassified_note", null, { n: num(a.unclassified_turns) })) + "</div>" : "") +
       "</div>" +
-      '<div class="panel"><h3>Most asked</h3>' + (a.top_topics.length
+      '<div class="panel"><h3>' + esc(A("most_asked")) + "</h3>" + (a.top_topics.length
         ? a.top_topics.map(function (t) {
             var d = can("gaps.read");
             return '<div class="topic' + (d ? " drill" : "") + '"' +
@@ -2369,13 +2420,13 @@ function loadDashboard() {
               '<span class="n">' + t.count + "</span><span>" +
               esc(t.example) + "</span></div>";
           }).join("")
-        : '<div class="empty">Nothing asked yet in this window.</div>') +
-      '<div class="note">Grouped by wording. Phone numbers and names are removed before grouping.</div></div>' +
+        : '<div class="empty">' + esc(A("nothing_asked_yet")) + "</div>") +
+      '<div class="note">' + esc(A("grouped_by_wording")) + "</div></div>" +
       "</div>";
 
     /* Row 3 — coverage beside who did what. */
     h += '<div class="row row-half">' +
-      '<div class="panel"><h3>Languages</h3>' +
+      '<div class="panel"><h3>' + esc(A("languages")) + "</h3>" +
       donut(a.languages.map(function (r) {
         return {
           label: r.name || r.language, count: r.count,
@@ -2384,23 +2435,24 @@ function loadDashboard() {
             ? "convos:language=" + r.language : null
         };
       }), {
-        unit: "conversations", verb: "were in",
-        label: "Conversations by language",
-        empty: "No conversations yet in this window."
+        unit: A("unit_conversations"),
+        // One sentence, not four fragments — see donut().
+        oneline: A("donut_all_in"),
+        label: A("conversations_by_language"),
+        empty: A("no_conversations_window")
       }) + "</div>" +
-      '<div class="panel noprint" id="activity"><h3>Recent activity</h3>' +
-      '<div class="empty">Loading…</div></div>' +
+      '<div class="panel noprint" id="activity"><h3>' + esc(A("recent_activity")) + "</h3>" +
+      '<div class="empty">' + esc(A("loading")) + "</div></div>" +
       "</div>";
 
     /* What a bank most wants to see in a demo: the assistant as its own
        customers meet it, on the same page as the numbers it produces. The
        widget is a real page, so this is the real thing rather than a mockup
        that can drift from it. */
-    h += '<div class="panel preview noprint"><h3>Live preview</h3>' +
-      '<iframe class="frame" title="Assistant preview" src="/widget?bank=' +
+    h += '<div class="panel preview noprint"><h3>' + esc(A("live_preview")) + "</h3>" +
+      '<iframe class="frame" title="' + esc(A("assistant_preview")) + '" src="/widget?bank=' +
       encodeURIComponent(state.slug) + '"></iframe>' +
-      '<div class="cap">Exactly what a customer sees on your website. ' +
-      "Messages sent here are real and appear in Conversations.</div></div>";
+      '<div class="cap">' + esc(A("preview_caption")) + "</div></div>";
 
     $("main").innerHTML = h;
     Array.prototype.forEach.call(document.querySelectorAll("[data-days]"), function (b) {
@@ -2431,7 +2483,7 @@ var REASON_LABEL = {
    raw internal key. */
 function greeting() {
   var h = new Date().getHours();
-  return h < 12 ? "Good morning" : (h < 17 ? "Good afternoon" : "Good evening");
+  return h < 12 ? A("good_morning") : (h < 17 ? A("good_afternoon") : A("good_evening"));
 }
 
 /* Hover readout on the trend line. The chart is drawn in viewBox units and
@@ -2455,8 +2507,8 @@ function wireChartTip(daily) {
     if (i > daily.length - 1) i = daily.length - 1;
     var d = daily[i];
     tip.innerHTML = '<div class="d">' + esc(new Date(d.date + "T00:00:00").toDateString()) +
-      "</div><strong>" + d.conversations + " conversation" +
-      (d.conversations === 1 ? "" : "s") + "</strong>";
+      "</div><strong>" + esc(A(d.conversations === 1 ? "one_conversation" : "n_conversations",
+        null, { n: d.conversations })) + "</strong>";
     tip.style.left = ((i / (daily.length - 1)) * box.width) + "px";
     tip.style.top = (box.height * 0.5) + "px";
     tip.classList.add("on");
@@ -2483,11 +2535,11 @@ var ACTION_LABEL = {
 
 function ago(iso) {
   var mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return mins + " min ago";
+  if (mins < 1) return A("just_now");
+  if (mins < 60) return A("n_min_ago", null, { n: mins });
   var hrs = Math.round(mins / 60);
-  if (hrs < 24) return hrs + " h ago";
-  return Math.round(hrs / 24) + " d ago";
+  if (hrs < 24) return A("n_h_ago", null, { n: hrs });
+  return A("n_d_ago", null, { n: Math.round(hrs / 24) });
 }
 
 /* Worth showing only because audit_log.actor became a person. Before that
@@ -2497,16 +2549,18 @@ function loadActivity() {
   var box = $("activity");
   if (!box) return;
   api("/activity?limit=30").then(function (rows) {
-    box.innerHTML = "<h3>Recent activity</h3>" + (rows.length
+    box.innerHTML = "<h3>" + esc(A("recent_activity")) + "</h3>" + (rows.length
       ? '<div class="feedscroll">' + rows.map(function (r) {
           return '<div class="feed"><div class="tile' + (r.by_token ? " token" : "") + '">' +
             icon(r.by_token ? "settings" : "team", 15) + "</div><div>" +
-            '<div class="what">' + esc(ACTION_LABEL[r.action] || r.action.replace(/_/g, " ")) + "</div>" +
+            '<div class="what">' + esc(A("action_" + r.action,
+              ACTION_LABEL[r.action] || r.action.replace(/_/g, " "))) + "</div>" +
             '<div class="who">' + esc(r.actor) + " · " + esc(ago(r.at)) + "</div></div></div>";
         }).join("") + "</div>"
-      : '<div class="empty">Nothing yet.</div>');
+      : '<div class="empty">' + esc(A("nothing_yet")) + "</div>");
   }).catch(function () {
-    box.innerHTML = "<h3>Recent activity</h3><div class=\"empty\">Unavailable.</div>";
+    box.innerHTML = "<h3>" + esc(A("recent_activity")) + '</h3><div class="empty">' +
+      esc(A("unavailable")) + "</div>";
   });
 }
 
@@ -2641,7 +2695,8 @@ function loadHandoffs() {
           '" data-row="' + esc(hd.id) + '">' +
         '<span class="dot2"></span>' +
         '<span class="tag">' + esc(hd.department_label || "—") + "</span>" +
-        '<span class="what">' + esc(hd.detail || REASON_LABEL[hd.reason] || hd.reason) + "</span>" +
+        '<span class="what">' + esc(hd.detail ||
+          A("reason_" + hd.reason, REASON_LABEL[hd.reason] || hd.reason)) + "</span>" +
         '<span class="who">' + esc(hd.contact_name || hd.contact_phone || "no contact") + "</span>" +
         (hd.status === "open"
           ? '<span class="age ' + w[1] + '">' + esc(w[0]) + "</span>"
@@ -2700,7 +2755,7 @@ function toggleHandoffDetail(id) {
   if (row) row.classList.add("open");
   box.style.display = "";
   box.innerHTML =
-    '<div class="meta">' + esc(REASON_LABEL[hd.reason] || hd.reason) + " · " +
+    '<div class="meta">' + esc(A("reason_" + hd.reason, REASON_LABEL[hd.reason] || hd.reason)) + " · " +
       new Date(hd.created_at).toLocaleString() + "</div>" +
     (hd.detail ? '<div style="margin:8px 0">' + esc(hd.detail) + "</div>" : "") +
     (hd.contact_name || hd.contact_phone
@@ -3555,7 +3610,7 @@ function loadAudit(page) {
       d.actions.map(function (a) {
         return '<option value="' + esc(a) + '"' +
           (state.auditAction === a ? " selected" : "") + ">" +
-          esc(ACTION_LABEL[a] || a.replace(/_/g, " ")) + "</option>";
+          esc(A("action_" + a, ACTION_LABEL[a] || a.replace(/_/g, " "))) + "</option>";
       }).join("") + "</select>" +
       (state.auditActor
         ? '<span class="pill">one person</span><button class="linky" id="a-clear">Show everyone</button>'
@@ -3584,7 +3639,8 @@ function loadAudit(page) {
                 (e.actor.email && e.actor.email !== e.actor.name
                   ? '<div class="meta">' + esc(e.actor.email) + "</div>" : "")) +
             "</td>" +
-            "<td>" + esc(ACTION_LABEL[e.action] || e.action.replace(/_/g, " ")) + "</td>" +
+            "<td>" + esc(A("action_" + e.action,
+              ACTION_LABEL[e.action] || e.action.replace(/_/g, " "))) + "</td>" +
             "<td class='meta'>" + esc(e.entity_type) + "</td>" +
             "<td class='meta'>" + esc(describeMeta(e.metadata)) + "</td></tr>";
         }).join("") + "</tbody></table>"
@@ -3657,35 +3713,38 @@ function exportAudit() {
 function loadTeam() {
   Promise.all([api("/users"), api("/roles")]).then(function (res) {
     var users = res[0], rolesList = res[1];
-    var h = '<div class="tools"><button class="btn sm" id="new-user">Add person</button>' +
-      '<div style="flex:1"></div><span class="meta">' + users.length + " account" +
-      (users.length === 1 ? "" : "s") + "</span></div><div id=\"user-form\"></div>";
+    var h = '<div class="tools"><button class="btn sm" id="new-user">' + esc(A("add_person")) + "</button>" +
+      '<div style="flex:1"></div><span class="meta">' +
+      esc(A(users.length === 1 ? "one_account" : "n_accounts", null, { n: users.length })) +
+      "</span></div><div id=\"user-form\"></div>";
 
     h += '<div class="panel"><table><thead><tr>' +
-      "<th>Person</th><th>Role</th><th>Status</th><th>Last signed in</th>" +
-      '<th style="text-align:right">Actions</th></tr></thead><tbody>' +
+      "<th>" + esc(A("person")) + "</th><th>" + esc(A("role")) + "</th><th>" +
+      esc(A("status")) + "</th><th>" + esc(A("last_signed_in")) + "</th>" +
+      '<th style="text-align:right">' + esc(A("actions")) + "</th></tr></thead><tbody>" +
       users.map(function (u) {
         return "<tr><td class='title'>" + esc(u.display_name || u.email) +
           (u.display_name ? '<div class="meta">' + esc(u.email) + "</div>" : "") +
-          (u.is_you ? '<div class="meta">that’s you</div>' : "") + "</td>" +
+          (u.is_you ? '<div class="meta">' + esc(A("thats_you")) + "</div>" : "") + "</td>" +
           '<td><span class="pill">' + esc(u.role) + "</span></td>" +
           '<td><span class="pill ' + (u.is_active ? "on" : "off") + '">' +
-            (u.is_active ? "Active" : "Disabled") + "</span></td>" +
-          '<td class="meta">' + (u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "never") + "</td>" +
+            esc(A(u.is_active ? "active" : "disabled")) + "</span></td>" +
+          '<td class="meta">' + (u.last_login_at
+            ? esc(new Date(u.last_login_at).toLocaleString()) : esc(A("never"))) + "</td>" +
           '<td><div class="rowacts">' + (u.is_you
             ? '<span class="meta">—</span>'
             : '<button class="btn ghost sm" data-active="' + esc(u.id) + '" data-to="' +
-              (u.is_active ? "0" : "1") + '">' + (u.is_active ? "Disable" : "Restore") + "</button>") +
+              (u.is_active ? "0" : "1") + '">' + esc(A(u.is_active ? "disable" : "restore")) + "</button>") +
           "</div></td></tr>";
       }).join("") + "</tbody></table></div>";
 
     /* The permission matrix, generated from the rows require() actually
        checks. A matrix kept in a document drifts from the system; this one
        cannot, because it is the system. */
-    h += '<div class="panel"><h3>What each role can do</h3>' +
+    h += '<div class="panel"><h3>' + esc(A("what_each_role_can_do")) + "</h3>" +
       rolesList.map(function (r) {
         return '<div style="margin-bottom:14px"><strong>' + esc(r.name) + "</strong>" +
-          (r.is_builtin ? ' <span class="pill">built-in</span>' : "") +
+          (r.is_builtin ? ' <span class="pill">' + esc(A("built_in")) + "</span>" : "") +
           (r.description ? '<div class="meta" style="margin:3px 0 7px">' + esc(r.description) + "</div>" : "") +
           "<div>" + r.permissions.map(function (p) {
             return '<span class="perm">' + esc(p) + "</span>"; }).join("") + "</div></div>";
@@ -3701,17 +3760,18 @@ function loadTeam() {
 }
 
 function userForm() {
-  $("user-form").innerHTML = '<div class="panel"><h3>Add a person</h3>' +
-    '<div class="grid2"><div class="field"><label>Email</label><input id="u-email" type="email"></div>' +
-    '<div class="field"><label>Name (optional)</label><input id="u-name"></div></div>' +
-    '<div class="grid2"><div class="field"><label>Role</label><select id="u-role">' +
+  $("user-form").innerHTML = '<div class="panel"><h3>' + esc(A("add_a_person")) + "</h3>" +
+    '<div class="grid2"><div class="field"><label>' + esc(A("email")) +
+      '</label><input id="u-email" type="email"></div>' +
+    '<div class="field"><label>' + esc(A("name_optional")) + '</label><input id="u-name"></div></div>' +
+    '<div class="grid2"><div class="field"><label>' + esc(A("role")) + '</label><select id="u-role">' +
     (state.roleNames || []).map(function (r) { return "<option>" + esc(r) + "</option>"; }).join("") +
     "</select></div>" +
-    '<div class="field"><label>Temporary password</label><input id="u-pw" type="text" autocomplete="off"></div></div>' +
-    '<div class="meta" style="margin-bottom:12px">At least 12 characters. Until invitation emails are set up, ' +
-    'this password has to be given to them directly — which is why it is shown here rather than hidden.</div>' +
-    '<div class="tools"><button class="btn" id="u-save">Create</button>' +
-    '<button class="btn ghost" id="u-cancel">Cancel</button></div></div>';
+    '<div class="field"><label>' + esc(A("temporary_password")) +
+      '</label><input id="u-pw" type="text" autocomplete="off"></div></div>' +
+    '<div class="meta" style="margin-bottom:12px">' + esc(A("temp_password_help")) + "</div>" +
+    '<div class="tools"><button class="btn" id="u-save">' + esc(A("create")) + "</button>" +
+    '<button class="btn ghost" id="u-cancel">' + esc(A("cancel")) + "</button></div></div>";
   $("u-cancel").onclick = function () { $("user-form").innerHTML = ""; };
   $("u-save").onclick = function () {
     api("/users", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -3719,18 +3779,19 @@ function userForm() {
         email: $("u-email").value.trim(), display_name: $("u-name").value.trim() || null,
         role: $("u-role").value, password: $("u-pw").value
       })
-    }).then(function () { setStatus("Account created", "ok"); loadTeam(); })
+    }).then(function () { setStatus(A("account_created"), "ok"); loadTeam(); })
       .catch(function (e) { setStatus(e.message, "error"); });
   };
   $("u-email").focus();
 }
 
 function setUserActive(id, active) {
-  if (!active && !confirm("Disable this account? They will be signed out immediately.")) return;
+  if (!active && !confirm(A("confirm_disable_account"))) return;
   api("/users/" + id + "/active", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ is_active: active }) })
     .then(function (r) {
-      setStatus(active ? "Account restored" : "Account disabled, " + r.sessions_revoked + " session(s) ended", "ok");
+      setStatus(active ? A("account_restored")
+        : A("account_disabled_n", null, { n: r.sessions_revoked }), "ok");
       loadTeam();
     }).catch(function (e) { setStatus(e.message, "error"); });
 }
@@ -3779,7 +3840,7 @@ function channelOverview(cfg, counts, a) {
     "the account each platform requires, which is why that is listed rather than " +
     "hidden.</div>" +
     '<div class="chanlist rich">' + state.channels.map(function (c) {
-      var st = CHANNEL_PILL[c.status] || ["", c.status];
+      var st = CHANNEL_PILL[c.status] || ["", null, c.status];
       var n = counts[c.key] || 0;
       // Both the count and the status, unlike the dashboard's tighter list.
       // They can disagree — a channel can carry historic traffic and not be
@@ -3791,7 +3852,7 @@ function channelOverview(cfg, counts, a) {
         '<span class="cname">' + esc(c.name) +
         '<div class="meta">' + esc(c.blurb) + "</div></span>" +
         (n ? '<span class="n">' + num(n) + "</span>" : '<span class="n"></span>') +
-        '<span class="pill' + (st[0] ? " " + st[0] : "") + '">' + esc(st[1]) + "</span>" +
+        '<span class="pill' + (st[0] ? " " + st[0] : "") + '">' + esc(A(st[1], st[2])) + "</span>" +
         "</button>";
     }).join("") + "</div>" +
     (a ? '<div class="note">Counts are conversations in the last ' + state.days +
@@ -3800,7 +3861,7 @@ function channelOverview(cfg, counts, a) {
 }
 
 function channelDetail(c, cfg, n, a) {
-  var st = CHANNEL_PILL[c.status] || ["", c.status];
+  var st = CHANNEL_PILL[c.status] || ["", null, c.status];
   var tg = cfg.telegram || {};
   // Hollow unless it is live. A filled dot reads as a status light, and three
   // of the identity hues in this palette are green-ish — WhatsApp's slot among
@@ -3810,7 +3871,7 @@ function channelDetail(c, cfg, n, a) {
     '" style="width:12px;height:12px;border-radius:50%;background:' +
     seriesColor(CHANNEL_SLOT[c.key]) + '"></span>' +
     '<h3 style="margin:0">' + esc(c.name) + "</h3>" +
-    '<span class="pill' + (st[0] ? " " + st[0] : "") + '">' + esc(st[1]) + "</span></div>" +
+    '<span class="pill' + (st[0] ? " " + st[0] : "") + '">' + esc(A(st[1], st[2])) + "</span></div>" +
     '<div class="meta">' + esc(c.blurb) + "</div>" +
     (a ? '<div class="oneline" style="margin-top:14px">' +
       (n ? "<b>" + num(n) + "</b> conversation" + (n === 1 ? "" : "s") +
@@ -4686,48 +4747,45 @@ function renderSettings(cfg) {
   // They are on the Channels page now — a setting is a preference, and where
   // your customers can reach you is not one.
   $("main").innerHTML =
-    '<div class="panel"><h3>Branding</h3>' +
-    '<div class="meta" style="margin-bottom:12px">Your colour and logo, used in this panel ' +
-    'and in the chat widget on your website. Saved values apply immediately — no deploy.</div>' +
-    '<div class="field"><label>Brand name</label>' +
+    '<div class="panel"><h3>' + esc(A("branding")) + "</h3>" +
+    '<div class="meta" style="margin-bottom:12px">' + esc(A("branding_help")) + "</div>" +
+    '<div class="field"><label>' + esc(A("brand_name")) + "</label>" +
     '<input id="br-short" value="' + esc(br.short_name || "") + '" placeholder="' +
       esc(br.legal_name || "") + '"></div>' +
-    '<div class="meta" style="margin-bottom:12px">What people call you — "CBE". Shown in ' +
-    "the chat header, this panel and greetings to customers. Leave blank to use your " +
-    "registered name, " + esc(br.legal_name || "") + ", which is kept either way for " +
-    "printed reports.</div>" +
-    '<div class="grid2"><div class="field"><label>Brand colour</label>' +
+    '<div class="meta" style="margin-bottom:12px">' +
+    esc(A("brand_name_help", null, { legal: br.legal_name || "" })) + "</div>" +
+    '<div class="grid2"><div class="field"><label>' + esc(A("brand_colour")) + "</label>" +
     '<div style="display:flex;gap:8px;align-items:center">' +
     '<input type="color" id="br-color" value="' + esc(br.primary_color || "#0f766e") +
       '" style="width:52px;padding:3px;flex:none">' +
     '<input id="br-hex" value="' + esc(br.primary_color || "") + '" placeholder="#722282"></div></div>' +
-    '<div class="field"><label>Logo URL (https)</label>' +
+    '<div class="field"><label>' + esc(A("logo_url")) + "</label>" +
     '<input id="br-logo" value="' + esc(br.logo_url || "") + '" placeholder="https://your-bank.et/logo.png"></div>' +
     "</div>" +
-    '<div class="meta" style="margin-bottom:12px">Seeded colours are our reading of your ' +
-    "public site, not your brand book. If it is wrong, this is where to fix it.</div>" +
-    '<button class="btn sm" id="br-save">Save branding</button></div>' +
-    '<div class="panel"><h3>Escalation webhook</h3>' +
+    '<div class="meta" style="margin-bottom:12px">' + esc(A("seeded_colours_help")) + "</div>" +
+    '<button class="btn sm" id="br-save">' + esc(A("save_branding")) + "</button></div>" +
+    '<div class="panel"><h3>' + esc(A("escalation_webhook")) + "</h3>" +
     '<div style="margin-bottom:10px"><span class="pill ' + (hw.connected ? "on" : "off") + '">' +
-      (hw.connected ? "Connected" : "Not connected") + "</span></div>" +
-    '<div class="meta" style="margin-bottom:12px">Where escalations are delivered in your contact-centre tool. ' +
-    'Requests are signed, so the receiving system can verify they came from us. Clear the field to disconnect.</div>' +
+      esc(A(hw.connected ? "connected" : "not_connected")) + "</span></div>" +
+    '<div class="meta" style="margin-bottom:12px">' + esc(A("webhook_help")) + "</div>" +
     '<div class="field"><input id="hw-url" placeholder="https://your-system.example/hooks/olink" value="' +
       esc(hw.url || "") + '"></div>' +
-    (hw.has_secret ? '<div class="meta" style="margin-bottom:10px">A signing secret is set. It cannot be shown ' +
-      "again — saving a URL here issues a new one and the old one stops working.</div>" : "") +
-    '<button class="btn sm" id="hw-save">Save</button></div>' +
-    (state.me ? '<div class="panel"><h3>Your password</h3>' +
-      '<div class="grid2"><div class="field"><label>Current</label><input id="pw-old" type="password"></div>' +
-      '<div class="field"><label>New (12+ characters)</label><input id="pw-new" type="password"></div></div>' +
-      '<div class="meta" style="margin-bottom:12px">Changing it signs out every other browser you are signed in on.</div>' +
-      '<button class="btn sm" id="pw-save">Change password</button></div>' : "");
+    (hw.has_secret ? '<div class="meta" style="margin-bottom:10px">' +
+      esc(A("signing_secret_set")) + "</div>" : "") +
+    '<button class="btn sm" id="hw-save">' + esc(A("save")) + "</button></div>" +
+    (state.me ? '<div class="panel"><h3>' + esc(A("your_password")) + "</h3>" +
+      '<div class="grid2"><div class="field"><label>' + esc(A("current_password")) +
+        '</label><input id="pw-old" type="password"></div>' +
+      '<div class="field"><label>' + esc(A("new_password_12")) +
+        '</label><input id="pw-new" type="password"></div></div>' +
+      '<div class="meta" style="margin-bottom:12px">' + esc(A("password_change_help")) + "</div>" +
+      '<button class="btn sm" id="pw-save">' + esc(A("change_password")) + "</button></div>" : "");
 
   $("hw-save").onclick = function () {
     api("/handoff-webhook", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: $("hw-url").value.trim() || null }) })
       .then(function (r) {
-        setStatus(r.connected ? "Webhook connected" : "Webhook disconnected", "ok");
+        setStatus(A(r.connected ? "webhook_connected" : "webhook_disconnected"), "ok");
         loadSettings();
       })
       .catch(function (e) { setStatus(e.message, "error"); });
@@ -4746,14 +4804,14 @@ function renderSettings(cfg) {
         logo_url: $("br-logo").value.trim() || null,
         short_name: $("br-short").value.trim() || null
       }) })
-      .then(function () { setStatus("Branding saved", "ok"); applyBrand(state.slug); loadSettings(); })
+      .then(function () { setStatus(A("branding_saved"), "ok"); applyBrand(state.slug); loadSettings(); })
       .catch(function (e) { setStatus(e.message, "error"); });
   };
   if ($("pw-save")) {
     $("pw-save").onclick = function () {
       api("/me/password", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ current_password: $("pw-old").value, new_password: $("pw-new").value }) })
-        .then(function () { setStatus("Password changed. Other sessions were signed out.", "ok"); $("pw-old").value = ""; $("pw-new").value = ""; })
+        .then(function () { setStatus(A("password_changed"), "ok"); $("pw-old").value = ""; $("pw-new").value = ""; })
         .catch(function (e) { setStatus(e.message, "error"); });
     };
   }
@@ -4777,6 +4835,8 @@ function applyRail(mode) {
   localStorage.setItem("ba_rail", mode);
   var g = $("rail-glyph");
   if (g) g.textContent = mode === "mini" ? "››" : "‹‹";
+  var lbl = $("rail-label");
+  if (lbl) lbl.textContent = A(mode === "mini" ? "expand" : "collapse");
 }
 
 /* ------------------------------------------------------------ boot */
