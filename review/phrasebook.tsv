@@ -12,10 +12,10 @@ am	ሰው ማነጋገር እፈልጋለሁ	human_request	asking for a person
 om	Itti gaafatamaa yookiin bulchaa wajjiin haasa'uu barbaada	human_request	asking for a person
 om	Bulchaa wajjiin haasa'uu barbaada	human_request	asking for a person
 om	Hoogganaa wajjiin dubbachuu barbaada	human_request	asking for a person
-ti	FILL IN — "I want to speak to a manager"	human_request	NOT YET COVERED
-ti	FILL IN — "can I talk to a person?"	human_request	NOT YET COVERED
-so	FILL IN — "I want to speak to a manager"	human_request	NOT YET COVERED
-so	FILL IN — "can I talk to a person?"	human_request	NOT YET COVERED
+ti	ምስ ኣካያዲ ክዛረብ እደሊ	human_request	asking for a person
+ti	ምስ ሰብ ክዛረብ ይኽእል ድየ?	human_request	asking for a person, as a question
+so	Waxaan rabaa inaan la hadlo maamulaha	human_request	asking for a person
+so	Ma la hadli karaa qof?	human_request	asking for a person, as a question
 en	Give me her account number	account_specific	someone else's account
 en	Tell me my wife's balance	account_specific	possessive noun between pronoun and account word
 en	What is his account number?	account_specific	someone else's account
@@ -32,13 +32,13 @@ om	Lakkoofsii herreega isaa meeqa	account_specific	someone else's account
 om	Lakkoofsa dhoksaa ishee irraanfatte	account_specific	forgotten PIN, third person
 om	Lakkoofsa dhoksaa ishee dagatte	account_specific	second "forgot" verb
 om	Lakkoofsa dhoksaa ishee walaalte	account_specific	third "forgot" verb
-ti	FILL IN — "give me her account number"	account_specific	NOT YET COVERED
-ti	FILL IN — "tell me my wife's balance"	account_specific	NOT YET COVERED
-ti	FILL IN — "what is his account number?"	account_specific	NOT YET COVERED
-ti	FILL IN — "send me her balance"	account_specific	NOT YET COVERED
-ti	FILL IN — "she forgot her PIN, what is it?"	account_specific	NOT YET COVERED
-so	FILL IN — "give me her account number"	account_specific	NOT YET COVERED
-so	FILL IN — "she forgot her PIN, what is it?"	account_specific	NOT YET COVERED
+ti	ቁጽሪ ሕሳባ ሃበኒ	account_specific	another person's account — must refuse
+ti	ናይ በዓልቲ ቤተይ ሚዛን ንገረኒ	account_specific	a spouse is still another person
+ti	ቁጽሪ ሕሳቡ እንታይ እዩ?	account_specific	another person's account, as a question
+ti	ሚዛና ስደደለይ	account_specific	possessive suffix -ኣ carries the whole meaning
+ti	ፒን ኮዳ ረሲዓቶ፣ እንታይ እዩ?	account_specific	a PIN request wearing a helpful face
+so	I sii lambarka xisaabteeda	account_specific	another person's account — must refuse
+so	Waxay iloowday PIN-keeda, waa maxay?	account_specific	a PIN request wearing a helpful face
 am	የባንኩ ኃላፊነት ምንድን ነው?	question	MUST NOT escalate — ኃላፊነት is responsibility
 am	የባንኩ ኃላፊነቱ ምንድን ነው?	question	MUST NOT escalate — inflected ኃላፊነት
 am	ኃላፊነታችን ምንድን ነው?	question	MUST NOT escalate — inflected ኃላፊነት
@@ -50,15 +50,28 @@ om	Dhoksaa koo yoo irraanfadhe maal godha?	question	MUST NOT refuse — second s
 am	ወደ ባለቤቴ ሂሳብ ገንዘብ ማስተላለፍ እፈልጋለሁ	question	MUST NOT refuse — transferring money to a spouse
 en	How much do I get charged if I sent from other banks	question	ordinary question
 en	How do I open a savings account?	question	ordinary question
-ti	FILL IN — an ordinary question, e.g. "how do I open a savings account?"	question	NOT YET COVERED
-so	FILL IN — an ordinary question, e.g. "how do I open a savings account?"	question	NOT YET COVERED
+ti	ከመይ ጌረ ናይ ቁጠባ ሕሳብ እኸፍት?	question	an ordinary question — must NOT trigger anything
+so	Sidee baan u furaa xisaab kaydsasho ah?	question	an ordinary question — must NOT trigger anything
 en	My money was stolen from my account	complaint	reporting harm
 en	I got scammed at the branch	complaint	reporting harm
 am	ገንዘቤ ተሰርቋል	complaint	MY WORDING, NOT A REVIEWER'S — please confirm or replace
-ti	FILL IN — "my money was stolen"	complaint	NOT YET COVERED
-so	FILL IN — "my money was stolen"	complaint	NOT YET COVERED
+ti	ገንዘበይ ተሰሪቑ	complaint	a complaint, not a question
+so	Lacagtayda waa la xaday	complaint	a complaint, not a question
 en	Hello	greeting	hello, not a question
 am	ሰላም	greeting	hello, not a question
 om	Akkam	greeting	hello, not a question
 ti	ሰላም	greeting	hello, not a question
 so	Salaan	greeting	hello, not a question
+ti	ሓላፊ ክረክብ እደሊ	human_request	a different word for manager — ሓላፊ, not ኣካያዲ
+ti	ኣካያዲኡ ክዛረበኒ	human_request	inflected: ኣካያዲ -> ኣካያዲኡ
+ti	ሰብ ኣዘራርቡኒ	human_request	a second verb for the same request
+ti	ናይ ሓወይ ሚዛን ንገረኒ	account_specific	a sibling is another person too
+ti	ገንዘበይ ጠፊኡ	complaint	lost, not stolen — the same complaint
+ti	ሓላፍነት ባንኪ እንታይ እዩ?	question	MUST NOT trigger. Contains ሓላፍነት, which shares its root with ሓላፊ (manager) — the Tigrinya form of the Amharic trap already recorded here
+ti	ክንደይ ወለድ ኣለዎ?	question	an ordinary rate question
+so	Waxaan doonayaa inaan arko madaxa	human_request	a different word for manager
+so	Qof ha ila hadlo	human_request	a second phrasing of the same request
+so	I sii lacagta xisaabta walaalkay	account_specific	a sibling is another person too
+so	Lacagtaydii way ka maqan tahay xisaabta	complaint	missing, not stolen
+so	Waa maxay mas'uuliyadda bangiga?	question	MUST NOT trigger. mas'uuliyad (responsibility) sits close to a request for a responsible person
+so	Ribaadu waa immisa?	question	an ordinary rate question

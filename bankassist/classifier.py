@@ -233,7 +233,17 @@ _OTHERS_ACCOUNT_NOUN = re.compile(
     # Lakkoofsii) and adding it as an account word would also catch phone
     # numbers, which are not account data.
     r"dhoksaa|"
-    r"xisaab|akoonto|lambarka akoonka",
+    r"xisaab|akoonto|lambarka akoonka|"
+    # Latin "pin", for the Somali and Oromo sentences that write it that way
+    # — "PIN-keeda". Safe here because this list only ever fires alongside a
+    # third-party possessive, so an ordinary "how do I change my pin" is
+    # untouched.
+    r"\bpin\b|"
+    # Tigrinya. It shares the Ge'ez script with Amharic and almost none of
+    # these characters: ሂሳብ is Amharic, ሕሳብ is Tigrinya, and the Amharic
+    # spellings above match neither the noun nor anything else a Tigrinya
+    # customer types. ሚዛን (balance) carries the request on its own.
+    r"ሕሳብ|ሕሳ[ባቡብ]|ሚዛን|ሚዛ[ናኑን]|ቁጽሪ ሕሳብ",
     re.IGNORECASE,
 )
 _OTHERS_POSSESSIVE = re.compile(
@@ -262,7 +272,16 @@ _OTHERS_POSSESSIVE = re.compile(
     # Afaan Oromo: her, his, my wife, my husband.
     r"ishee|is?saa|haadha manaa|abbaa manaa|"
     # Somali: her/his, my wife — first pass, still needs a native reviewer.
-    r"\bkeeda\b|\bkiisa\b|xaaskayga",
+    r"\bkeeda\b|\bkiisa\b|xaaskayga|"
+    # Somali attaches the possessive to the noun rather than standing it
+    # alone, so \bkeeda\b never fired on the way people actually write it:
+    # "xisaabteeda", "PIN-keeda", "lambarka xisaabteeda". Matching the suffix
+    # where it is bound is what catches those.
+    r"teeda\b|tiisa\b|-?keeda\b|-?kiisa\b|kayga\b|walaalkay|walaashay|"
+    # Tigrinya possessives. The suffix does the work here too — ሕሳባ is "her
+    # account", ሕሳቡ "his" — and the kin terms are third parties in exactly
+    # the way ባለቤቴ is in Amharic.
+    r"ሕሳባ|ሕሳቡ|ሚዛና|ሚዛኑ|ናታ|ናቱ|በዓልቲ ቤተይ|ሰበይተይ|ሰብኣየይ|ሓወይ|ሓፍተይ|ኮዳ|ኮዱ",
     re.IGNORECASE,
 )
 
@@ -279,7 +298,26 @@ _OTHERS_POSSESSIVE = re.compile(
 # natti ("to me"), and both with a bare "how much is it".
 _DISCLOSURE_INTENT = re.compile(
     r"ስጠኝ|ስጪኝ|ስጡኝ|ንገረኝ|ንገሪኝ|ንገሩኝ|ላክልኝ|ላኪልኝ|ላኩልኝ|አሳየኝ|ስንት ነው|ስንት ናቸው|"
-    r"\bnaaf\b|\bnatti\b|\bnaa\b|\bmeeqa\b|\bhimi\b|\bkenni?\b|\bagarsiisi\b",
+    r"\bnaaf\b|\bnatti\b|\bnaa\b|\bmeeqa\b|\bhimi\b|\bkenni?\b|\bagarsiisi\b|"
+    # Tigrinya imperatives with the -ኒ / -ለይ object suffix, the same marker
+    # Amharic writes as -ኝ / -ልኝ: give me, tell me, send me, show me.
+    # ክንደይ እዩ ("how much is it") is deliberately absent for the same reason
+    # "waa maxay" is: "ወለድ ክንደይ እዩ?" is an ordinary rate question.
+    r"ሃበኒ|ሃብለይ|ንገረኒ|ንገርኒ|ስደደለይ|ስደድለይ|ኣርእየኒ|"
+    # "what is it" — the form a disclosure request takes when it asks rather
+    # than demands. "ቁጽሪ ሕሳቡ እንታይ እዩ?" names the account and the owner and
+    # never uses a give-me verb.
+    r"እንታይ እዩ|እንታይ ኢዩ|እንታይ እዮም|"
+    # Somali: i sii (give me), ii sheeg (tell me), ii dir (send me).
+    #
+    # "waa maxay" is NOT here, though a disclosure request often ends on it.
+    # It is simply "what is", the commonest opening in the language, and
+    # adding it turned "Waa maxay xisaabta kaydsashada?" — what IS a savings
+    # account — into a security refusal. Caught by writing the over-refusal
+    # cases out and running them, not by reading the rule. The sentence that
+    # wanted it, "Waxay iloowday PIN-keeda, waa maxay?", is already carried by
+    # the forgot verb, which stands on its own.
+    r"\bi sii\b|\bii sheeg\b|\bii dir\b|\bii soo dir\b",
     re.IGNORECASE,
 )
 
@@ -291,7 +329,9 @@ _FORGOT = re.compile(r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|�
     # irraanfachuu, dagachuu and walaaluu. Each stem covers the -tte third
     # person and the -dhe first person, and the doubled r in irraanfa is
     # optional because both spellings appear.
-    r"\bir?raanfa|\bdaga[td]|\bwalaal")
+    r"\bir?raanfa|\bdaga[td]|\bwalaal|"
+    # Tigrinya ረሲዑ / ረሲዓ / ረሲዓቶ, and Somali iloow- / hilmaam-.
+    r"ረሲዑ|ረሲዓ|ረሲዖ|ረሲዕና|\bilo?ow|\bhilmaam")
 
 # "if". Amharic marks the conditional with a ብ- prefix, so matching only
 # completed past forms was enough there — ብረሳ never looks like ረሳሁ. Oromo uses
@@ -480,7 +520,17 @@ _COMPLAINT_RE = re.compile(
     # thing a customer can report and the Amharic word for it was absent, so
     # "ገንዘቤ ተሰርቋል" was handled as an ordinary question. My own wording, not a
     # reviewer's: see review/phrasebook.tsv, which marks it as unverified.
-    r"ቅሬታ|ተጭበርብሬ|ጠፋብኝ|ማጭበርበር|ተሰረቀ|ተሰርቋ|ሰረቁኝ|ተዘርፍ",
+    r"ቅሬታ|ተጭበርብሬ|ጠፋብኝ|ማጭበርበር|ተሰረቀ|ተሰርቋ|ሰረቁኝ|ተዘርፍ|"
+    # Tigrinya. Theft is the most urgent thing a customer reports and not one
+    # of these existed: "ገንዘበይ ተሰሪቑ" was handled as an ordinary question, the
+    # same failure the Amharic line above was written to fix.
+    r"ተሰሪቑ|ተሰሪቓ|ተሰሪቖም|ሰሪቖምኒ|ተዘሪፉ|ተዘሪፋ|ጥርዓን|ጠፊኡ|ጠፊኣ|ጠፊኡኒ|"
+    # Somali. xatooyo is theft, cabasho a complaint, and the la xaday /
+    # xaday forms are how it is actually written.
+    r"\bxaday\b|\bxadeen\b|xatooyo|cabasho|\blumay\b|khiyaano|"
+    # "missing", but only near money. maqan on its own is simply "absent" and
+    # would turn "the branch manager is away" into a fraud report.
+    r"lacag[^.?!]{0,30}\bmaqan\b|\bmaqan\b[^.?!]{0,30}lacag",
     re.IGNORECASE,
 )
 
@@ -571,7 +621,31 @@ _HUMAN_REQUEST_RE = re.compile(
     r"nama waliin|nama dubbisuu|itti gaafatamaa|hoji gaggeessaa|"
     r"\bbulchaa\b|\bhoogganaa\b|\bhogganaa\b|"
     r"qaama namaa|bakka bu'aa|"
-    r"qof la hadal|maamule|maareeye",
+    r"qof la hadal|maamule|maareeye|"
+    # Somali, properly. The first pass had "maamule" and "qof la hadal" as
+    # fixed strings, and neither survives contact with how people write:
+    # "maamulaha" (the manager) and "la hadlo qof" both missed.
+    #
+    # maamul- is fenced to its definite/person forms on purpose. Bare maamul
+    # is also "administration", so "sidee baan u maamulaa xisaabtayda" (how do
+    # I manage my account) would become a demand for a manager — the Somali
+    # form of the ኃላፊ/ኃላፊነት trap already documented above.
+    r"\bmaamulaha\b|\bmaamuleha\b|\bagaasimaha\b|\bmadaxa\b|\bmadaxda\b|"
+    # A person, near a verb of speaking. qof on its own is far too broad —
+    # it is simply "person" — so it only counts inside a speaking
+    # construction, in either order.
+    r"qof[^.?!]{0,24}\bhadl|hadl[^.?!]{0,24}\bqof\b|"
+    # Tigrinya. Shares the script with Amharic and not the spellings: the
+    # Amharic አመራር above is አ-initial, the Tigrinya is ኣ-initial, so none of
+    # the manager words matched a single Tigrinya sentence.
+    #
+    # ሓላፊ needs no exclusion, unlike its Amharic cousin. Tigrinya writes
+    # "responsibility" as ሓላፍነት — ሓ+ላ+ፍ, where the third character is ፍ and
+    # not the ፊ of ሓላፊ — so the two do not contain one another. Verified
+    # against "ሓላፍነት ባንኪ እንታይ እዩ?" in the phrasebook, which must stay an
+    # ordinary question.
+    r"ኣካያዲ|ኣመራር|ኣመራሪ|መራሒ|ሓላፊ|ተቖጻጻሪ|ኣማሓዳሪ|"
+    r"ሰብ\s*(ክዛረብ|ክረክብ|ኣዘራርቡኒ|ምዝራብ)|ምስ ሰብ|ሰብ ኣዘራርቡኒ",
     re.IGNORECASE,
 )
 
