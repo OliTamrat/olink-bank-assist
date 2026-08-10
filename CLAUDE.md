@@ -274,6 +274,63 @@ What makes this safe rather than a hallucination licence:
   correct, and an earlier per-case version of this check fired on those.
   `tests/test_eval_boundary.py`.
 
+## Multilingual completeness (GOLDEN RULE — applies to every Olink product)
+
+**Founder rule, 2026-08-10, and it governs every product with multilingual
+features, not only this one: whatever ships in English ships in all five
+languages.** English is not the product with translations bolted on afterwards
+— English is one of five, and a feature is not finished until its words exist
+in the other four.
+
+Concretely, and with no exceptions to argue about later:
+
+1. **Every new feature ships its strings in all five languages in the same
+   change.** If a pull request adds a button, a label, an empty state, a
+   confirmation or an error, it adds `en`, `am`, `om`, `ti` and `so` — not
+   `en` plus a promise. A change that adds an English-only string is
+   incomplete in the same way a change with a failing test is incomplete.
+2. **Machine translation is how the draft gets written; a native speaker is
+   how it ships.** Drafting all five immediately is right, and waiting for a
+   human to author from a blank sheet is how a language never ships at all.
+   Drafts go out for review through the existing TSV workflow.
+3. **Every change that touches strings produces the linguist review sheet.**
+   `scripts/i18n_export.py` for what the assistant says,
+   `scripts/faq_export.py` for the bank's curated answers. Hand the reviewer a
+   sheet with the new rows in it, not a request to go looking.
+4. **This includes interface chrome, not just the assistant's replies.** A
+   customer who gets a perfect Amharic answer inside an English interface has
+   still been told, plainly, which language the product was built for.
+
+The reason this is a rule rather than a preference: **the native-language gap
+is the moat.** Tens of millions of new digital banking users think in Amharic
+and Afaan Oromo while every competitor's support is English-first. A product
+that is bilingual in its replies and English in its buttons has given that
+advantage away for the sake of whatever shortcut was taken that afternoon.
+
+### Where this is currently broken — audited 2026-08-10
+
+`bankassist/strings.json` is complete: 20 assistant strings × 5 languages,
+no gaps. **The widget's own interface is not.** It has no i18n plumbing at
+all — every label is a hard-coded English literal in `static/widget.html`,
+including the entire live-teller flow:
+
+> Speak to a {bank} teller · Available now — audio or video · Connect ·
+> Straight away · Once they have checked your ID · Not on this call, ever ·
+> Audio · Video · Not now · Join the queue · Waiting for a teller · Leave the
+> queue · Hold your Fayda ID up to the camera · Connecting… · Reconnecting… ·
+> Messages · Official {bank} information · Searching official information…
+
+That is the worst place in the product for it. An Amharic speaker holds an
+entire conversation in Amharic, reaches the moment they need a human, and the
+interface switches to English exactly when they are least able to absorb it.
+The admin panel is also English-only, which matters less — bank staff are a
+different audience from customers — but it is the same debt.
+
+**Closing this means giving the widget a string table served per language, the
+same way the assistant already works.** It is a real piece of work, not a
+find-and-replace, and it is the next thing to build. Do not add another
+customer-facing English literal to `widget.html` in the meantime.
+
 ## Safety doctrine (NEVER regress)
 
 1. **Tool output is truth.** Answers come from the bank's knowledge base.
@@ -862,6 +919,10 @@ lender (smaller, faster procurement, hungrier).
 1. Plan before code for non-trivial changes; surface tradeoffs explicitly.
 2. Tests before merge — guardrail behavior and tenancy isolation must stay
    covered; new intents need classifier tests.
+2b. **All five languages before merge.** Any change adding a customer-facing
+   string adds `en`, `am`, `om`, `ti`, `so` in the same change, and regenerates
+   the linguist review sheet. See "Multilingual completeness" above — this is
+   a completion criterion, not a follow-up ticket.
 3. Never commit `.env` or real bank content; the `demo` tenant stays fictional.
 4. Conventional Commits; `main` deployable; work in feature branches.
 5. Demo figures are always labeled "illustrative" — never presented as a real
