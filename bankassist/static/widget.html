@@ -739,6 +739,19 @@
   var UI = {};
   var uiLang = "en";
 
+  // Escape text going into innerHTML. The widget had no such helper because
+  // until the interface strings landed it built markup only from its own
+  // literals — the translated labels interpolate the bank's display name,
+  // which is tenant-controlled, so it needs one now.
+  //
+  // Uses the DOM's own escaping rather than a regex, which is the same thing
+  // admin.html does and is impossible to get subtly wrong.
+  function esc(s) {
+    var d = document.createElement("div");
+    d.textContent = s == null ? "" : s;
+    return d.innerHTML;
+  }
+
   // A label in the current language. Falls back through English to the key
   // itself, because a button reading "end_call" is at least debuggable while
   // an empty button is just broken.
