@@ -146,6 +146,24 @@ _SENTENCE_END: Final[re.Pattern[str]] = re.compile(r"[.!?።፧:]\s*$")
 _FURNITURE_REPEATS = 5
 
 
+# Icon-font glyphs from the private use area. An accordion's expand arrow is
+# drawn from a font like this, so it survives a print-to-PDF as a character
+# that means nothing and belongs in no answer.
+_ICON_GLYPH: Final[re.Pattern[str]] = re.compile(r"[\ue000-\uf8ff]")
+
+# A question mark with NO space after it. On a printed web page that is the
+# seam where two separate elements were flattened into one line — the question
+# and the answer that followed it in the markup. A question mark FOLLOWED by a
+# space is ordinary prose and is left alone, which is what keeps two collapsed
+# questions on one line from being split into a question and a fake answer.
+_GLUED: Final[re.Pattern[str]] = re.compile(r"\?(?=\S)")
+
+
+def unglue(text: str) -> str:
+    """Put back the line breaks a print-to-PDF flattened away."""
+    return _GLUED.sub("?\n", _ICON_GLYPH.sub("", text))
+
+
 def strip_page_furniture(text: str) -> str:
     """Drop the header, footer and page markers a printed page carries.
 
@@ -223,7 +241,7 @@ def pairs(text: str) -> list[QAPair]:
     question: str | None = None
     answer: list[str] = []
 
-    for raw in strip_page_furniture(text).splitlines():
+    for raw in unglue(strip_page_furniture(text)).splitlines():
         line = raw.strip()
         if not line:
             if answer:

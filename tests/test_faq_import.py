@@ -316,3 +316,33 @@ def test_a_repeated_label_is_furniture_but_a_repeated_sentence_is_not() -> None:
     assert len(found) == 6
     assert all("Global Banking" not in p.answer for p in found)
     assert all("Yes, it applies." in p.answer for p in found)
+
+
+def test_a_question_glued_to_its_answer_is_split() -> None:
+    """Printing a web page flattens separate elements onto one line, so the
+    answer arrives welded to the question mark with no space. On the real
+    Dashen FAQ this alone was the difference between 22 pairs and 160."""
+    found = faq.pairs(
+        "Will this change affect domestic transfers?No. This applies only to "
+        "international payments."
+    )
+    assert len(found) == 1
+    assert found[0].question == "Will this change affect domestic transfers?"
+    assert found[0].answer.startswith("No. This applies")
+
+
+def test_two_questions_on_one_line_are_not_split_into_a_fake_answer() -> None:
+    """The discriminator is the space. A question mark followed by a space is
+    ordinary prose; splitting there would turn the next collapsed question into
+    an answer to the previous one — inventing content, which is the failure
+    this whole module is built to avoid."""
+    found = faq.pairs("What is Murabaha Plus? What are its features?\nA product.")
+    assert len(found) == 1
+    assert found[0].answer == "A product."
+
+
+def test_icon_font_glyphs_never_reach_an_answer() -> None:
+    """An accordion's expand arrow is drawn from an icon font, so it survives
+    a print-to-PDF as a private-use character that means nothing."""
+    found = faq.pairs("What is Amole?\nA digital wallet.")
+    assert found == [("What is Amole?", "A digital wallet.")]
