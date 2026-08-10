@@ -279,7 +279,7 @@ olink-bank-assist/
     roles.py          Per-bank role rows and permission lookup
     llm.py            Gemini REST (httpx, no SDK) with a strict context-only prompt
     telegram.py       Bot API send/setWebhook
-    channels.py       Web / Telegram channel plumbing
+    channels.py       The honest channel catalogue for Settings — live, and what each costs
     handoff_webhook.py Deliver escalations into a bank's existing contact-centre tool
     i18n.py           Assistant strings in en/am/om/ti/so, with translator notes
     models.py         Bank, Document, Chunk, Conversation, Message, Handoff, Faq,
