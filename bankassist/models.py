@@ -131,6 +131,53 @@ class Document(Base):
     )
 
 
+class Faq(Base):
+    """A question a bank has answered in its own words, and approved.
+
+    Separate from `Document` on purpose, though both hold text a customer ends
+    up reading. A document is material the assistant may draw on; an FAQ is an
+    answer the bank has committed to word for word, served verbatim with no
+    model in the path. Storing them in one table would make "may we quote this
+    exactly" a per-row flag on the thing everything else already reads — one
+    bad query away from serving an unreviewed article as an approved answer.
+    """
+
+    __tablename__ = "faqs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    bank_id: Mapped[str] = mapped_column(ForeignKey("banks.id"), index=True)
+    # As a customer would type it. Kept verbatim for the admin to read; the
+    # lookup key is the normalised form below.
+    question: Mapped[str] = mapped_column(String(400))
+    # The normalised (language, question) key. Unique per bank, so publishing
+    # the same question twice is a database error rather than two answers and
+    # a race to decide which one a customer sees.
+    lookup: Mapped[str] = mapped_column(String(420), index=True)
+    answer: Mapped[str] = mapped_column(Text)
+    language: Mapped[str] = mapped_column(String(8), default="en")
+    # draft | published. Only published answers are ever served: an answer
+    # half-written at 16:55 must not be what a customer reads at 16:56.
+    status: Mapped[str] = mapped_column(String(16), default="draft")
+    # Who committed the bank to these words, and when. This is the whole
+    # difference between a curated answer and a cached one — an approval with
+    # nobody's name on it is a cache with extra steps.
+    approved_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # How often it has actually been served. The number that tells a bank
+    # whether curating more of these is worth anybody's afternoon.
+    served: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    __table_args__ = (
+        UniqueConstraint("bank_id", "lookup", name="uq_faq_bank_lookup"),
+    )
+
+
 class Chunk(Base):
     __tablename__ = "chunks"
 

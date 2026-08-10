@@ -1199,6 +1199,7 @@ var PAGES = [
   { id: "teller",    label: "Live queue",    perm: "sessions.read",      load: loadTellerQueue },
   { id: "convos",    label: "Conversations", perm: "conversations.read", load: loadConvos },
   { id: "docs",      label: "Knowledge Base",perm: "documents.read",     load: loadDocs },
+  { id: "faq",       label: "Curated Answers", perm: "documents.read",   load: loadFaq },
   { id: "gaps",      label: "Content Gaps",  perm: "gaps.read",          load: loadGaps },
   { id: "audit",     label: "Audit log",     perm: "audit.read",         load: loadAudit },
   { id: "team",      label: "Team",          perm: "users.manage",       load: loadTeam },
@@ -2470,6 +2471,125 @@ function toggleHandoffDetail(id) {
         setStatus("Moved to " + r.department_label);
         loadHandoffs();
       }).catch(function (e) { setStatus(e.message); });
+    };
+  }
+}
+
+/* ---------------------------------------------------------- curated answers
+ *
+ * The loop that makes the assistant cheaper and more defensible at the same
+ * time. The left column is what customers keep asking; the right is what the
+ * bank has approved. Moving a question from one to the other takes one click
+ * and one edit, and from then on that answer is served verbatim with no model
+ * call at all.
+ *
+ * Suggestions first, deliberately. An empty Curated Answers page with a "New
+ * answer" button is a form nobody knows what to type into; the same page
+ * headed by "forty people asked this" is a to-do list ordered by value.
+ */
+function loadFaq() {
+  Promise.all([api("/faq"), api("/faq/suggestions")]).then(function (both) {
+    var mine = both[0], asked = both[1];
+    state.faqRows = mine;
+    var pending = asked.filter(function (a) { return !a.faq_id; });
+
+    var h = "";
+    if (pending.length) {
+      h += '<div class="panel"><h3>People keep asking these</h3>' +
+        '<div class="meta" style="margin-bottom:10px">Answer one and it is ' +
+        "served instantly from your own words — no AI in the loop, no cost.</div>" +
+        '<div class="rows">' + pending.slice(0, 12).map(function (a) {
+          return '<div class="r" data-draft="' + esc(a.question) +
+            '" data-lang="' + esc(a.language) + '">' +
+            '<span class="tag">' + esc(a.language) + "</span>" +
+            '<span class="what">' + esc(a.question) + "</span>" +
+            '<span class="age">' + a.asked + "&times;</span></div>";
+        }).join("") + "</div></div>";
+    }
+
+    h += '<div class="panel"><div style="display:flex;align-items:center">' +
+      "<h3 style='flex:1'>Approved answers</h3>" +
+      (can("documents.write")
+        ? '<button class="btn sm" id="faq-new">Write one</button>' : "") +
+      "</div>" +
+      (mine.length ? '<div class="rows">' + mine.map(function (f) {
+        return '<div class="r" data-faq="' + esc(f.id) + '">' +
+          '<span class="dot2"' + (f.status === "published"
+            ? ' style="background:var(--ok)"' : "") + "></span>" +
+          '<span class="tag">' + esc(f.language) + "</span>" +
+          '<span class="what">' + esc(f.question) + "</span>" +
+          '<span class="who">' + esc(f.status) + "</span>" +
+          // Served count, which is the number that says whether writing more
+          // of these is worth anybody's afternoon.
+          '<span class="age">' + f.served + " served</span></div>" +
+          '<div class="detail" id="f-' + esc(f.id) + '" style="display:none"></div>';
+      }).join("") + "</div>"
+        : '<div class="empty">Nothing approved yet.</div>') + "</div>";
+
+    $("main").innerHTML = h;
+    wire("[data-draft]", "draft", function (v, el) {
+      faqForm(null, v, el.getAttribute("data-lang"));
+    });
+    wire("[data-faq]", "faq", function (v) {
+      var row = (state.faqRows || []).filter(function (f) { return f.id === v; })[0];
+      var box = $("f-" + v);
+      if (box.style.display !== "none") { box.style.display = "none"; box.innerHTML = ""; return; }
+      box.style.display = "";
+      faqForm(row, row.question, row.language, box);
+    });
+    if ($("faq-new")) $("faq-new").onclick = function () { faqForm(null, "", "en"); };
+  }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+}
+
+/* The editor. Publishing is a separate button from saving, because they are
+   different decisions: one is "I have written something", the other is "the
+   bank stands behind these words to customers". A single Save that silently
+   published would make the approval record meaningless. */
+function faqForm(row, question, language, box) {
+  var host = box || $("main");
+  var html =
+    '<div class="panel" id="faq-form"><h3>' +
+      (row ? "Edit answer" : "New answer") + "</h3>" +
+    '<label class="meta">Question, as a customer would type it</label>' +
+    '<input id="fq-q" value="' + esc(question || "") + '">' +
+    '<label class="meta">Answer, in the bank\'s own words</label>' +
+    '<textarea id="fq-a" rows="5">' + esc(row ? row.answer : "") + "</textarea>" +
+    '<div class="tools" style="margin-top:10px">' +
+      '<select id="fq-l">' + LANGS.map(function (l) {
+        return '<option value="' + l + '"' +
+          (l === (row ? row.language : language) ? " selected" : "") + ">" + l + "</option>";
+      }).join("") + "</select>" +
+      '<button class="btn ghost sm" id="fq-save">Save as draft</button>' +
+      '<button class="btn sm" id="fq-pub">Publish</button>' +
+      (row ? '<button class="btn ghost sm" id="fq-del">Delete</button>' : "") +
+    "</div>" +
+    '<div class="note">A published answer is sent to customers exactly as ' +
+    "written. Nothing rewrites it and no AI sees it.</div></div>";
+  if (box) { box.innerHTML = html; } else { host.insertAdjacentHTML("afterbegin", html); }
+
+  function send(status) {
+    var body = {
+      question: $("fq-q").value.trim(), answer: $("fq-a").value.trim(),
+      language: $("fq-l").value, status: status
+    };
+    if (!body.question || !body.answer) { setStatus("A question and an answer, please."); return; }
+    api("/faq" + (row ? "/" + row.id : ""), {
+      method: row ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function () {
+      setStatus(status === "published" ? "Published" : "Saved");
+      loadFaq();
+    }).catch(function (e) { setStatus(e.message); });
+  }
+  $("fq-save").onclick = function () { send("draft"); };
+  $("fq-pub").onclick = function () { send("published"); };
+  if ($("fq-del")) {
+    $("fq-del").onclick = function () {
+      if (!confirm("Delete this answer? The question goes back to the assistant.")) return;
+      api("/faq/" + row.id, { method: "DELETE" })
+        .then(function () { setStatus("Deleted"); loadFaq(); })
+        .catch(function (e) { setStatus(e.message); });
     };
   }
 }
