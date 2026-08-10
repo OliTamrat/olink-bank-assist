@@ -834,6 +834,21 @@ td.title { color: var(--ink); font-weight: 550; }
 }
 /* Mirrored: an un-mirrored self-view reads as somebody else's camera. */
 .callroom .self video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+/* Reading an ID held at arm's length on a moving phone is the problem this
+   solves. The still sits over the live video; the live call carries on
+   underneath it, audio included. */
+.callroom .frozen {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  background: #06070d; z-index: 3;
+}
+.callroom .freeze {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  z-index: 4; background: rgba(10,12,16,.82); color: #fff;
+  border: 1px solid rgba(255,255,255,.22); border-radius: 999px;
+  padding: 8px 18px; font: inherit; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; backdrop-filter: blur(6px);
+}
+.callroom .freeze:hover { background: rgba(10,12,16,.95); }
 
 /* The working column. A teller needs the transcript and the verification
    bar in the same glance as the customer's face — putting either behind a
@@ -906,6 +921,14 @@ td.title { color: var(--ink); font-weight: 550; }
   background: var(--surface-2); border: 1px solid var(--line);
   color: var(--ink); font-family: inherit; font-size: 13px;
 }
+/* The two legs of the rule, named on screen. A flat list of ticks gives the
+   teller no way to know which combination the server will accept until it
+   refuses one, mid-call, with a customer waiting. */
+.callroom .vleg {
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint); margin: 10px 0 6px;
+}
+.callroom .vleg:first-child { margin-top: 0; }
 .callroom .verified {
   font-size: 12.5px; color: var(--ok); display: flex; gap: 7px; align-items: center;
 }
@@ -1049,6 +1072,13 @@ td.title { color: var(--ink); font-weight: 550; }
       </div>
     </div>
     <div class="self" id="callSelf" style="display:none"></div>
+    <!-- A still lifted from the video already on screen, drawn into a canvas
+         in this browser. It is never uploaded and never stored — the point is
+         to read a card that is moving, not to keep a copy of it. -->
+    <canvas class="frozen" id="callFrozen" style="display:none"></canvas>
+    <button type="button" class="freeze" id="callFreeze" style="display:none">
+      Freeze frame
+    </button>
   </div>
   <div class="work">
     <h4>Conversation</h4>
@@ -3248,6 +3278,10 @@ function openCall(session) {
         v.setAttribute("playsinline", "");
         $("callWaiting").style.display = "none";
         host.insertBefore(v, host.firstChild);
+        // The customer's camera has come on — often for the sixty seconds
+        // they are holding their Fayda ID up. Offer the freeze, because an ID
+        // at arm's length on a moving phone is not readable in motion.
+        showFreeze(true);
       } else {
         var a = track.attach();
         a.style.display = "none";
@@ -3257,7 +3291,10 @@ function openCall(session) {
         callMsg("Connected — audio only");
       }
     });
-    r.on(LK.RoomEvent.TrackUnsubscribed, function (t) { t.detach(); });
+    r.on(LK.RoomEvent.TrackUnsubscribed, function (t) {
+      t.detach();
+      if (t.kind === LK.Track.Kind.Video) { clearFreeze(); showFreeze(false); }
+    });
     r.on(LK.RoomEvent.ParticipantDisconnected, function () {
       callMsg("The customer has left the call.");
       var v = document.querySelector(".callroom video.remote");
@@ -3381,16 +3418,39 @@ function renderVerify() {
     return;
   }
   box.innerHTML =
+    // Identity first, either way, then the account question. Grouped and
+    // labelled as two legs rather than presented as a flat list of three
+    // ticks, because the rule the server enforces IS two legs — and a teller
+    // reading a flat list has no way to tell which combination will be
+    // accepted until it is refused.
+    '<div class="vleg">Establish who they are — either one</div>' +
     '<label><input type="checkbox" data-chk="id_document">' +
       "<span>Fayda ID shown and matches the account name</span></label>" +
-    '<label><input type="checkbox" data-chk="account_detail">' +
-      "<span>Answered a question only the account holder could</span></label>" +
+    '<label><input type="checkbox" data-chk="fayda_matched">' +
+      "<span>Fayda number matches the account record <em>(on your own " +
+      "screen — works on an audio call)</em></span></label>" +
     '<label><input type="checkbox" data-chk="id_photo_matches">' +
       "<span>Photo on the ID matches the person on the call <em>(video only)</em></span></label>" +
-    '<input type="text" id="vFayda" placeholder="Fayda number (optional)" autocomplete="off">' +
+    '<div class="vleg">And confirm the account is theirs</div>' +
+    '<label><input type="checkbox" data-chk="account_detail">' +
+      "<span>Answered a question only the account holder could</span></label>" +
+    '<input type="text" id="vFayda" placeholder="Fayda number" autocomplete="off">' +
     '<button class="btn sm" id="vGo">Confirm identity</button>' +
     '<div class="scope">Until this is done you can only give general guidance ' +
     "— products, eligibility and how to apply.</div>";
+
+  // Ticking "the number matches" without the number is refused by the server,
+  // and finding that out after pressing the button — mid-call, with a
+  // customer waiting — is the wrong moment. The field says what it needs the
+  // instant the box is ticked.
+  var faydaBox = box.querySelector('[data-chk="fayda_matched"]');
+  var syncFayda = function () {
+    $("vFayda").placeholder = faydaBox.checked
+      ? "Fayda number (required — it is what the record keeps)"
+      : "Fayda number (optional)";
+  };
+  faydaBox.addEventListener("change", syncFayda);
+  syncFayda();
 
   $("vGo").onclick = function () {
     var checks = [];
@@ -3413,6 +3473,50 @@ function renderVerify() {
       setStatus(e.message);
     });
   };
+}
+
+/* ------------------------------------------------------- reading an ID
+ *
+ * The customer can turn their camera on for a minute to hold up their Fayda
+ * ID, including on an audio-only call. A card at arm's length on a handheld
+ * phone is not readable while it moves, so the teller can freeze what is
+ * already on their screen.
+ *
+ * Drawn into a canvas in THIS browser. It is not uploaded, not posted
+ * anywhere, and not stored — it cannot be, because nothing sends it. That is
+ * the same rule the product is sold on: the ID is shown, never kept. A
+ * server-side upload would have turned us into the holder of a library of
+ * national identity documents in exchange for nothing at all, since the
+ * bank's own system is the system of record and the teller is looking at the
+ * account there anyway.
+ *
+ * It clears itself when the customer's camera goes off, so a still of
+ * somebody's ID cannot sit on a shared branch screen after the moment has
+ * passed.
+ */
+function clearFreeze() {
+  var c = $("callFrozen");
+  var ctx = c.getContext("2d");
+  if (ctx) ctx.clearRect(0, 0, c.width, c.height);
+  c.width = c.height = 0;          // drops the pixel buffer, not just the view
+  c.style.display = "none";
+  $("callFreeze").textContent = "Freeze frame";
+}
+
+function showFreeze(on) {
+  $("callFreeze").style.display = on ? "" : "none";
+}
+
+function toggleFreeze() {
+  var c = $("callFrozen");
+  if (c.style.display !== "none") { clearFreeze(); return; }
+  var v = document.querySelector(".callroom video.remote");
+  if (!v || !v.videoWidth) return;
+  c.width = v.videoWidth;
+  c.height = v.videoHeight;
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  c.style.display = "";
+  $("callFreeze").textContent = "Back to live";
 }
 
 function paintCallControls() {
@@ -3444,6 +3548,11 @@ function closeCall() {
   $("callWaiting").style.display = "";
   $("callSelf").style.display = "none";
   $("callSelf").innerHTML = "";
+  // A still of somebody's national ID must not outlive the call it was taken
+  // in — branch screens are shared, and the next person to sit down is not
+  // the person who was verified.
+  clearFreeze();
+  showFreeze(false);
   if (state.page === "teller") loadTellerQueue();
 }
 
@@ -3478,6 +3587,7 @@ $("cCam").onclick = function () {
     .then(paintCallControls);
 };
 $("cHang").onclick = hangUpCall;
+$("callFreeze").onclick = toggleFreeze;
 
 // A teller closing the tab mid-call must not leave the customer talking to a
 // participant who is gone.

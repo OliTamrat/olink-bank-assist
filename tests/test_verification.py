@@ -163,3 +163,111 @@ def test_the_required_checks_are_real_checks() -> None:
     """Guards a rename that would make the bar unreachable — every attestation
     would be refused, which at least fails loudly, or unenforceable."""
     assert set(v.CHECKS) >= v.REQUIRED_CHECKS
+
+
+# ------------------------------------------------- identity on an audio call
+#
+# The hole this closes shipped, and was found in the field: a real call was
+# placed audio-only, connected fine, and reached the verification bar with
+# nothing the teller could honestly tick. The original rule REQUIRED the Fayda
+# ID to have been seen — while this same module argued, correctly, that
+# audio-only is the common case outside Addis. So the required check was
+# unsatisfiable on the commonest kind of call, leaving a teller two options:
+# verify nobody, or tick a box for a document they never saw.
+#
+# The second is the dangerous one. A control that can only be honoured
+# dishonestly is worse than no control, because it manufactures records that
+# look like diligence.
+
+
+def test_a_matched_fayda_number_and_an_account_question_clears_it() -> None:
+    """The audio path. No camera involved anywhere in this."""
+    att = v.attest(
+        checks={v.FAYDA_MATCHED, v.ACCOUNT_DETAIL},
+        teller_user_id="u1",
+        fayda_number="123456789012",
+    )
+    assert att.method == v.TELLER_ATTESTED
+    assert att.reference == "9012", "the tail is what a dispute reconciles against"
+
+
+def test_claiming_the_number_matched_without_a_number_is_refused() -> None:
+    """"I matched it" with nothing to match is unfalsifiable — and on an audio
+    call it is the only thing standing between a stranger and a verified
+    session. Refused in code rather than trusted to training."""
+    with pytest.raises(v.AttestationRejected):
+        v.attest(checks={v.FAYDA_MATCHED, v.ACCOUNT_DETAIL}, teller_user_id="u1")
+
+
+def test_a_number_too_short_to_be_real_does_not_count_as_one() -> None:
+    """`tail()` returns None rather than handing back a short value whole, so
+    a teller who types four digits to get past the form gets refused instead
+    of producing a record that reads as verified."""
+    with pytest.raises(v.AttestationRejected):
+        v.attest(
+            checks={v.FAYDA_MATCHED, v.ACCOUNT_DETAIL},
+            teller_user_id="u1",
+            fayda_number="12",
+        )
+
+
+def test_the_account_question_is_never_optional() -> None:
+    """Establishing WHO somebody is does not establish that the account is
+    theirs. Neither identity route substitutes for it."""
+    for identity in (v.ID_DOCUMENT, v.FAYDA_MATCHED):
+        with pytest.raises(v.AttestationRejected):
+            v.attest(
+                checks={identity}, teller_user_id="u1", fayda_number="123456789012"
+            )
+
+
+def test_an_account_question_alone_still_proves_nothing() -> None:
+    """The other leg. Someone who knows a detail about an account has not
+    shown they are the person the account belongs to — that is precisely the
+    position a social engineer works from."""
+    with pytest.raises(v.AttestationRejected):
+        v.attest(checks={v.ACCOUNT_DETAIL}, teller_user_id="u1")
+
+
+def test_a_photo_match_alone_does_not_satisfy_the_identity_leg() -> None:
+    """"The face matches the ID" says nothing about which ID. Without the
+    document check or the number match, there is no ID established to compare
+    a face against."""
+    with pytest.raises(v.AttestationRejected):
+        v.attest(
+            checks={v.ID_PHOTO_MATCHES, v.ACCOUNT_DETAIL}, teller_user_id="u1"
+        )
+
+
+def test_doing_both_records_both() -> None:
+    """A video call where the teller also matched the number is a stronger
+    record than either alone, and the attestation has to keep the difference —
+    that is the whole reason checks are named individually rather than
+    collapsed into a boolean."""
+    att = v.attest(
+        checks={v.ID_DOCUMENT, v.ID_PHOTO_MATCHES, v.FAYDA_MATCHED, v.ACCOUNT_DETAIL},
+        teller_user_id="u1",
+        fayda_number="123456789012",
+    )
+    assert set(att.checks) == set(v.CHECKS)
+    assert len(att.describes()) == 4
+
+
+def test_every_route_to_verified_needs_something_from_each_leg() -> None:
+    """The rule as a property rather than as a list of cases, so a future
+    check added to either leg cannot quietly create a route that skips the
+    other one."""
+    import itertools
+
+    for size in range(len(v.CHECKS) + 1):
+        for combo in itertools.combinations(v.CHECKS, size):
+            checks = set(combo)
+            ok = bool(checks & v.IDENTITY_LEG) and checks >= v.REQUIRED_CHECKS
+            try:
+                v.attest(
+                    checks=checks, teller_user_id="u1", fayda_number="123456789012"
+                )
+            except v.AttestationRejected:
+                assert not ok, f"{sorted(checks)} should have been accepted"
+            else:
+                assert ok, f"{sorted(checks)} should have been refused"
