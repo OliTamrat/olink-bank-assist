@@ -407,6 +407,42 @@ def translate_for_search(question: str) -> str:
     )
 
 
+_CURATED_TRANSLATE_PROMPT = """You translate a bank's own approved customer \
+answer into {language_name}, for {bank_name}, an Ethiopian bank.
+
+This text will be shown to a customer as the bank's own words, so translate it
+faithfully and completely. Do NOT summarise, improve, shorten or add anything.
+
+Keep EXACTLY as written, untranslated: product and brand names, bank names,
+every number, currency amount, percentage, date, phone number, email address,
+account and code (for example Amole, Sharik, Zoorya, ETB 5,000, 6333, ISO
+20022, 22 November 2025).
+
+Preserve the line breaks and any bullet or list structure.
+
+Reply with ONLY the translated text — no quotes, no explanation, no preamble."""
+
+
+def translate_curated(text: str, language: str, language_name: str,
+                      bank_name: str) -> str:
+    """Render an approved answer in another language, word for word.
+
+    Unlike `translate_for_search`, this output is read by a customer, so the
+    prompt forbids summarising and pins every figure and product name. That is
+    a mitigation, not a guarantee — which is why what comes back is stored as
+    a DRAFT and goes to a native speaker before it is ever served. The model
+    gets the wording started; a person is still what makes it the bank's word.
+
+    Thinking off: this is a mechanical transformation like the search
+    translation, and a thinking budget on a 160-answer batch is paid 640 times
+    for no gain.
+    """
+    prompt = _CURATED_TRANSLATE_PROMPT.format(
+        language_name=language_name, bank_name=bank_name
+    )
+    return _call_model(prompt, text, max_output_tokens=2048, thinking_budget=0)
+
+
 def generate_answer(
     question: str,
     chunks: list[RetrievedChunk],

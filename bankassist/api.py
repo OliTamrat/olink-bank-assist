@@ -35,6 +35,7 @@ from . import (
     handoff_webhook,
     ingest,
     livekit,
+    llm,
     passwords,
     permissions,
     presence,
@@ -2003,6 +2004,118 @@ def faq_import(
     )
     db.commit()
     return {"created": created, "skipped": skipped}
+
+
+class FaqTranslateIn(BaseModel):
+    """Which answers to render into which languages."""
+
+    source_language: str = "en"
+    # Empty means every language this product serves except the source.
+    languages: list[str] = Field(default_factory=list)
+    # Empty means every answer in the source language. Ids let a bank
+    # translate the twenty questions people actually ask before paying for
+    # the hundred and forty they do not.
+    faq_ids: list[str] = Field(default_factory=list)
+
+
+@app.post("/admin/api/{slug}/faq/translate")
+def faq_translate(
+    payload: FaqTranslateIn,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Draft every missing language for the bank's curated answers.
+
+    A curated answer is only ever served for the language it was written in —
+    `faq.key` includes the language — so an English-only table means an
+    Amharic customer never gets a tier-1 hit at all. They still get an answer
+    from retrieval, but they pay a model call for what an English speaker gets
+    free and instant.
+
+    Everything written here is a **draft**, and that is not the same caution
+    as refusing to machine-translate. The point is to get a hundred and sixty
+    answers into five languages TODAY, so a native speaker has something to
+    correct instead of a blank sheet — `scripts/faq_export.py` writes exactly
+    that sheet. Waiting for somebody at the bank to translate from nothing is
+    how a language ships six months late or not at all.
+
+    Existing rows are never overwritten. A translation already corrected by a
+    reviewer must not be replaced by a fresh machine draft, which is the one
+    way this could destroy real work.
+    """
+    bank = principal.bank
+    if payload.source_language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=422, detail="Unsupported source language")
+    targets = payload.languages or [
+        code for code in SUPPORTED_LANGUAGES if code != payload.source_language
+    ]
+    for code in targets:
+        if code not in SUPPORTED_LANGUAGES:
+            raise HTTPException(status_code=422, detail=f"Unsupported language {code}")
+
+    query = select(Faq).where(
+        Faq.bank_id == bank.id, Faq.language == payload.source_language
+    )
+    if payload.faq_ids:
+        query = query.where(Faq.id.in_(payload.faq_ids))
+    sources = list(db.execute(query).scalars().all())
+
+    # Keyed on what a translation IS — this answer, in that language — not on
+    # its wording. A reviewer who corrects the translated question changes its
+    # lookup key, and matching on that would write a second row beside the
+    # correction rather than recognising it.
+    covered = {
+        (row.source_faq_id, row.language)
+        for row in db.execute(select(Faq).where(Faq.bank_id == bank.id)).scalars()
+        if row.source_faq_id
+    }
+    held = {
+        row.lookup
+        for row in db.execute(select(Faq).where(Faq.bank_id == bank.id)).scalars()
+    }
+    created, skipped, failed = 0, 0, 0
+    for row in sources:
+        for code in targets:
+            if (row.id, code) in covered:
+                skipped += 1
+                continue
+            try:
+                question = llm.translate_curated(
+                    row.question, code, LANGUAGE_NAMES[code], bank.name
+                )
+                answer = llm.translate_curated(
+                    row.answer, code, LANGUAGE_NAMES[code], bank.name
+                )
+            except llm.LLMUnavailable:
+                # One answer failing must not lose the batch. A miss here is a
+                # row a reviewer fills in by hand, which is what they were
+                # going to do for all of them anyway.
+                failed += 1
+                continue
+            lookup = faq.key(question, code)
+            if lookup in held:
+                # Some other answer already occupies this key. Refused rather
+                # than merged, for the same reason create_faq refuses: two
+                # answers to one question is a support call nobody can
+                # reproduce.
+                skipped += 1
+                continue
+            held.add(lookup)
+            covered.add((row.id, code))
+            db.add(Faq(
+                bank_id=bank.id, question=question[:400], lookup=lookup,
+                answer=answer, language=code, status="draft",
+                source_faq_id=row.id,
+            ))
+            created += 1
+    _audit(
+        db, bank, "faq_translated", "bank", bank.id,
+        {"created": created, "skipped": skipped, "failed": failed,
+         "languages": targets},
+        actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"created": created, "skipped": skipped, "failed": failed}
 
 
 @app.get("/admin/api/{slug}/integrations")
