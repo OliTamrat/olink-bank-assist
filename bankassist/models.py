@@ -121,6 +121,10 @@ class Document(Base):
     category: Mapped[str] = mapped_column(String(64), default="general")
     language: Mapped[str] = mapped_column(String(8), default="en")
     content: Mapped[str] = mapped_column(Text)
+    # Where this came from, when it was imported rather than typed. Provenance
+    # for a compliance reviewer, and the key that lets a re-import replace what
+    # it wrote last time instead of leaving the old fee beside the new one.
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now
     )
