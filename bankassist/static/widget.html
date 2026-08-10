@@ -1420,16 +1420,33 @@
     if (el2) el2.textContent = text;
   }
 
+  // Who the customer is talking to. A first name and the bank — "Meron ·
+  // Demo Bank Ethiopia" — because a voice with no name at all is a call
+  // centre, and this screen having no name was reported as the thing that
+  // felt wrong. The surname is deliberately absent: it is what turns a
+  // support call into a person who can be looked up or turned up at, and bank
+  // staff take calls from people who are angry about money.
+  //
+  // Falls back to the generic label when the session has no teller yet, or
+  // when the account was created without a display name.
+  function tellerLabel() {
+    var name = session && session.teller_name;
+    return name ? name + " · " + bankName : bankName + " teller";
+  }
+
   function joinCall() {
     if (room || !session) return;
     callEl.classList.add("open");
-    document.getElementById("callInitials").textContent = initials(bankName);
+    // Their initials, not the bank's. The person on the call is who this
+    // avatar stands for.
+    document.getElementById("callInitials").textContent =
+      initials((session && session.teller_name) || bankName);
     document.getElementById("callWho").innerHTML =
       '<div class="nm"><span></span>' +
       "<small>Verify your identity before discussing your account</small></div>" +
       '<div class="timer2"><span class="qdot" id="qdot"></span>' +
       '<span id="callClock">0:00</span></div>';
-    callEl.querySelector(".who2 .nm span").textContent = bankName + " teller";
+    callEl.querySelector(".who2 .nm span").textContent = tellerLabel();
     callStatus("Connecting…");
     paintControls();
     startChat();
@@ -1811,10 +1828,18 @@
   document.getElementById("idDone").addEventListener("click", stopIdShare);
 
   document.getElementById("btnHang").addEventListener("click", function () {
-    endCall("You ended the call.");
+    endCall("You ended the call.", true);
   });
 
-  function endCall(message) {
+  // `mine` means the customer is the one leaving, so the server has to be
+  // told. Disconnecting from the media layer is not telling anybody: the row
+  // stays ACTIVE, and the teller sits looking at a live session with nobody on
+  // the other end of it. Reported from the field exactly that way.
+  function endCall(message, mine) {
+    if (mine && session) {
+      fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" +
+            session.id, { method: "DELETE", keepalive: true }).catch(function () {});
+    }
     if (room) { try { room.disconnect(); } catch (e) {} room = null; }
     joined = false;
     stopClock();
@@ -1843,7 +1868,11 @@
   // `keepalive` is what lets the request outlive the page; sendBeacon cannot
   // be used because it only issues POST.
   window.addEventListener("pagehide", function () {
-    if (!session || session.state !== "queued") return;
+    // Queued OR on a call. A tab closed mid-call used to leave the session
+    // ACTIVE forever, which is the same bug as hanging up without telling
+    // anyone and arrives by the route nobody can be asked to avoid.
+    if (!session) return;
+    if (session.state !== "queued" && session.state !== "active") return;
     fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" + session.id,
       { method: "DELETE", keepalive: true }).catch(function () {});
   });

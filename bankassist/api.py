@@ -22,12 +22,13 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import (
     admin_auth,
     channels,
+    departments,
     handoff_webhook,
     livekit,
     passwords,
@@ -1286,10 +1287,57 @@ def list_conversations(
         select(Conversation).where(*where)
         .order_by(Conversation.created_at.desc()).limit(100)
     ).scalars().all()
+    ids = [c.id for c in convos]
+
+    # What each conversation was ABOUT, how long it ran, and whether it ended
+    # up on somebody's desk. Without these the list is a hundred rows of
+    # channel-and-timestamp: identical to each other, and unreadable at the
+    # only volume that matters. Three bounded queries rather than a subquery
+    # per row.
+    previews: dict[str, str] = {}
+    if ids:
+        for cid, text in db.execute(
+            select(Message.conversation_id, Message.text)
+            .where(Message.conversation_id.in_(ids), Message.role == "user")
+            .order_by(Message.created_at)
+        ).tuples().all():
+            # First one wins — the opening question is what the conversation
+            # was about, and later turns are usually clarifications of it.
+            previews.setdefault(cid, text)
+    turns: dict[str, int] = (
+        dict(
+            db.execute(
+                select(Message.conversation_id, func.count())
+                .where(Message.conversation_id.in_(ids))
+                .group_by(Message.conversation_id)
+            ).tuples().all()
+        )
+        if ids else {}
+    )
+    escalated: set[str] = (
+        {
+            row
+            for (row,) in db.execute(
+                select(Handoff.conversation_id)
+                .where(
+                    Handoff.conversation_id.in_(ids),
+                    Handoff.needs_person.is_(True),
+                )
+                .distinct()
+            ).all()
+        }
+        if ids else set()
+    )
     return [
         {
             "id": c.id, "channel": c.channel, "language": c.language,
             "created_at": c.created_at.isoformat(),
+            # Truncated here rather than in the browser: a list endpoint that
+            # ships whole transcripts to render forty characters of each is
+            # the same waste as the retrieval scan, on the same screen.
+            "preview": (previews.get(c.id) or "")[:160],
+            "turns": int(turns.get(c.id, 0)),
+            "escalated": c.id in escalated,
         }
         for c in convos
     ]
@@ -1320,6 +1368,7 @@ def list_messages(
 @app.get("/admin/api/{slug}/handoffs")
 def list_handoffs(
     status: str = "open",
+    department: str = "all",
     principal: Principal = NeedsHandoffsRead,
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -1344,12 +1393,23 @@ def list_handoffs(
     )
     if status != "all":
         query = query.where(Handoff.status == status)
+    if department and department != "all":
+        query = query.where(Handoff.department == department)
+    # Urgent first, then oldest. Both halves matter: a theft report filed an
+    # hour ago outranks a fee question from yesterday, and within one lane the
+    # person who has waited longest must keep winning or the queue produces
+    # the abandonment it exists to prevent.
+    urgency = case((Handoff.priority == departments.URGENT, 0), else_=1)
     order = Handoff.created_at.asc() if status == "open" else Handoff.created_at.desc()
 
-    rows = db.execute(query.order_by(order).limit(200)).scalars().all()
+    rows = db.execute(
+        query.order_by(urgency, order).limit(200)
+    ).scalars().all()
     return [
         {
             "id": h.id, "reason": h.reason, "detail": h.detail, "status": h.status,
+            "department": h.department, "priority": h.priority,
+            "department_label": departments.label(h.department),
             "conversation_id": h.conversation_id, "created_at": h.created_at.isoformat(),
             # Who to call. The whole point of a handoff queue is that someone
             # works it, and until now a row said a customer wanted a callback
@@ -2013,6 +2073,96 @@ def close_handoff(
     return {"status": "closed", "resolution": handoff.resolution}
 
 
+class HandoffDepartmentIn(BaseModel):
+    department: str
+
+
+@app.put("/admin/api/{slug}/handoffs/{handoff_id}/department")
+def move_handoff(
+    handoff_id: str,
+    payload: HandoffDepartmentIn,
+    principal: Principal = NeedsHandoffsResolve,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Move an escalation to the desk that actually owns it.
+
+    The rules will be wrong sometimes — they are rules — and the operator who
+    notices is the one holding the row. One click, and the correction is
+    audited: the log of what got moved, and from where to where, is the only
+    honest way to find out which rule is wrong. A categoriser nobody can
+    correct trains a queue to be ignored instead.
+    """
+    bank = principal.bank
+    handoff = db.get(Handoff, handoff_id)
+    if handoff is None or handoff.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown escalation")
+    if payload.department not in departments.DEPARTMENTS:
+        # Refused rather than coerced to `general`: a typo in a client that
+        # silently dropped the row onto the catch-all desk would look like the
+        # move worked, and the row would be somewhere nobody expected.
+        raise HTTPException(
+            status_code=422, detail=f"Unknown desk: {payload.department}"
+        )
+    was = handoff.department
+    handoff.department = payload.department
+    _audit(
+        db, bank, "handoff_moved", "handoff", handoff.id,
+        {"from": was, "to": payload.department}, actor=principal.audit_actor,
+    )
+    db.commit()
+    return {
+        "id": handoff.id,
+        "department": handoff.department,
+        "department_label": departments.label(handoff.department),
+    }
+
+
+@app.get("/admin/api/{slug}/handoffs/desks")
+def handoff_desks(
+    principal: Principal = NeedsHandoffsRead, db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """Every desk, with how much open work is sitting on it.
+
+    Returned even for desks with nothing waiting, and in a fixed order. A list
+    that only shows the busy desks reorders itself as the day goes on, so the
+    operator who has learned where their queue sits has to re-find it every
+    time they look.
+    """
+    bank = principal.bank
+    counts: dict[str, int] = dict(
+        db.execute(
+            select(Handoff.department, func.count())
+            .where(
+                Handoff.bank_id == bank.id,
+                Handoff.needs_person.is_(True),
+                Handoff.status == "open",
+            )
+            .group_by(Handoff.department)
+        ).tuples().all()
+    )
+    urgent: dict[str, int] = dict(
+        db.execute(
+            select(Handoff.department, func.count())
+            .where(
+                Handoff.bank_id == bank.id,
+                Handoff.needs_person.is_(True),
+                Handoff.status == "open",
+                Handoff.priority == departments.URGENT,
+            )
+            .group_by(Handoff.department)
+        ).tuples().all()
+    )
+    return [
+        {
+            "department": desk,
+            "label": departments.label(desk),
+            "open": int(counts.get(desk, 0)),
+            "urgent": int(urgent.get(desk, 0)),
+        }
+        for desk in departments.DEPARTMENTS
+    ]
+
+
 @app.post("/admin/api/{slug}/handoffs/{handoff_id}/reopen")
 def reopen_handoff(
     handoff_id: str, principal: Principal = NeedsHandoffsResolve, db: Session = Depends(get_db)
@@ -2064,7 +2214,31 @@ class SessionEndIn(BaseModel):
     resolution: str | None = Field(default=None, max_length=4000)
 
 
-def _session_public(session: TellerSession) -> dict[str, Any]:
+def first_name(display_name: str | None) -> str | None:
+    """The name a customer is told, and no more of it.
+
+    A first name, never the full one. Both directions of that matter:
+
+    - A voice with no name at all is a call centre. "Meron from Demo Bank" is
+      a person who is accountable for what they say, and the customer reported
+      the current screen — a nameless "teller" — as the thing that felt wrong.
+    - A SURNAME is what turns an ordinary support call into a person who can
+      be looked up, turned up at, or impersonated to a colleague. Bank staff
+      take calls from people who are angry about money. The trust is in the
+      first name; the risk is all in the rest.
+
+    Returns None for a blank, so the caller falls back to the generic label
+    rather than rendering an empty gap where a name should be.
+    """
+    if not display_name:
+        return None
+    first = display_name.strip().split()
+    return first[0] if first else None
+
+
+def _session_public(
+    session: TellerSession, teller_name: str | None = None
+) -> dict[str, Any]:
     """What the CUSTOMER may see about their own session.
 
     Deliberately not the teller's user id and not the verification reference.
@@ -2077,12 +2251,24 @@ def _session_public(session: TellerSession) -> dict[str, Any]:
         "state": session.state,
         "scope": session.scope,
         "media": session.media,
+        # Who they are talking to, first name only — see `first_name`. Null
+        # until somebody has claimed the session, because until then there is
+        # nobody to name and inventing one would be worse than the gap.
+        "teller_name": teller_name,
         # What this session can actually cover, so the customer is told the
         # boundary BEFORE they wait rather than after. Someone who queues for
         # ten minutes to ask for a transfer and is refused live has had a
         # worse experience than the assistant refusing instantly.
         "can_help_with": teller.capabilities(session.scope),
     }
+
+
+def _teller_first_name(db: Session, session: TellerSession) -> str | None:
+    """The claiming teller's first name, or None while nobody has claimed it."""
+    if session.teller_user_id is None:
+        return None
+    user = db.get(User, session.teller_user_id)
+    return first_name(user.display_name) if user is not None else None
 
 
 def _session_public_queued(
@@ -2096,7 +2282,7 @@ def _session_public_queued(
     exact screen this panel exists to avoid. A number beats a spinner: someone
     told they are third will wait; someone shown a spinner leaves.
     """
-    data = _session_public(session)
+    data = _session_public(session, _teller_first_name(db, session))
     if session.state == teller.QUEUED:
         data["ahead"] = db.execute(
             select(func.count())
@@ -2112,7 +2298,7 @@ def _session_public_queued(
 
 def _session_admin(db: Session, session: TellerSession) -> dict[str, Any]:
     """What a teller or supervisor sees. Adds the internal record."""
-    data = _session_public(session)
+    data = _session_public(session, _teller_first_name(db, session))
     # The language the customer has been chatting in. A teller opening a
     # session needs to know whether to greet in Amharic or Afaan Oromoo before
     # they speak, not after — and the conversation already knows.
@@ -2373,6 +2559,39 @@ def customer_says(
     return _thread(db, session)[-1]
 
 
+@app.get("/admin/api/{slug}/teller/sessions/{session_id}")
+def teller_session_state(
+    session_id: str,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """This session as the database has it, polled by the open call room.
+
+    Deliberately NOT `_live_session`: the whole point is to be able to read a
+    session that has just STOPPED being active. A route that 409s the moment
+    the call ends cannot be the one that tells the teller it ended.
+
+    This exists because of a field report. A customer hung up and the teller's
+    screen stayed in the call — a live session with nobody on the other end.
+    LiveKit's own participant-left event is best-effort: a phone that loses
+    signal, gets backgrounded, or is simply switched off produces no clean
+    disconnect, and a browser that never hears it waits out a timeout it
+    cannot see. The database always knows. Polling it is how the teller finds
+    out for certain rather than eventually.
+    """
+    bank = principal.bank
+    session = db.get(TellerSession, session_id)
+    if session is None or session.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    # The claiming teller only, matching every other route on this session —
+    # a finished session is still a record of a named customer's business.
+    if principal.user is None or session.teller_user_id != principal.user.id:
+        raise HTTPException(
+            status_code=403, detail="That session belongs to another teller"
+        )
+    return _session_admin(db, session)
+
+
 @app.get("/admin/api/{slug}/teller/sessions/{session_id}/messages")
 def teller_thread(
     session_id: str,
@@ -2435,22 +2654,45 @@ def teller_says(
 def abandon_teller_session(
     slug: str, session_id: str, db: Session = Depends(get_db)
 ) -> dict[str, Any]:
-    """The customer gave up, or closed the tab.
+    """The customer left — gave up in the queue, hung up, or closed the tab.
 
-    Recorded rather than left to expire, because queue abandonment is the most
-    useful number this feature produces and the one that justifies staffing.
-    A session that simply goes quiet tells a bank nothing.
+    Both exits, because from the customer's side it is one action and the
+    server has to be told either way. Which state it lands in is not:
+
+    - waiting -> ABANDONED. Queue abandonment is the most useful number this
+      feature produces and the one that justifies staffing.
+    - on a call -> ENDED. The call happened; it simply finished without the
+      teller writing a resolution.
+
+    Reported from the field, and the reason this now accepts an active
+    session at all: a customer hung up and the teller's screen stayed in the
+    call, showing a live session with nobody on the other end. The widget
+    disconnected from the media layer and told nobody, so the row stayed
+    ACTIVE forever — it would still have been ACTIVE the next morning, in the
+    teller's In-progress list, above the people actually waiting.
+
+    The audit action distinguishes the two, so a bank can tell "the customer
+    hung up" from "the teller wrapped up" without inferring it from a null
+    resolution.
     """
     bank = _get_bank(db, slug)
     session = db.get(TellerSession, session_id)
     if session is None or session.bank_id != bank.id:
         raise HTTPException(status_code=404, detail="Unknown session")
+    # Idempotent: a hang-up and a closing tab both fire this, and the second
+    # one must not be an error the customer's browser reports.
     if session.state in teller.TERMINAL:
         return {"state": session.state}
-    session.state = teller.move(session.state, teller.ABANDONED)
+    on_a_call = session.state == teller.ACTIVE
+    session.state = teller.move(
+        session.state, teller.ENDED if on_a_call else teller.ABANDONED
+    )
     session.ended_at = datetime.now(UTC)
     _audit(
-        db, bank, "teller_session_abandoned", "teller_session", session.id,
+        db, bank,
+        "teller_session_customer_hung_up" if on_a_call
+        else "teller_session_abandoned",
+        "teller_session", session.id,
         {"waited_seconds": session.waited_seconds}, actor="customer",
     )
     db.commit()

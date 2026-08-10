@@ -207,6 +207,15 @@ class Handoff(Base):
     contact_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="open")  # open | closed
+    # Which desk answers this, and whether it can wait. See `departments.py`
+    # for why these are two separate facts from `reason` — that one says why
+    # the assistant let go, these say who picks it up and in what order.
+    department: Mapped[str] = mapped_column(
+        String(32), default="general", server_default="general"
+    )
+    priority: Mapped[str] = mapped_column(
+        String(16), default="normal", server_default="normal"
+    )
     # Whether a person is actually expected to do something about this.
     #
     # Not every row here is a customer waiting for a callback. When the
