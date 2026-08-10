@@ -1,8 +1,25 @@
-# Tier 3 — Video Teller
+# Tier 3 — ITA, the Interactive Teller Assistant
 
-**Status:** specification. No code written.
-**Depends on:** Fayda identity API access (the bank's), an Agora account (ours),
-teller staffing (the bank's), in-country hosting (open).
+**Status:** built and live. Media path verified against real traffic (LiveKit
+Cloud console, 2026-08-10: 51 WebRTC participant minutes, 100% connection
+success). Sections below that read as future tense are the original
+specification, kept because the reasoning still governs; where this document
+and the code disagree, **the code wins** and `CLAUDE.md` records the decisions
+that moved.
+
+**Name:** ITA — Interactive Teller **Assistant**. Not ITM: an *Interactive
+Teller Machine* is a physical kiosk, and being read as a hardware vendor puts
+us in a procurement category we are not selling into. Not *Agent*: in Ethiopia
+that means agent banking, and in 2026 it also means autonomous AI — the wrong
+signal for the one feature whose point is that a human answers.
+
+**Media layer is LiveKit, not Agora.** Agora was the original pick in this
+spec; the build uses LiveKit (hand-rolled HS256 room tokens, `canPublishData`
+off). Anywhere below that says Agora, read LiveKit.
+
+**Depends on:** Fayda identity verification (performed by the teller on the
+bank's own screen — we never call a Fayda API), teller staffing (the bank's),
+in-country hosting (open).
 
 ---
 
@@ -17,7 +34,7 @@ It is the third tier of something that already exists, not a new product:
 |---|---|---|
 | 1 | The assistant. Reads the bank's own documents. Never sees an account. | Built, live |
 | 2 | Escalation. Captures the question and contact, files it, optionally pushes to the bank's helpdesk. Async. | Built, live |
-| 3 | **Video teller.** Real time. A bank employee, on the bank's systems, with the bank's credentials. | This document |
+| 3 | **ITA.** Real time. A bank employee, on the bank's systems, with the bank's credentials. | Built, live |
 
 Today tier 2 ends with *"someone will get back to you."* Tier 3 ends with
 *"someone is here now."* Same architecture, one real-time channel added.

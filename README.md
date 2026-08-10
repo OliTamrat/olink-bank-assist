@@ -20,7 +20,7 @@ The order is the product.
 |---|---|---|---|
 | **1 — Curated** | The bank's own written answer, verbatim | zero — no retrieval, no model call | The question matches a curated FAQ exactly |
 | **2 — Retrieved** | BM25 over the bank's knowledge base, optionally phrased by Gemini | one model call | Retrieval finds something informative |
-| **3 — Live teller (ITM)** | A real person, on a LiveKit call, with the whole transcript | a human minute | Anything account-specific, anything unknown, anything the customer asks a person for |
+| **3 — Live teller (ITA)** | A real person, on a LiveKit call, with the whole transcript | a human minute | Anything account-specific, anything unknown, anything the customer asks a person for |
 
 Tier 3 is what makes this a banking channel rather than an FAQ bot. Tier 1 is
 what keeps the Gemini bill from scaling with traffic on the questions everybody
@@ -61,9 +61,20 @@ asks.
 9. **Audit log** on handoffs and every admin mutation. **Chat text is never
    logged** — `log_event()` carries metadata only.
 
-## The live teller (ITM)
+## The live teller — ITA (Interactive Teller Assistant)
 
 `docs/video-teller.md` is the design document. In short:
+
+**On the name.** The industry term for a video link to a remote teller is
+*ITM — Interactive Teller **Machine***, and that is deliberately not what this
+is called. An ITM is a physical kiosk: hardware, capex, a procurement cycle, a
+vendor category we are not in. We ship software that reaches a customer on the
+phone already in their hand. Being filed under the wrong category is not a
+cosmetic problem — it is being evaluated against a purchase we are not
+offering. **A** for **Assistant**, not Agent: in Ethiopia "agent" means agent
+banking (a shop doing cash-in/cash-out), and in 2026 "agent" also reads as
+autonomous AI — the worst possible misread for the one feature whose entire
+point is that a human being answers.
 
 - **Presence is declared, not inferred.** A teller flips an On-duty toggle;
   the shell heartbeats every 30s against a 90s staleness window

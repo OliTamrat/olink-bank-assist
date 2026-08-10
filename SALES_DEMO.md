@@ -44,12 +44,20 @@ What most can't offer:
    inventing a plausible-sounding wrong answer. This is the actual
    engineering difficulty in a banking chatbot, and it's the first thing to
    demonstrate live.
-4. **There is a person behind it.** Every competitor's demo ends at "I'll
-   escalate that". Ours puts the customer on a call with a real teller
-   inside the same chat window, with the whole conversation already in
-   front of them. That is the difference between a deflection tool and a
-   banking channel — and it is the answer to the question every bank asks
-   about a chatbot: *"what happens when it can't help?"*
+4. **There is a person behind it — the ITA, our Interactive Teller
+   Assistant.** Every competitor's demo ends at "I'll escalate that". Ours
+   puts the customer on a call with a real teller inside the same chat
+   window, with the whole conversation already in front of them. That is the
+   difference between a deflection tool and a banking channel — and it is the
+   answer to the question every bank asks about a chatbot: *"what happens
+   when it can't help?"*
+
+   **Say "Assistant", never "Machine".** If anyone in the room hears ITM they
+   will picture a kiosk and start costing hardware, floor space and a
+   procurement cycle — and you will spend the rest of the meeting being
+   compared to NCR instead of to a chatbot. The line that resets it: *"no
+   hardware, no kiosk — it runs on the phone your customer already has, and
+   your teller takes the call from the desk they already sit at."*
 
 ## Demo flow (7 minutes)
 
