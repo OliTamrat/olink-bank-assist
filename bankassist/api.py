@@ -22,12 +22,13 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import (
     admin_auth,
     channels,
+    departments,
     handoff_webhook,
     livekit,
     passwords,
@@ -1320,6 +1321,7 @@ def list_messages(
 @app.get("/admin/api/{slug}/handoffs")
 def list_handoffs(
     status: str = "open",
+    department: str = "all",
     principal: Principal = NeedsHandoffsRead,
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -1344,12 +1346,23 @@ def list_handoffs(
     )
     if status != "all":
         query = query.where(Handoff.status == status)
+    if department and department != "all":
+        query = query.where(Handoff.department == department)
+    # Urgent first, then oldest. Both halves matter: a theft report filed an
+    # hour ago outranks a fee question from yesterday, and within one lane the
+    # person who has waited longest must keep winning or the queue produces
+    # the abandonment it exists to prevent.
+    urgency = case((Handoff.priority == departments.URGENT, 0), else_=1)
     order = Handoff.created_at.asc() if status == "open" else Handoff.created_at.desc()
 
-    rows = db.execute(query.order_by(order).limit(200)).scalars().all()
+    rows = db.execute(
+        query.order_by(urgency, order).limit(200)
+    ).scalars().all()
     return [
         {
             "id": h.id, "reason": h.reason, "detail": h.detail, "status": h.status,
+            "department": h.department, "priority": h.priority,
+            "department_label": departments.label(h.department),
             "conversation_id": h.conversation_id, "created_at": h.created_at.isoformat(),
             # Who to call. The whole point of a handoff queue is that someone
             # works it, and until now a row said a customer wanted a callback
@@ -2011,6 +2024,96 @@ def close_handoff(
     )
     db.commit()
     return {"status": "closed", "resolution": handoff.resolution}
+
+
+class HandoffDepartmentIn(BaseModel):
+    department: str
+
+
+@app.put("/admin/api/{slug}/handoffs/{handoff_id}/department")
+def move_handoff(
+    handoff_id: str,
+    payload: HandoffDepartmentIn,
+    principal: Principal = NeedsHandoffsResolve,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Move an escalation to the desk that actually owns it.
+
+    The rules will be wrong sometimes — they are rules — and the operator who
+    notices is the one holding the row. One click, and the correction is
+    audited: the log of what got moved, and from where to where, is the only
+    honest way to find out which rule is wrong. A categoriser nobody can
+    correct trains a queue to be ignored instead.
+    """
+    bank = principal.bank
+    handoff = db.get(Handoff, handoff_id)
+    if handoff is None or handoff.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown escalation")
+    if payload.department not in departments.DEPARTMENTS:
+        # Refused rather than coerced to `general`: a typo in a client that
+        # silently dropped the row onto the catch-all desk would look like the
+        # move worked, and the row would be somewhere nobody expected.
+        raise HTTPException(
+            status_code=422, detail=f"Unknown desk: {payload.department}"
+        )
+    was = handoff.department
+    handoff.department = payload.department
+    _audit(
+        db, bank, "handoff_moved", "handoff", handoff.id,
+        {"from": was, "to": payload.department}, actor=principal.audit_actor,
+    )
+    db.commit()
+    return {
+        "id": handoff.id,
+        "department": handoff.department,
+        "department_label": departments.label(handoff.department),
+    }
+
+
+@app.get("/admin/api/{slug}/handoffs/desks")
+def handoff_desks(
+    principal: Principal = NeedsHandoffsRead, db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """Every desk, with how much open work is sitting on it.
+
+    Returned even for desks with nothing waiting, and in a fixed order. A list
+    that only shows the busy desks reorders itself as the day goes on, so the
+    operator who has learned where their queue sits has to re-find it every
+    time they look.
+    """
+    bank = principal.bank
+    counts: dict[str, int] = dict(
+        db.execute(
+            select(Handoff.department, func.count())
+            .where(
+                Handoff.bank_id == bank.id,
+                Handoff.needs_person.is_(True),
+                Handoff.status == "open",
+            )
+            .group_by(Handoff.department)
+        ).tuples().all()
+    )
+    urgent: dict[str, int] = dict(
+        db.execute(
+            select(Handoff.department, func.count())
+            .where(
+                Handoff.bank_id == bank.id,
+                Handoff.needs_person.is_(True),
+                Handoff.status == "open",
+                Handoff.priority == departments.URGENT,
+            )
+            .group_by(Handoff.department)
+        ).tuples().all()
+    )
+    return [
+        {
+            "department": desk,
+            "label": departments.label(desk),
+            "open": int(counts.get(desk, 0)),
+            "urgent": int(urgent.get(desk, 0)),
+        }
+        for desk in departments.DEPARTMENTS
+    ]
 
 
 @app.post("/admin/api/{slug}/handoffs/{handoff_id}/reopen")

@@ -924,6 +924,24 @@ td.title { color: var(--ink); font-weight: 550; }
 /* The two legs of the rule, named on screen. A flat list of ticks gives the
    teller no way to know which combination the server will accept until it
    refuses one, mid-call, with a customer waiting. */
+/* The desk strip. An operator's first question of the morning is "is there
+   anything on fire", and this is where that is answered — so a desk with
+   urgent work is coloured rather than merely counted. */
+.desks { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.desks .desk {
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
+  border-radius: 999px; padding: 7px 13px; font: inherit; font-size: 12.5px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+}
+.desks .desk:hover { color: var(--ink); }
+.desks .desk.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.desks .desk b { font-variant-numeric: tabular-nums; font-weight: 700; }
+.desks .desk.hot { border-color: var(--danger, #dc2626); }
+.desks .desk .u { color: var(--danger, #dc2626); font-size: 11px; font-weight: 600; }
+.desks .desk.on .u { color: #fff; }
+.pill.urgent { background: rgba(220, 38, 38, .15); color: #ef4444; }
+.pill.desk { background: var(--surface-2); color: var(--muted); }
+
 .callroom .vleg {
   font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
   color: var(--faint); margin: 10px 0 6px;
@@ -2197,6 +2215,12 @@ function download(name, body, type) {
 }
 
 /* ----------------------------------------------------------- escalations */
+/* Takes an ISO timestamp. There was a SECOND function called `waited` further
+   down taking SECONDS, defined later at the same scope, so it silently
+   replaced this one — and the escalation list, which passes a timestamp, had
+   been rendering "waiting N" (the first character of "NaNh NaNm") ever since
+   the teller queue was added. Caught by looking at the screen, not by reading
+   the code: both call sites are correct in isolation. */
 function waited(iso) {
   var mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 60) return [mins + " min", mins > 30 ? "cold" : ""];
@@ -2207,7 +2231,18 @@ function waited(iso) {
 
 function loadHandoffs() {
   var st = state.hstatus === "all" ? "" : state.hstatus;
-  api("/handoffs" + (st ? "?status=" + st : "")).then(function (rows) {
+  var desk = state.hdesk || "all";
+  var qs = [];
+  if (st) qs.push("status=" + st);
+  if (desk !== "all") qs.push("department=" + encodeURIComponent(desk));
+  // Both in one round trip. The desk strip is the thing an operator reads
+  // first — "is there anything on fire" — and fetching it after the rows
+  // would leave the answer to that question arriving second.
+  Promise.all([
+    api("/handoffs" + (qs.length ? "?" + qs.join("&") : "")),
+    api("/handoffs/desks").catch(function () { return []; })
+  ]).then(function (both) {
+    var rows = both[0], desks = both[1];
     state.handoffRows = rows;
     var h = '<div class="tools"><div class="seg">' +
       [["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(function (o) {
@@ -2215,11 +2250,32 @@ function loadHandoffs() {
       }).join("") + "</div><div style='flex:1'></div>" +
       '<button class="btn ghost sm" id="dl-handoffs">Export CSV</button></div>';
 
+    // One row per desk, always all of them and always in the same order. A
+    // strip that hid the quiet desks would reorder itself through the day, so
+    // the operator who has learned where their queue sits would have to
+    // re-find it every time they looked.
+    if (desks.length) {
+      var total = desks.reduce(function (n, d) { return n + d.open; }, 0);
+      h += '<div class="desks">' +
+        '<button class="desk' + (desk === "all" ? " on" : "") + '" data-desk="all">' +
+          "All<b>" + total + "</b></button>" +
+        desks.map(function (d) {
+          return '<button class="desk' + (desk === d.department ? " on" : "") +
+            (d.urgent ? " hot" : "") + '" data-desk="' + esc(d.department) + '">' +
+            esc(d.label) + "<b>" + d.open + "</b>" +
+            (d.urgent ? '<span class="u">' + d.urgent + " urgent</span>" : "") +
+            "</button>";
+        }).join("") + "</div>";
+    }
+
     h += rows.length ? rows.map(function (hd) {
       var w = waited(hd.created_at);
       return '<div class="panel"><div style="display:flex;gap:10px;align-items:flex-start">' +
         '<div style="flex:1;min-width:0">' +
         '<span class="pill ' + esc(hd.status) + '">' + esc(hd.status) + "</span> " +
+        (hd.priority === "urgent" ? '<span class="pill urgent">urgent</span> ' : "") +
+        (hd.department_label
+          ? '<span class="pill desk">' + esc(hd.department_label) + "</span> " : "") +
         '<strong style="margin-left:6px">' + esc(REASON_LABEL[hd.reason] || hd.reason) + "</strong>" +
         (hd.status === "open" ? ' <span class="waiting ' + w[1] + '">waiting ' + w[0] + "</span>" : "") +
         '<div class="meta" style="margin-top:5px">' + new Date(hd.created_at).toLocaleString() + "</div>" +
@@ -2245,6 +2301,7 @@ function loadHandoffs() {
 
     $("main").innerHTML = h;
     wire("[data-hs]", "hs", function (v) { state.hstatus = v; loadHandoffs(); });
+    wire("[data-desk]", "desk", function (v) { state.hdesk = v; loadHandoffs(); });
     wire("[data-tx]", "tx", function (v, el) { showTranscript(v, el.getAttribute("data-hid")); });
     wire("[data-close]", "close", closeHandoff);
     wire("[data-reopen]", "reopen", reopenHandoff);
@@ -2948,7 +3005,7 @@ function stopTellerPolling() {
 /* Waiting time, in the shape a person reads at a glance. Seconds up to a
    minute, because the difference between 8s and 50s is the difference between
    "take it now" and "take it now". */
-function waited(sec) {
+function waitedSeconds(sec) {
   if (sec == null) return "";
   if (sec < 60) return sec + "s";
   var m = Math.floor(sec / 60);
@@ -3100,7 +3157,7 @@ function renderTellerQueue(rows) {
             '<div class="meta">' + esc(r.media === "video" ? "Video" : "Audio") +
             " · " + esc(r.scope === "verified" ? "Identified" : "Not yet identified") +
             "</div></span>" +
-            '<span class="n">' + esc(waited(r.waited_seconds)) + "</span>" +
+            '<span class="n">' + esc(waitedSeconds(r.waited_seconds)) + "</span>" +
             (canServe
               ? '<button class="btn sm" data-claim="' + esc(r.id) + '">Take</button>'
               : "") +
@@ -3129,7 +3186,7 @@ function renderTellerQueue(rows) {
             '<div class="meta">' + esc(r.media === "video" ? "Video" : "Audio") +
             (r.verified_ref ? " · Fayda ••••" + esc(r.verified_ref) : "") +
             "</div></span>" +
-            '<span class="n">' + esc(waited(r.waited_seconds)) + " wait</span>" +
+            '<span class="n">' + esc(waitedSeconds(r.waited_seconds)) + " wait</span>" +
             "</div>";
         }).join("") + "</div>"
       : '<div class="empty">No session in progress.</div>') +

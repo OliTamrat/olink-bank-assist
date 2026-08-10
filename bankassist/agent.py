@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import classifier, presence
+from . import classifier, departments, presence
 from .i18n import t
 from .llm import (
     LLMDeclined,
@@ -157,6 +157,7 @@ def _create_handoff(
     created: list[str],
     *,
     needs_person: bool = True,
+    titles: tuple[str, ...] = (),
 ) -> None:
     """File a handoff, and record its id in `created`.
 
@@ -178,6 +179,13 @@ def _create_handoff(
         # exists — and _capture_contact backfills the open rows afterwards.
         contact_name=conversation.customer_name,
         contact_phone=conversation.contact_phone,
+        # Which desk, and how fast — decided from the customer's own words at
+        # the moment the row is filed. Rules, never a model call: this is an
+        # eight-way choice over a small stable vocabulary on the highest
+        # volume object in the product, and it has to be explainable to a
+        # supervisor asking why something landed where it did.
+        department=departments.classify(detail, titles=titles),
+        priority=departments.priority(detail),
     )
     db.add(handoff)
     db.flush()
