@@ -33,6 +33,7 @@ from . import (
     departments,
     faq,
     handoff_webhook,
+    ingest,
     livekit,
     passwords,
     permissions,
@@ -1424,6 +1425,182 @@ def list_handoffs(
         }
         for h in rows
     ]
+
+
+# ---------------------------------------------------------------- importing
+
+
+class IngestIn(BaseModel):
+    """Either a URL to fetch, or markup somebody pasted. Not both."""
+
+    url: str | None = None
+    html: str | None = None
+    language: str = "en"
+    category: str = "general"
+
+
+class IngestCommitIn(IngestIn):
+    # Which of the proposed sections to actually write, by title. An import
+    # that wrote everything it found would be the reason nobody uses it twice:
+    # the first page always brings something the bank does not want.
+    titles: list[str] = Field(default_factory=list)
+
+
+# A bank's page, not a video. Enough for the longest tariff page anybody
+# publishes and small enough that a hostile response cannot fill the instance.
+MAX_IMPORT_BYTES = 3_000_000
+
+
+def _fetch_page(url: str) -> str:
+    """Fetch a page for import, or raise HTTPException.
+
+    Thin on purpose — everything worth arguing about is in
+    `ingest.check_url`, which is pure and separately tested. What is left here
+    is the two bounds that a URL check cannot express: how long we wait, and
+    how much we are willing to read.
+
+    Redirects are NOT followed. A checked https address that 302s to
+    http://169.254.169.254 would walk straight past the guard, and a bank's
+    published page does not need a redirect to be readable.
+    """
+    import httpx
+
+    try:
+        safe = ingest.check_url(url)
+    except ingest.UnsafeUrl as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        with httpx.Client(follow_redirects=False, timeout=10.0) as client:
+            resp = client.get(safe, headers={"User-Agent": "OlinkBankAssist/1.0"})
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Could not reach that page: {exc}"
+        ) from exc
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"That page returned {resp.status_code}",
+        )
+    if resp.status_code >= 300:
+        raise HTTPException(
+            status_code=422,
+            detail="That address redirects. Import the address it points to.",
+        )
+    if len(resp.content) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail="That page is too large to import")
+    return resp.text
+
+
+def _proposed(payload: IngestIn) -> tuple[list[ingest.Section], str | None]:
+    if payload.language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=422, detail="Unsupported language")
+    if payload.url and payload.html:
+        raise HTTPException(
+            status_code=422, detail="Give an address or some markup, not both"
+        )
+    if payload.url:
+        markup = _fetch_page(payload.url)
+        return ingest.sections(markup, fallback_title=""), payload.url.strip()
+    if payload.html:
+        return ingest.sections(payload.html, fallback_title=""), None
+    raise HTTPException(status_code=422, detail="Nothing to import")
+
+
+@app.post("/admin/api/{slug}/ingest/preview")
+def ingest_preview(
+    payload: IngestIn,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """What WOULD be imported, without importing any of it.
+
+    The whole reason this is two endpoints. Nobody should write two hundred
+    documents into the thing that answers their customers on the strength of a
+    URL typed into a box — the first page a bank imports always brings a
+    section they do not want, and finding that out afterwards means undoing it
+    by hand.
+
+    Each proposal says whether it is new or would replace something, so
+    re-importing an updated page reads as five updates rather than five
+    unexplained duplicates.
+    """
+    bank = principal.bank
+    found, source = _proposed(payload)
+    existing = {
+        row.title: row
+        for row in db.execute(
+            select(Document).where(Document.bank_id == bank.id)
+        ).scalars().all()
+    }
+    return {
+        "source_url": source,
+        "sections": [
+            {
+                "title": s.title,
+                "chars": s.chars,
+                "preview": s.body[:280],
+                "replaces": s.title in existing,
+            }
+            for s in found
+        ],
+    }
+
+
+@app.post("/admin/api/{slug}/ingest/commit")
+def ingest_commit(
+    payload: IngestCommitIn,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Write the sections the operator ticked. Nothing else.
+
+    Re-fetches rather than trusting a body the browser round-tripped: what
+    gets written to a bank's knowledge base should be what the server read,
+    not what a client says the server read.
+
+    Matched on title within the tenant, so a re-import UPDATES rather than
+    duplicating. The alternative — always insert — produces a knowledge base
+    holding last quarter's fee beside this quarter's, with nothing to say
+    which is current, and the customer gets whichever one scores higher.
+    """
+    bank = principal.bank
+    found, source = _proposed(payload)
+    wanted = set(payload.titles)
+    chosen = [s for s in found if s.title in wanted] if wanted else found
+    if not chosen:
+        raise HTTPException(status_code=422, detail="Nothing was selected")
+
+    existing = {
+        row.title: row
+        for row in db.execute(
+            select(Document).where(Document.bank_id == bank.id)
+        ).scalars().all()
+    }
+    created, updated = 0, 0
+    for section in chosen:
+        doc = existing.get(section.title)
+        if doc is None:
+            doc = Document(
+                bank_id=bank.id, title=section.title, content=section.body,
+                category=payload.category, language=payload.language,
+                source_url=source,
+            )
+            db.add(doc)
+            db.flush()
+            created += 1
+        else:
+            doc.content = section.body
+            doc.language = payload.language
+            doc.source_url = source or doc.source_url
+            updated += 1
+        reindex_document(db, doc)
+    _audit(
+        db, bank, "documents_imported", "bank", bank.id,
+        {"source": source or "pasted", "created": created, "updated": updated},
+        actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"created": created, "updated": updated}
 
 
 # --------------------------------------------------------- curated answers

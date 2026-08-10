@@ -2475,6 +2475,98 @@ function toggleHandoffDetail(id) {
   }
 }
 
+/* --------------------------------------------------------------- importing
+ *
+ * Every tenant is running on fifteen to twenty-three articles while a real
+ * bank's website is several hundred pages, and that gap is the ceiling on
+ * what the assistant can answer. The two ways in were a form that takes one
+ * article at a time and a raw JSON paste, which is why the gap never closed.
+ *
+ * Two steps, never one. Nobody should write two hundred documents into the
+ * thing that answers their customers on the strength of a URL typed into a
+ * box — the first page a bank imports always brings a section they do not
+ * want, and finding that out afterwards means undoing it by hand.
+ */
+function importForm() {
+  $("doc-form").innerHTML =
+    '<div class="panel"><h3>Import a page</h3>' +
+    '<div class="meta" style="margin-bottom:10px">Paste the address of a page ' +
+    "on your own website, or paste the page source. You will see what would " +
+    "be imported before anything is written.</div>" +
+    '<div class="field"><input id="imp-url" placeholder="https://www.yourbank.com/personal/savings"></div>' +
+    '<div class="field"><textarea id="imp-html" rows="4" placeholder="…or paste the page source here"></textarea></div>' +
+    '<div class="tools">' +
+      '<select id="imp-lang">' + LANGS.map(function (l) {
+        return '<option value="' + l + '">' + l + "</option>";
+      }).join("") + "</select>" +
+      '<select id="imp-cat">' + CATEGORIES.map(function (c) {
+        return '<option value="' + c + '">' + c + "</option>";
+      }).join("") + "</select>" +
+      '<button class="btn" id="imp-preview">See what would be imported</button>' +
+      '<button class="btn ghost" id="imp-cancel">Cancel</button>' +
+    "</div><div id=\"imp-out\"></div></div>";
+
+  $("imp-cancel").onclick = function () { $("doc-form").innerHTML = ""; };
+  $("imp-preview").onclick = function () {
+    var body = {
+      language: $("imp-lang").value, category: $("imp-cat").value
+    };
+    var url = $("imp-url").value.trim(), markup = $("imp-html").value.trim();
+    if (url) body.url = url; else if (markup) body.html = markup;
+    else { setStatus("An address or some page source, please."); return; }
+
+    $("imp-out").innerHTML = '<div class="meta" style="margin-top:12px">Reading…</div>';
+    api("/ingest/preview", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (!r.sections.length) {
+        $("imp-out").innerHTML =
+          '<div class="empty">Nothing importable on that page. It may be ' +
+          "mostly navigation, or the text may load after the page does.</div>";
+        return;
+      }
+      // Everything ticked by default — the common case is "yes, all of it" —
+      // but visible and countable first, which is the whole point of the step.
+      $("imp-out").innerHTML =
+        '<div class="meta" style="margin:14px 0 8px">' + r.sections.length +
+        " section" + (r.sections.length === 1 ? "" : "s") + " found</div>" +
+        '<div class="rows">' + r.sections.map(function (sec, i) {
+          return '<label class="r" style="cursor:pointer">' +
+            '<input type="checkbox" class="imp-pick" checked value="' + esc(sec.title) +
+              '" style="width:auto;flex:none;margin:0">' +
+            '<span class="what"><b>' + esc(sec.title) + "</b> — " +
+              esc(sec.preview.slice(0, 90)) + "…</span>" +
+            '<span class="tag">' + (sec.replaces ? "replaces" : "new") + "</span>" +
+            '<span class="age">' + sec.chars + " ch</span></label>";
+        }).join("") + "</div>" +
+        '<div class="tools" style="margin-top:12px">' +
+        '<button class="btn" id="imp-commit">Import the ticked sections</button></div>';
+
+      $("imp-commit").onclick = function () {
+        body.titles = Array.prototype.slice
+          .call(document.querySelectorAll(".imp-pick:checked"))
+          .map(function (c) { return c.value; });
+        if (!body.titles.length) { setStatus("Nothing ticked."); return; }
+        $("imp-commit").disabled = true;
+        api("/ingest/commit", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }).then(function (out) {
+          setStatus(out.created + " added, " + out.updated + " updated");
+          $("doc-form").innerHTML = "";
+          loadDocs();
+        }).catch(function (e) {
+          $("imp-commit").disabled = false;
+          setStatus(e.message);
+        });
+      };
+    }).catch(function (e) {
+      $("imp-out").innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
+    });
+  };
+}
+
 /* ---------------------------------------------------------- curated answers
  *
  * The loop that makes the assistant cheaper and more defensible at the same
@@ -2770,6 +2862,7 @@ function loadDocs() {
     var writable = can("documents.write");
     var h = '<div class="tools">' +
       (writable ? '<button class="btn sm" id="new-doc">Add article</button>' +
+                  '<button class="btn ghost sm" id="import-doc">Import a page</button>' +
                   '<button class="btn ghost sm" id="bulk-doc">Bulk import</button>' : "") +
       '<div style="flex:1"></div><span class="meta">' + docs.length + " article" +
       (docs.length === 1 ? "" : "s") + "</span></div>" +
@@ -2802,6 +2895,7 @@ function loadDocs() {
         docForm({ title: gap.title, language: gap.language }, gap);
       }
       $("bulk-doc").onclick = bulkForm;
+      $("import-doc").onclick = importForm;
       wire("[data-edit]", "edit", function (id) {
         docForm(state.docs.filter(function (d) { return d.id === id; })[0]);
       });
