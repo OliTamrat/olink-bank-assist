@@ -37,6 +37,19 @@ LANGUAGE_NAMES = {
 
 STRINGS_PATH = Path(__file__).with_name("strings.json")
 
+# The widget's own interface, as opposed to what the assistant says. Two
+# tables rather than one because they are two different jobs: `strings.json`
+# is the bot's voice and needs a translator thinking about tone, while this is
+# button and label text and needs one thinking about length and convention.
+# A reviewer correcting "End call" should not have to scroll past a paragraph
+# about investment-advice disclaimers to find it.
+#
+# It exists at all because the product was multilingual in its replies and
+# English in its chrome — an Amharic speaker held a whole conversation in
+# Amharic and then hit "Speak to a teller / Audio / Video / Join the queue"
+# in English at exactly the moment they needed a person.
+UI_STRINGS_PATH = Path(__file__).with_name("ui_strings.json")
+
 
 def _load() -> dict[str, dict[str, str]]:
     with STRINGS_PATH.open(encoding="utf-8") as fh:
@@ -45,6 +58,38 @@ def _load() -> dict[str, dict[str, str]]:
 
 
 _STRINGS: dict[str, dict[str, str]] = _load()
+
+
+def _load_ui() -> dict[str, dict[str, str]]:
+    with UI_STRINGS_PATH.open(encoding="utf-8") as fh:
+        data: dict[str, dict[str, str]] = json.load(fh)
+    return data
+
+
+_UI_STRINGS: dict[str, dict[str, str]] = _load_ui()
+
+
+def ui_strings(language: str) -> dict[str, str]:
+    """Every interface label in one language, falling back to English.
+
+    A missing key returns the English rather than the key name or an empty
+    string: a button reading "end_call" or nothing at all is a broken product,
+    while one reading "End call" in an otherwise Amharic interface is merely
+    an untranslated string somebody can see and fix.
+    """
+    table = dict(_UI_STRINGS["en"])
+    table.update(_UI_STRINGS.get(language, {}))
+    return table
+
+
+def all_ui_strings() -> dict[str, dict[str, str]]:
+    """Every language at once, for the widget to switch between offline.
+
+    Forty-seven short labels in five languages is a few kilobytes, and sending
+    them together means changing language is instant rather than a round trip
+    — which matters most on the connection this product is actually used on.
+    """
+    return {lang: ui_strings(lang) for lang in SUPPORTED_LANGUAGES}
 
 
 # What each string is for, and what a translation must preserve. Written for

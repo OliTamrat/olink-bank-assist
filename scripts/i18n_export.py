@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from bankassist.i18n import (  # noqa: E402
     _NOTES,
     _STRINGS,
+    _UI_STRINGS,
     LANGUAGE_NAMES,
     SUPPORTED_LANGUAGES,
 )
@@ -43,6 +44,21 @@ def main() -> int:
         row = [key, _NOTES.get(key, "")]
         for lang in SUPPORTED_LANGUAGES:
             row.append(_STRINGS[lang].get(key, ""))
+        row.append("")
+        rows.append(row)
+
+    # The interface's own labels, in the same sheet rather than a third one.
+    # They are a different job from the assistant's voice — length and
+    # convention rather than tone — but a reviewer opening two files corrects
+    # one and forgets the other, and the rule is that a feature ships in five
+    # languages or it has not shipped.
+    rows.append([""] * len(header))
+    rows.append(["— interface labels below —"] + [""] * (len(header) - 1))
+    for key in _UI_STRINGS["en"]:
+        row = [f"ui.{key}", "Button, label or placeholder. Keep it short —"
+                            " it has to fit the same space as the English."]
+        for lang in SUPPORTED_LANGUAGES:
+            row.append(_UI_STRINGS[lang].get(key, ""))
         row.append("")
         rows.append(row)
 
