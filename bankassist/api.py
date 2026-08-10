@@ -1560,6 +1560,13 @@ def ingest_preview(
                 "chars": s.chars,
                 "preview": s.body[:280],
                 "replaces": s.title in existing,
+                # Flagged, never dropped. Every bank product page is somewhat
+                # promotional — "open a savings account today and earn 7%" is
+                # both marketing and the literal answer to a real question —
+                # so whether sales copy belongs in a knowledge base is the
+                # bank's judgement. The job here is to make that judgement
+                # fast when there are two hundred sections to look at.
+                "promotional": ingest.is_promotional(s.title, s.body),
             }
             for s in found
         ],

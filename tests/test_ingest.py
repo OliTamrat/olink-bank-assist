@@ -548,3 +548,101 @@ def test_a_sentence_of_capitalised_words_is_not_a_navigation_strip() -> None:
     sentence = "Visit Any Branch In Addis Ababa With Your Fayda ID."
     kept = ingest.plain_text_section(sentence + "\n\n" + COPIED, "x")[0].body
     assert sentence in kept
+
+
+# ------------------------------------------------------------ marketing copy
+#
+# The second real import: "Earn More by Partnering with CBE for Agent
+# Remittance Service!" — an agent-recruitment page that reads like an ordinary
+# product article until the exclamation marks, ending in "Seize this
+# opportunity today! Click here to register now!"
+#
+# Two different problems, and only ONE of them should be automatic.
+
+AGENT_PAGE = """Earn More by Partnering with CBE for Agent Remittance Service!
+
+The Commercial Bank of Ethiopia (CBE), with authorization from the National
+Bank of Ethiopia, is now offering international money transfer services
+through licensed agents.
+
+This platform provides Ethiopians living abroad with a fast and reliable way
+to send money home, while giving agents the opportunity to expand their
+business and increase their revenue.
+
+Seize this opportunity today!
+Click here to register now!
+"""
+
+
+def test_a_bare_call_to_action_is_dropped() -> None:
+    """Always noise, in every context. "Click here to register now!" answers
+    no question anybody will ever ask, and a customer who asked about
+    remittance fees does not want it quoted back at them."""
+    body = ingest.plain_text_section(AGENT_PAGE, "Agent Remittance")[0].body
+    assert "Click here to register" not in body
+    assert "Seize this opportunity" not in body
+    # The actual information survives.
+    assert "National" in body and "licensed agents" in body
+
+
+def test_marketing_copy_is_flagged_rather_than_dropped() -> None:
+    """The judgement is the bank's, not ours.
+
+    Filtering on marketing language would be wrong: every bank product page is
+    somewhat promotional, and "open a savings account today and earn 7%
+    interest" is both marketing and the literal answer to a real question. The
+    job is to make the judgement FAST when there are two hundred sections —
+    not to make it for them.
+    """
+    assert ingest.is_promotional(
+        "Earn More by Partnering with CBE for Agent Remittance Service!",
+        AGENT_PAGE,
+    )
+    # And it still imports if they want it.
+    assert ingest.plain_text_section(AGENT_PAGE, "Agent Remittance")
+
+
+def test_an_ordinary_product_page_is_not_flagged() -> None:
+    """The false positive that would matter. Flag every product page and the
+    flag means nothing, so the operator stops reading it."""
+    assert not ingest.is_promotional(
+        "Ordinary Savings Account",
+        "Open an ordinary savings account at any branch with your Fayda ID. "
+        "The minimum opening balance is 100 birr and interest is paid "
+        "quarterly at seven percent on the average daily balance.",
+    )
+
+
+def test_the_headline_counts_towards_the_flag() -> None:
+    """Scoring the body alone missed the real page. The strongest signal is
+    almost always the headline — "Earn More by Partnering with CBE" gives the
+    whole thing away while the prose underneath reads like a product
+    description."""
+    body = (
+        "The Commercial Bank of Ethiopia provides money transfer services "
+        "through licensed agents across the country, with settlement in birr."
+    )
+    assert not ingest.is_promotional("Agent Remittance", body)
+    assert ingest.is_promotional("Earn More! Sign up today!", body)
+
+
+def test_marketing_language_is_matched_in_either_person() -> None:
+    """The real page said "increase THEIR revenue" and "expand THEIR
+    business" — it addresses agents about their own customers — and a pattern
+    written only for "your" scored it as ordinary prose. Marketing copy
+    switches person depending on who it is aimed at; the vocabulary is what
+    stays constant."""
+    for possessive in ("your", "their"):
+        text = f"An opportunity to expand {possessive} business and increase {possessive} revenue."
+        assert ingest.marketing_markers(text) >= ingest.MARKETING_MARKERS, possessive
+
+
+def test_the_preview_carries_the_marketing_flag(
+    client: TestClient, demo_bank: Any
+) -> None:
+    body = client.post(
+        "/admin/api/demo/ingest/preview",
+        json={"html": AGENT_PAGE, "title": "Agent Remittance"},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    ).json()
+    assert body["sections"] and body["sections"][0]["promotional"] is True

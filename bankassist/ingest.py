@@ -143,6 +143,71 @@ def link_ratio(markup: str) -> float:
     return min(1.0, linked / total)
 
 
+# A call to action, on its own line. Always noise, in every context.
+#
+# "Click here to register now!" and "Seize this opportunity today!" answer no
+# question anybody will ever ask, and a customer who asked about remittance
+# fees does not want one quoted back at them. Dropped rather than flagged,
+# because unlike the marketing TONE of a page — which is a judgement — a bare
+# call to action is measurably not an answer.
+_CTA_LINE: Final[re.Pattern[str]] = re.compile(
+    r"^(?:click here.*|seize this opportunity.*|don'?t miss out.*|"
+    r"(?:sign up|register|apply|join|order|subscribe|download)"
+    r"(?: now| today| here)?[!.]?|"
+    r"(?:get started|learn more|find out more|read more|discover more|"
+    r"contact us today|call us now|visit us today)[!.]?|"
+    r"(?:partner|bank) with us today[!.]?)$",
+    re.IGNORECASE,
+)
+
+# Marketing vocabulary. NOT used to drop anything — used to flag a section so
+# an operator importing two hundred pages sees the sales copy without reading
+# every one.
+#
+# Filtering on this would be wrong. Every bank product page is somewhat
+# promotional, and "Open a savings account today and earn 7% interest" is both
+# marketing and the literal answer to "what interest do you pay". The
+# judgement of whether a page belongs in a knowledge base is the bank's; the
+# job here is to make that judgement fast.
+_MARKETING: Final[re.Pattern[str]] = re.compile(
+    # Possessive-agnostic throughout. The first real page said "increase
+    # THEIR revenue" and "expand THEIR business" — it is addressed to agents
+    # about their own customers — and a pattern written only for "your" scored
+    # it as ordinary prose. Marketing copy switches person freely depending on
+    # who it is aimed at; the vocabulary is what stays constant.
+    r"\b(earn more|maximi[sz]e (your|their)|seize this|don'?t miss|"
+    r"limited time|act now|hurry|exclusive offer|special offer|"
+    r"opportunity to (earn|grow|expand|seize)|boost (your|their)|"
+    r"unlock (your|their)|(grow|expand) (your|their) business|"
+    r"increase (your|their) (revenue|profit|income)|"
+    r"why wait|today only|register now|sign up today)\b",
+    re.IGNORECASE,
+)
+
+# How many marketing markers before a section is flagged. Two, not one: a
+# single "grow your business" inside a page about business accounts is
+# ordinary product writing, and flagging it would train an operator to ignore
+# the flag.
+MARKETING_MARKERS: Final = 2
+
+
+def marketing_markers(text: str) -> int:
+    """How many pieces of sales language this section contains."""
+    return len(_MARKETING.findall(text))
+
+
+def is_promotional(title: str, body: str) -> bool:
+    """Whether to flag this as sales copy. Never a reason to drop it.
+
+    Title AND body. The strongest signal is almost always the headline — "Earn
+    More by Partnering with CBE" is the whole giveaway on a page whose prose
+    then reads like an ordinary product description — and scoring the body
+    alone missed exactly that page.
+    """
+    text = f"{title}\n{body}"
+    return marketing_markers(text) >= MARKETING_MARKERS or text.count("!") >= 3
+
+
 # A section shorter than this is a stub — a heading with a link under it, or a
 # card on a landing page. Importing it adds a title to the suggestion list
 # that answers nothing when a customer picks it.
@@ -205,7 +270,7 @@ def to_text(markup: str) -> str:
         if not line:
             lines.append("")
             continue
-        if _FURNITURE.match(line):
+        if _FURNITURE.match(line) or _CTA_LINE.match(line):
             continue
         lines.append(line)
     return _BLANKS.sub("\n\n", "\n".join(lines)).strip()
@@ -282,7 +347,9 @@ def plain_text_section(text: str, title: str) -> list[Section]:
         ]
         lines = [
             line for line in lines
-            if not _FURNITURE.match(line) and not _NAV_STRIP.match(line)
+            if not _FURNITURE.match(line)
+            and not _NAV_STRIP.match(line)
+            and not _CTA_LINE.match(line)
         ]
         if lines:
             kept.append("\n".join(lines))

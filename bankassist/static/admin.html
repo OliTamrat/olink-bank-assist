@@ -2533,17 +2533,30 @@ function importForm() {
           esc(r.note || "Nothing importable on that page.") + "</div>";
         return;
       }
-      // Everything ticked by default — the common case is "yes, all of it" —
-      // but visible and countable first, which is the whole point of the step.
+      // Ticked by default, EXCEPT marketing copy.
+      //
+      // The common case is "yes, all of it", so everything else starts
+      // ticked. Sales copy starts unticked because the cost of the two
+      // mistakes is not symmetrical: an unticked page a bank wanted is one
+      // click to fix, while an imported "Seize this opportunity today" sits
+      // in the knowledge base competing with real answers until somebody
+      // notices. Found on the second real import — an agent-recruitment page
+      // that read like a customer-service article until you got to the
+      // exclamation marks.
+      var promo = r.sections.filter(function (s) { return s.promotional; }).length;
       $("imp-out").innerHTML =
         '<div class="meta" style="margin:14px 0 8px">' + r.sections.length +
-        " section" + (r.sections.length === 1 ? "" : "s") + " found</div>" +
+        " section" + (r.sections.length === 1 ? "" : "s") + " found" +
+        (promo ? " · " + promo + " look like marketing and start unticked" : "") +
+        "</div>" +
         '<div class="rows">' + r.sections.map(function (sec, i) {
           return '<label class="r" style="cursor:pointer">' +
-            '<input type="checkbox" class="imp-pick" checked value="' + esc(sec.title) +
+            '<input type="checkbox" class="imp-pick"' +
+              (sec.promotional ? "" : " checked") + ' value="' + esc(sec.title) +
               '" style="width:auto;flex:none;margin:0">' +
             '<span class="what"><b>' + esc(sec.title) + "</b> — " +
               esc(sec.preview.slice(0, 90)) + "…</span>" +
+            (sec.promotional ? '<span class="tag">marketing</span>' : "") +
             '<span class="tag">' + (sec.replaces ? "replaces" : "new") + "</span>" +
             '<span class="age">' + sec.chars + " ch</span></label>";
         }).join("") + "</div>" +
