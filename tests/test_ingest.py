@@ -343,3 +343,306 @@ def test_importing_needs_permission_to_write_documents(
     assert client.post(
         "/admin/api/demo/ingest/commit", json={"html": PAGE, "titles": []}
     ).status_code == 403
+
+
+# ------------------------------------------------- what the first real import taught
+#
+# A CBE page — https://combanketh.et/ways-of-banking/internet-banking — was
+# imported and produced exactly ONE section: a related-services widget reading
+# "Mobile Banking / Easy to use / Go Ahead / CBE Cards", 127 characters. The
+# page's actual content never appeared, and a menu became an article in a
+# bank's knowledge base.
+#
+# Two separate faults, and only one of them was mine to fix in extraction.
+
+LINK_BLOCK = """
+<html><body>
+  <h2>Other Relevant Services</h2>
+  <div>
+    <a href="/mobile">Mobile Banking</a><p>Easy to use</p><a href="/m">Go Ahead</a>
+    <a href="/cards">CBE Cards</a><p>Shop, travel, and pay easily</p><a href="/c">Go Ahead</a>
+    <a href="/atm">CBE ATM</a><p>Find one near you</p><a href="/a">Go Ahead</a>
+  </div>
+</body></html>
+"""
+
+
+def test_a_card_grid_is_a_menu_however_long_it_is() -> None:
+    """It cleared the length floor by seven characters.
+
+    The link ratio alone does NOT catch this, and finding that out is the
+    point: the card blurbs — "Easy to use", "Shop, travel, and pay easily" —
+    are not links, so only 37% of the block is anchor text. What actually
+    distinguishes it is that nothing in it is a sentence.
+    """
+    assert ingest.link_ratio(LINK_BLOCK) < ingest.MAX_LINK_RATIO, (
+        "the obvious rule does not catch this one — that is why there are two"
+    )
+    assert ingest.longest_run(ingest.to_text(LINK_BLOCK)) < ingest.MIN_PROSE_RUN
+    assert ingest.sections(LINK_BLOCK) == []
+
+
+def test_a_pure_navigation_block_is_caught_by_the_link_ratio() -> None:
+    """The other rule still earns its place: a menu of long link labels has a
+    long line and would otherwise pass the prose test."""
+    nav = "<h2>Our Services</h2><div>" + "".join(
+        f'<a href="/{i}">Personal banking services and products number {i}</a> '
+        for i in range(6)
+    ) + "</div>"
+    assert ingest.link_ratio(nav) > ingest.MAX_LINK_RATIO
+    assert ingest.sections(nav) == []
+
+
+def test_an_article_that_links_freely_is_still_an_article() -> None:
+    """The other half, and why the threshold is generous. A real savings page
+    links to the opening form and to three other products; a rule that
+    punished linking would drop the pages worth importing most."""
+    article = (
+        "<h2>Ordinary Savings Account</h2><p>Open an ordinary savings account "
+        "at any branch with your Fayda ID. The minimum opening balance is 100 "
+        "birr and interest is paid quarterly on the average daily balance. "
+        'See our <a href="/fees">fee schedule</a> or the '
+        '<a href="/form">application form</a> for the full details, and read '
+        "about eligibility before you visit a branch.</p>"
+    )
+    assert [s.title for s in ingest.sections(article)] == ["Ordinary Savings Account"]
+
+
+def test_a_javascript_shell_is_diagnosed_rather_than_shrugged_at() -> None:
+    """"Nothing importable" is true and useless. The operator is looking at a
+    page they can SEE has content, with no idea whether to try another page,
+    another button, or give up on the feature."""
+    shell = (
+        "<html><head><title>Internet Banking</title></head><body>"
+        '<div id="root"></div><script>' + "x" * 5000 + "</script></body></html>"
+    )
+    note = ingest.diagnose(shell, ingest.sections(shell))
+    assert note is not None
+    assert "browser" in note.lower()
+    # And it must NOT repeat the advice that does not work here.
+    assert "view source will not work" in note.lower()
+
+
+def test_a_landing_page_is_diagnosed_differently_from_a_shell() -> None:
+    """Three different failures need three different next steps, or the
+    message is decoration."""
+    landing = "<html><body><h2>Products</h2>" + "".join(
+        f'<a href="/{i}">Product {i}</a> ' for i in range(40)
+    ) + "</body></html>"
+    note = ingest.diagnose(landing, ingest.sections(landing))
+    assert note is not None and "landing" in note.lower()
+
+
+def test_the_preview_carries_the_diagnosis(
+    client: TestClient, demo_bank: Any
+) -> None:
+    shell = (
+        "<html><head><title>x</title></head><body>"
+        '<div id="root"></div><script>' + "x" * 5000 + "</script></body></html>"
+    )
+    body = client.post(
+        "/admin/api/demo/ingest/preview",
+        json={"html": shell},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    ).json()
+    assert body["sections"] == []
+    assert body["note"] and "browser" in body["note"].lower()
+
+
+# ---------------------------------------------------------- copied text
+#
+# The escape hatch that makes the feature usable on a site that builds itself
+# in the browser. Telling an operator to dig HTML out of the developer tools
+# is an instruction most people will not follow; selecting the page and
+# copying it is the thing everybody can do.
+
+COPIED = """Internet Banking
+
+CBE internet banking lets you check balances, move money between your own
+accounts and pay bills from a browser without visiting a branch.
+
+To register, visit any branch with your Fayda ID and ask for internet banking.
+You will receive a username and a one-time password to set on first login.
+
+Back to top
+"""
+
+
+def test_copied_text_imports_under_a_title_the_operator_gives(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    resp = client.post(
+        "/admin/api/demo/ingest/commit",
+        json={"html": COPIED, "title": "Internet Banking", "titles": []},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["created"] == 1
+    doc = db_session.execute(
+        select(Document).where(Document.title == "Internet Banking")
+    ).scalars().one()
+    assert "one-time password" in doc.content
+
+
+def test_copied_text_is_not_mistaken_for_markup() -> None:
+    """Prose that happens to contain an angle bracket is still prose."""
+    assert not ingest.looks_like_markup(COPIED)
+    assert not ingest.looks_like_markup("Transfers under 5000 birr < 1 minute")
+    assert ingest.looks_like_markup("<html><body><p>hi</p></body></html>")
+
+
+def test_copied_text_keeps_its_paragraphs() -> None:
+    """`chunk_text` splits on blank lines, so a paste flattened into one line
+    would become one enormous chunk and destroy retrieval precision on
+    everything imported this way."""
+    section = ingest.plain_text_section(COPIED, "Internet Banking")[0]
+    assert "\n\n" in section.body
+
+
+def test_copied_text_drops_the_furniture_that_came_with_it() -> None:
+    """A selection always picks up "Back to top" and friends."""
+    section = ingest.plain_text_section(COPIED, "Internet Banking")[0]
+    assert "Back to top" not in section.body
+
+
+def test_pasted_text_with_no_title_still_gets_a_usable_one() -> None:
+    """A document called "Untitled page" is one nobody can find again — but
+    refusing the import outright would lose content over a blank field."""
+    section = ingest.plain_text_section(COPIED, "")[0]
+    assert section.title and section.title != ""
+
+
+def test_a_navigation_strip_does_not_survive_a_copy_paste() -> None:
+    """Seen the moment the paste route was driven for real.
+
+    Selecting a rendered page collapses the whole menu onto ONE line —
+    "Home Personal Business Diaspora About Contact" — which the furniture
+    list cannot catch, because every entry in that list is a single word and
+    this is six of them. It became the opening line of the imported article
+    and therefore the first thing the assistant quoted back to a customer.
+    """
+    section = ingest.plain_text_section(
+        "Home  Personal  Business  Diaspora  About  Contact\n\n" + COPIED,
+        "Internet Banking",
+    )[0]
+    assert "Diaspora  About" not in section.body
+    assert not section.body.startswith("Home")
+    # And the article itself is untouched.
+    assert "one-time password" in section.body
+
+
+@pytest.mark.parametrize("line", [
+    "Internet Banking",                      # a heading
+    "CBE Noor Interest Free Banking",        # a product name, four words
+])
+def test_a_heading_is_not_mistaken_for_a_navigation_strip(line: str) -> None:
+    """The rule has to leave real headings and product names alone. Four
+    capitalised words is the point where "several nouns in a row" stops being
+    a heading — three is still a name."""
+    kept = ingest.plain_text_section(line + "\n\n" + COPIED, "x")[0].body
+    assert line in kept or line.split()[0] in kept
+
+
+def test_a_sentence_of_capitalised_words_is_not_a_navigation_strip() -> None:
+    """Punctuation is what separates a sentence from a menu."""
+    sentence = "Visit Any Branch In Addis Ababa With Your Fayda ID."
+    kept = ingest.plain_text_section(sentence + "\n\n" + COPIED, "x")[0].body
+    assert sentence in kept
+
+
+# ------------------------------------------------------------ marketing copy
+#
+# The second real import: "Earn More by Partnering with CBE for Agent
+# Remittance Service!" — an agent-recruitment page that reads like an ordinary
+# product article until the exclamation marks, ending in "Seize this
+# opportunity today! Click here to register now!"
+#
+# Two different problems, and only ONE of them should be automatic.
+
+AGENT_PAGE = """Earn More by Partnering with CBE for Agent Remittance Service!
+
+The Commercial Bank of Ethiopia (CBE), with authorization from the National
+Bank of Ethiopia, is now offering international money transfer services
+through licensed agents.
+
+This platform provides Ethiopians living abroad with a fast and reliable way
+to send money home, while giving agents the opportunity to expand their
+business and increase their revenue.
+
+Seize this opportunity today!
+Click here to register now!
+"""
+
+
+def test_a_bare_call_to_action_is_dropped() -> None:
+    """Always noise, in every context. "Click here to register now!" answers
+    no question anybody will ever ask, and a customer who asked about
+    remittance fees does not want it quoted back at them."""
+    body = ingest.plain_text_section(AGENT_PAGE, "Agent Remittance")[0].body
+    assert "Click here to register" not in body
+    assert "Seize this opportunity" not in body
+    # The actual information survives.
+    assert "National" in body and "licensed agents" in body
+
+
+def test_marketing_copy_is_flagged_rather_than_dropped() -> None:
+    """The judgement is the bank's, not ours.
+
+    Filtering on marketing language would be wrong: every bank product page is
+    somewhat promotional, and "open a savings account today and earn 7%
+    interest" is both marketing and the literal answer to a real question. The
+    job is to make the judgement FAST when there are two hundred sections —
+    not to make it for them.
+    """
+    assert ingest.is_promotional(
+        "Earn More by Partnering with CBE for Agent Remittance Service!",
+        AGENT_PAGE,
+    )
+    # And it still imports if they want it.
+    assert ingest.plain_text_section(AGENT_PAGE, "Agent Remittance")
+
+
+def test_an_ordinary_product_page_is_not_flagged() -> None:
+    """The false positive that would matter. Flag every product page and the
+    flag means nothing, so the operator stops reading it."""
+    assert not ingest.is_promotional(
+        "Ordinary Savings Account",
+        "Open an ordinary savings account at any branch with your Fayda ID. "
+        "The minimum opening balance is 100 birr and interest is paid "
+        "quarterly at seven percent on the average daily balance.",
+    )
+
+
+def test_the_headline_counts_towards_the_flag() -> None:
+    """Scoring the body alone missed the real page. The strongest signal is
+    almost always the headline — "Earn More by Partnering with CBE" gives the
+    whole thing away while the prose underneath reads like a product
+    description."""
+    body = (
+        "The Commercial Bank of Ethiopia provides money transfer services "
+        "through licensed agents across the country, with settlement in birr."
+    )
+    assert not ingest.is_promotional("Agent Remittance", body)
+    assert ingest.is_promotional("Earn More! Sign up today!", body)
+
+
+def test_marketing_language_is_matched_in_either_person() -> None:
+    """The real page said "increase THEIR revenue" and "expand THEIR
+    business" — it addresses agents about their own customers — and a pattern
+    written only for "your" scored it as ordinary prose. Marketing copy
+    switches person depending on who it is aimed at; the vocabulary is what
+    stays constant."""
+    for possessive in ("your", "their"):
+        text = f"An opportunity to expand {possessive} business and increase {possessive} revenue."
+        assert ingest.marketing_markers(text) >= ingest.MARKETING_MARKERS, possessive
+
+
+def test_the_preview_carries_the_marketing_flag(
+    client: TestClient, demo_bank: Any
+) -> None:
+    body = client.post(
+        "/admin/api/demo/ingest/preview",
+        json={"html": AGENT_PAGE, "title": "Agent Remittance"},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    ).json()
+    assert body["sections"] and body["sections"][0]["promotional"] is True

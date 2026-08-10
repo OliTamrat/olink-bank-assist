@@ -2494,7 +2494,11 @@ function importForm() {
     "on your own website, or paste the page source. You will see what would " +
     "be imported before anything is written.</div>" +
     '<div class="field"><input id="imp-url" placeholder="https://www.yourbank.com/personal/savings"></div>' +
-    '<div class="field"><textarea id="imp-html" rows="4" placeholder="…or paste the page source here"></textarea></div>' +
+    '<div class="field"><textarea id="imp-html" rows="4" placeholder="…or open the page, select all (Ctrl+A), copy, and paste it here"></textarea></div>' +
+    // Only needed for pasted TEXT — markup and fetched pages carry their own
+    // headings. Shown always rather than conditionally, because a field that
+    // appears halfway through a task is a field nobody notices.
+    '<div class="field"><input id="imp-title" placeholder="Title for pasted text, e.g. Internet Banking"></div>' +
     '<div class="tools">' +
       '<select id="imp-lang">' + LANGS.map(function (l) {
         return '<option value="' + l + '">' + l + "</option>";
@@ -2509,7 +2513,8 @@ function importForm() {
   $("imp-cancel").onclick = function () { $("doc-form").innerHTML = ""; };
   $("imp-preview").onclick = function () {
     var body = {
-      language: $("imp-lang").value, category: $("imp-cat").value
+      language: $("imp-lang").value, category: $("imp-cat").value,
+      title: $("imp-title").value.trim()
     };
     var url = $("imp-url").value.trim(), markup = $("imp-html").value.trim();
     if (url) body.url = url; else if (markup) body.html = markup;
@@ -2521,22 +2526,37 @@ function importForm() {
       body: JSON.stringify(body)
     }).then(function (r) {
       if (!r.sections.length) {
-        $("imp-out").innerHTML =
-          '<div class="empty">Nothing importable on that page. It may be ' +
-          "mostly navigation, or the text may load after the page does.</div>";
+        // The server's own diagnosis, which names what to do next. A generic
+        // "nothing importable" leaves an operator looking at a page they can
+        // see has content with no idea which of three things is wrong.
+        $("imp-out").innerHTML = '<div class="empty" style="text-align:left">' +
+          esc(r.note || "Nothing importable on that page.") + "</div>";
         return;
       }
-      // Everything ticked by default — the common case is "yes, all of it" —
-      // but visible and countable first, which is the whole point of the step.
+      // Ticked by default, EXCEPT marketing copy.
+      //
+      // The common case is "yes, all of it", so everything else starts
+      // ticked. Sales copy starts unticked because the cost of the two
+      // mistakes is not symmetrical: an unticked page a bank wanted is one
+      // click to fix, while an imported "Seize this opportunity today" sits
+      // in the knowledge base competing with real answers until somebody
+      // notices. Found on the second real import — an agent-recruitment page
+      // that read like a customer-service article until you got to the
+      // exclamation marks.
+      var promo = r.sections.filter(function (s) { return s.promotional; }).length;
       $("imp-out").innerHTML =
         '<div class="meta" style="margin:14px 0 8px">' + r.sections.length +
-        " section" + (r.sections.length === 1 ? "" : "s") + " found</div>" +
+        " section" + (r.sections.length === 1 ? "" : "s") + " found" +
+        (promo ? " · " + promo + " look like marketing and start unticked" : "") +
+        "</div>" +
         '<div class="rows">' + r.sections.map(function (sec, i) {
           return '<label class="r" style="cursor:pointer">' +
-            '<input type="checkbox" class="imp-pick" checked value="' + esc(sec.title) +
+            '<input type="checkbox" class="imp-pick"' +
+              (sec.promotional ? "" : " checked") + ' value="' + esc(sec.title) +
               '" style="width:auto;flex:none;margin:0">' +
             '<span class="what"><b>' + esc(sec.title) + "</b> — " +
               esc(sec.preview.slice(0, 90)) + "…</span>" +
+            (sec.promotional ? '<span class="tag">marketing</span>' : "") +
             '<span class="tag">' + (sec.replaces ? "replaces" : "new") + "</span>" +
             '<span class="age">' + sec.chars + " ch</span></label>";
         }).join("") + "</div>" +

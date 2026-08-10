@@ -75,6 +75,139 @@ _FURNITURE: Final = re.compile(
     re.IGNORECASE,
 )
 
+# How much of a block's text may sit inside links before it is navigation
+# rather than prose.
+#
+# From the first real import. A CBE page returned exactly one section — a
+# related-services widget reading "Mobile Banking / Easy to use / Go Ahead /
+# CBE Cards" — because it happened to sit under an h2 and cleared the length
+# floor by seven characters. Length alone cannot tell a short article from a
+# list of links, and the tell is that almost every word is a link label.
+#
+# Half is deliberately generous. Real articles link freely — a savings page
+# links to the account-opening form and to three other products — and the
+# blocks this is aimed at are 80–100% anchor text.
+MAX_LINK_RATIO: Final = 0.5
+
+# The longest unbroken run of text a block must contain to count as something
+# written to be read.
+#
+# The link ratio alone did not catch the CBE block: its card blurbs — "Easy to
+# use", "Shop, travel, and pay easily" — are not links, so only 37% of it was
+# anchor text and it sailed through. What actually distinguishes it is that
+# NOTHING in it is a sentence. A card grid is a pile of fragments; an article
+# has at least one run of prose.
+#
+# 60 characters is about a short sentence. A section that cannot manage one
+# is a feature list or a menu, and if a bank wants it in the knowledge base
+# they can add it by hand — which is the right side to err on, because the
+# cost of importing a menu is that it competes with real answers in every
+# search from then on.
+MIN_PROSE_RUN: Final = 60
+
+# A navigation strip as it survives a copy-paste.
+#
+# Selecting a rendered page collapses the whole menu onto one line —
+# "Home Personal Business Diaspora About Contact" — which the line-by-line
+# furniture list cannot catch, because every entry in that list is a SINGLE
+# word and this is six of them. Seen immediately on the first pasted page,
+# where it became the opening sentence of the imported article and therefore
+# the first thing the assistant quoted back.
+#
+# Four capitalised words with no sentence punctuation between them. A real
+# sentence has a verb and a full stop; a heading is one or two words. Four is
+# the point where "several nouns in a row" stops being either.
+_NAV_STRIP: Final[re.Pattern[str]] = re.compile(
+    r"^(?:[A-Z][^\s.,:;?!]*\s+){3,}[A-Z][^\s.,:;?!]*$"
+)
+
+
+def longest_run(text: str) -> int:
+    """The longest single line, which is the best available proxy for "is
+    any of this a sentence"."""
+    return max((len(line.strip()) for line in text.splitlines()), default=0)
+
+_ANCHOR: Final = re.compile(r"<a\b[^>]*>(.*?)</a\s*>", re.IGNORECASE | re.DOTALL)
+
+
+def link_ratio(markup: str) -> float:
+    """What fraction of this block's visible text is link labels.
+
+    Zero for a block with no links and no text, which reads as "not
+    navigation" — the length floor is what rejects those.
+    """
+    total = len(to_text(markup))
+    if not total:
+        return 0.0
+    linked = sum(len(to_text(m.group(1))) for m in _ANCHOR.finditer(markup))
+    return min(1.0, linked / total)
+
+
+# A call to action, on its own line. Always noise, in every context.
+#
+# "Click here to register now!" and "Seize this opportunity today!" answer no
+# question anybody will ever ask, and a customer who asked about remittance
+# fees does not want one quoted back at them. Dropped rather than flagged,
+# because unlike the marketing TONE of a page — which is a judgement — a bare
+# call to action is measurably not an answer.
+_CTA_LINE: Final[re.Pattern[str]] = re.compile(
+    r"^(?:click here.*|seize this opportunity.*|don'?t miss out.*|"
+    r"(?:sign up|register|apply|join|order|subscribe|download)"
+    r"(?: now| today| here)?[!.]?|"
+    r"(?:get started|learn more|find out more|read more|discover more|"
+    r"contact us today|call us now|visit us today)[!.]?|"
+    r"(?:partner|bank) with us today[!.]?)$",
+    re.IGNORECASE,
+)
+
+# Marketing vocabulary. NOT used to drop anything — used to flag a section so
+# an operator importing two hundred pages sees the sales copy without reading
+# every one.
+#
+# Filtering on this would be wrong. Every bank product page is somewhat
+# promotional, and "Open a savings account today and earn 7% interest" is both
+# marketing and the literal answer to "what interest do you pay". The
+# judgement of whether a page belongs in a knowledge base is the bank's; the
+# job here is to make that judgement fast.
+_MARKETING: Final[re.Pattern[str]] = re.compile(
+    # Possessive-agnostic throughout. The first real page said "increase
+    # THEIR revenue" and "expand THEIR business" — it is addressed to agents
+    # about their own customers — and a pattern written only for "your" scored
+    # it as ordinary prose. Marketing copy switches person freely depending on
+    # who it is aimed at; the vocabulary is what stays constant.
+    r"\b(earn more|maximi[sz]e (your|their)|seize this|don'?t miss|"
+    r"limited time|act now|hurry|exclusive offer|special offer|"
+    r"opportunity to (earn|grow|expand|seize)|boost (your|their)|"
+    r"unlock (your|their)|(grow|expand) (your|their) business|"
+    r"increase (your|their) (revenue|profit|income)|"
+    r"why wait|today only|register now|sign up today)\b",
+    re.IGNORECASE,
+)
+
+# How many marketing markers before a section is flagged. Two, not one: a
+# single "grow your business" inside a page about business accounts is
+# ordinary product writing, and flagging it would train an operator to ignore
+# the flag.
+MARKETING_MARKERS: Final = 2
+
+
+def marketing_markers(text: str) -> int:
+    """How many pieces of sales language this section contains."""
+    return len(_MARKETING.findall(text))
+
+
+def is_promotional(title: str, body: str) -> bool:
+    """Whether to flag this as sales copy. Never a reason to drop it.
+
+    Title AND body. The strongest signal is almost always the headline — "Earn
+    More by Partnering with CBE" is the whole giveaway on a page whose prose
+    then reads like an ordinary product description — and scoring the body
+    alone missed exactly that page.
+    """
+    text = f"{title}\n{body}"
+    return marketing_markers(text) >= MARKETING_MARKERS or text.count("!") >= 3
+
+
 # A section shorter than this is a stub — a heading with a link under it, or a
 # card on a landing page. Importing it adds a title to the suggestion list
 # that answers nothing when a customer picks it.
@@ -137,7 +270,7 @@ def to_text(markup: str) -> str:
         if not line:
             lines.append("")
             continue
-        if _FURNITURE.match(line):
+        if _FURNITURE.match(line) or _CTA_LINE.match(line):
             continue
         lines.append(line)
     return _BLANKS.sub("\n\n", "\n".join(lines)).strip()
@@ -166,11 +299,64 @@ def sections(markup: str, *, fallback_title: str = "") -> list[Section]:
         heading = to_text(match.group(2)).strip()
         start = match.end()
         end = found[i + 1].start() if i + 1 < len(found) else len(markup)
-        body = to_text(markup[start:end])
+        raw = markup[start:end]
+        body = to_text(raw)
         if not heading or len(body) < MIN_SECTION_CHARS:
+            continue
+        # Two ways of being a menu rather than an article, and the CBE block
+        # that prompted both was only caught by the second: mostly link
+        # labels, or nothing in it long enough to be a sentence.
+        if link_ratio(raw) > MAX_LINK_RATIO:
+            continue
+        if longest_run(body) < MIN_PROSE_RUN:
             continue
         out.append(Section(title=heading[:MAX_TITLE_CHARS], body=body))
     return out
+
+
+def looks_like_markup(text: str) -> bool:
+    """Whether this is HTML or something a person selected and copied.
+
+    A page that builds itself in the browser cannot be imported from its
+    source, and telling an operator to dig HTML out of the developer tools is
+    a instruction most people will not follow. Selecting the page and copying
+    it is the thing everybody can do — so plain text has to be a first-class
+    input, not a failure.
+
+    Shape rather than a strict parse: two angle-bracketed tags is enough to be
+    markup, and prose that happens to contain "<" is not.
+    """
+    return len(re.findall(r"<[a-zA-Z/!][^>]*>", text)) >= 2
+
+
+def plain_text_section(text: str, title: str) -> list[Section]:
+    """One section from copied text, under a title the operator supplies.
+
+    No heading detection. Copied text has lost the structure that headings
+    live in, and guessing which lines were headings would produce documents
+    titled "Go Ahead" — which is exactly the failure that made this necessary.
+    The chunker still splits it for retrieval, so a long page is not one
+    enormous chunk.
+    """
+    kept: list[str] = []
+    for block in re.split(r"\n\s*\n", text):
+        lines = [
+            _SPACES.sub(" ", line).strip()
+            for line in block.splitlines()
+            if line.strip()
+        ]
+        lines = [
+            line for line in lines
+            if not _FURNITURE.match(line)
+            and not _NAV_STRIP.match(line)
+            and not _CTA_LINE.match(line)
+        ]
+        if lines:
+            kept.append("\n".join(lines))
+    body = "\n\n".join(kept)
+    if len(body) < MIN_SECTION_CHARS:
+        return []
+    return [Section(title=(title.strip() or "Imported page")[:MAX_TITLE_CHARS], body=body)]
 
 
 def page_title(markup: str) -> str:
@@ -252,3 +438,52 @@ def check_url(url: str) -> str:
     if "." not in host:
         raise UnsafeUrl("That does not look like a public website address")
     return raw
+
+
+# ------------------------------------------------------------- diagnosis
+#
+# "Nothing importable on that page" is true and useless. The operator is
+# standing in front of a page they can SEE has content, being told there is
+# none, with no idea whether to try a different page, a different button, or
+# give up on the feature. What they need is which of the three it is.
+
+# Below this, a page that is mostly markup is a shell waiting for JavaScript
+# to fill it. A real article page is text-heavy even with modern markup; 2% is
+# far under anything a served page produces and well over an empty shell.
+_TEXT_RATIO_FLOOR: Final = 0.02
+
+
+def diagnose(markup: str, found: list[Section]) -> str | None:
+    """Why an import came back thin, in words an operator can act on.
+
+    None when there is nothing to explain. Never speculative: each branch is
+    something measurable about the markup we actually received, not a guess
+    about the site.
+    """
+    if found:
+        return None
+    text = to_text(markup)
+    if not markup.strip():
+        return "That page returned nothing at all."
+    if len(text) < 400 and len(text) / max(len(markup), 1) < _TEXT_RATIO_FLOOR:
+        # The shape of a single-page app: kilobytes of scripts and containers,
+        # almost no words. Fetching harder will not help — the words do not
+        # exist until a browser runs the page.
+        return (
+            "This page builds its content in the browser, so there is nothing "
+            "to read in what the server sends. Open it, press F12, right-click "
+            "the <html> line and choose Copy → Copy outerHTML, then paste "
+            "that here. (View Source will not work — it shows the same empty "
+            "shell we received.)"
+        )
+    if not _SECTION_RE.search(markup):
+        return (
+            "That page has no headings to split on, and too little text to "
+            "import as one article. Try a product or FAQ page rather than a "
+            "landing page."
+        )
+    return (
+        "Every section on that page was too short, or was a list of links "
+        "rather than something to read. Landing pages usually look like this "
+        "— try the page a customer would actually read."
+    )
