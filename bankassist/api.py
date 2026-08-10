@@ -430,8 +430,16 @@ _teller_available = presence.teller_available
 
 
 @app.get("/banks/{slug}/public")
-def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def bank_public(
+    slug: str, response: Response, db: Session = Depends(get_db)
+) -> dict[str, Any]:
     bank = _get_bank(db, slug)
+    # See admin_ui_strings: a label table must never be more cacheable than
+    # the page that reads it. This payload also carries `teller_available`,
+    # which is a live operational switch — a bank turning live sessions on
+    # and staying invisible to customers behind a cached "false" is worse
+    # than a stale label.
+    response.headers.update(_NO_STORE)
     return {
         # What to put on screen. The widget's header and the admin's rail both
         # read this, and both want what the bank is called rather than what it
@@ -888,7 +896,7 @@ def logout(
 
 
 @app.get("/admin/strings")
-def admin_ui_strings() -> dict[str, dict[str, str]]:
+def admin_ui_strings(response: Response) -> dict[str, dict[str, str]]:
     """The admin panel's labels, in every language it serves.
 
     Unauthenticated on purpose. These are interface strings — "Live queue",
@@ -900,6 +908,18 @@ def admin_ui_strings() -> dict[str, dict[str, str]]:
     label table that fails on the one screen most likely to be reached in a
     hurry.
     """
+    # no-store, and this is not belt-and-braces.
+    #
+    # /admin is already no-store, so the PAGE is always fresh. This response
+    # had no cache headers at all, which lets a browser hold it under its own
+    # heuristic — and a fresh page against a stale table is a specific,
+    # confusing failure rather than a general one: every key that existed in
+    # the cached copy renders translated and every key added since renders as
+    # nothing useful. It looks exactly like "the sidebar is translated and the
+    # dashboard is not", because the sidebar's keys are the older ones.
+    #
+    # A label table must never be more cacheable than the page that reads it.
+    response.headers.update(_NO_STORE)
     return i18n.all_admin_strings()
 
 
