@@ -903,6 +903,16 @@ td.title { color: var(--ink); font-weight: 550; }
 .callroom .verify { border-top: 1px solid var(--line); padding: 14px 16px; }
 /* The approved-answer search. Scrolls on its own rather than pushing the
    composer off screen — a teller must always be able to type, even mid-search. */
+/* The file picker reads as a button rather than a raw file input, which is
+   unstyleable and looks broken next to everything else. */
+.filepick { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.filepick input[type="file"] { display: none; }
+.filepick span {
+  display: inline-block; padding: 7px 12px; border-radius: 8px;
+  border: 1px dashed var(--line); color: var(--body); font-size: 12.5px;
+}
+.filepick:hover span { border-color: var(--brand); color: var(--text); }
+
 .callroom .answers { border-top: 1px solid var(--line); padding: 14px 16px;
   display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .callroom .answers h4 { margin: 0 0 8px; }
@@ -2530,7 +2540,11 @@ function importForm() {
     "— keeping the address in the box, so the article records where it came " +
     "from.</div>" +
     '<div class="field"><input id="imp-url" placeholder="https://www.yourbank.com/personal/savings"></div>' +
-    '<div class="field"><textarea id="imp-html" rows="4" placeholder="…or open the page, select all (Ctrl+A), copy, and paste it here"></textarea></div>' +
+    '<div class="field"><textarea id="imp-html" rows="5" placeholder="…or open the page, select all (Ctrl+A), copy, and paste it here"></textarea></div>' +
+    '<div class="field"><label class="filepick">' +
+      '<input type="file" id="imp-file" accept=".txt,.md,.html,.htm,text/plain,text/html">' +
+      '<span>Choose a saved .html or .txt file instead</span></label>' +
+      '<div class="meta" id="imp-loaded"></div></div>' +
     // Only needed for pasted TEXT — markup and fetched pages carry their own
     // headings. Shown always rather than conditionally, because a field that
     // appears halfway through a task is a field nobody notices.
@@ -2547,6 +2561,7 @@ function importForm() {
     "</div><div id=\"imp-out\"></div></div>";
 
   $("imp-cancel").onclick = function () { $("doc-form").innerHTML = ""; };
+  wireFilePicker("imp-file", "imp-html", "imp-loaded");
   $("imp-preview").onclick = function () {
     var body = {
       language: $("imp-lang").value, category: $("imp-cat").value,
@@ -2713,6 +2728,51 @@ function loadFaq() {
  * approval with nobody's name on it is a cache with extra steps. The page
  * shown here is the bank's; the approval still has to be theirs.
  */
+/* Load a file into a paste box, in the browser.
+ *
+ * The importers were paste-only, which is fine on a laptop with the page open
+ * and unusable everywhere else: the realistic way a bank's FAQ arrives is a
+ * PDF somebody printed, and the text extracted from it is fifty thousand
+ * characters. Nobody selects that inside a phone textarea.
+ *
+ * FileReader rather than an upload endpoint. The text ends up in the same box
+ * and goes through the same preview and the same commit, so this adds a
+ * convenience without adding a route, a size limit to enforce server-side, or
+ * anywhere for a file to be stored.
+ */
+var MAX_IMPORT_FILE = 4 * 1024 * 1024;
+
+function wireFilePicker(fileId, textId, noteId) {
+  var picker = $(fileId);
+  if (!picker) return;
+  picker.onchange = function () {
+    var file = picker.files && picker.files[0];
+    if (!file) return;
+    var note = $(noteId);
+    if (file.size > MAX_IMPORT_FILE) {
+      // Named rather than silently truncated: a half-read FAQ that imports
+      // ninety questions out of a hundred and sixty is worse than one that
+      // refuses, because nobody counts the ones that did not arrive.
+      if (note) note.textContent =
+        "That file is " + Math.round(file.size / 1048576) +
+        " MB — too big to read here. Paste the text instead.";
+      picker.value = "";
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      $(textId).value = String(reader.result || "");
+      if (note) note.textContent =
+        "Loaded " + $(textId).value.length.toLocaleString() +
+        " characters from " + file.name + ". Preview it below before importing.";
+    };
+    reader.onerror = function () {
+      if (note) note.textContent = "That file could not be read.";
+    };
+    reader.readAsText(file);
+  };
+}
+
 function faqImportForm() {
   $("faq-imp").innerHTML =
     '<div class="panel" style="margin-top:12px"><h3>Import an FAQ page</h3>' +
@@ -2721,7 +2781,17 @@ function faqImportForm() {
     "in a question mark is read as a question and everything under it as the " +
     "answer. You will see every pair before anything is written, and they all " +
     "arrive as drafts for you to approve.</div>" +
-    '<div class="field"><textarea id="fi-text" rows="6" placeholder="Paste the FAQ page here"></textarea></div>' +
+    '<div class="field"><textarea id="fi-text" rows="8" placeholder="Paste the FAQ page here"></textarea></div>' +
+    // A file picker as well as a paste box, because the realistic way an FAQ
+    // reaches us is a PDF somebody printed and a text file somebody extracted
+    // from it — and selecting fifty thousand characters inside a phone
+    // textarea is not something a person will do twice. Read in the browser
+    // with FileReader: the text lands in the same box and goes through the
+    // same preview, so there is no upload endpoint and no new surface.
+    '<div class="field"><label class="filepick">' +
+      '<input type="file" id="fi-file" accept=".txt,.md,.html,.htm,text/plain,text/html">' +
+      '<span>Choose a .txt or .html file instead</span></label>' +
+      '<div class="meta" id="fi-loaded"></div></div>' +
     '<div class="tools">' +
       '<select id="fi-lang">' + LANGS.map(function (l) {
         return '<option value="' + l + '">' + l + "</option>";
@@ -2731,6 +2801,7 @@ function faqImportForm() {
     '</div><div id="fi-out"></div></div>';
 
   $("fi-cancel").onclick = function () { $("faq-imp").innerHTML = ""; };
+  wireFilePicker("fi-file", "fi-text", "fi-loaded");
   $("fi-preview").onclick = function () {
     var body = {
       text: $("fi-text").value, language: $("fi-lang").value

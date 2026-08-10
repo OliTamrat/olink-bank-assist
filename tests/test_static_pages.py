@@ -98,3 +98,45 @@ def test_the_check_can_actually_fail(page: str) -> None:
     script = _script(page) + "\n definitelyNotDefinedAnywhere();"
     missing = _called(script) - _defined(script) - BUILTINS
     assert "definitelyNotDefinedAnywhere" in missing
+
+
+# ------------------------------------------------------- loading a file
+#
+# The importers were paste-only, and that is fine on a laptop with the page
+# open beside you. It is unusable everywhere else: the realistic way a bank's
+# FAQ arrives is a PDF somebody printed, and the text pulled out of it is
+# fifty thousand characters. Nobody selects that inside a phone textarea — and
+# the first person who tried was handed a .txt file for a form that could not
+# accept one.
+
+
+@pytest.mark.parametrize("field", ["fi-file", "imp-file"])
+def test_both_importers_take_a_file(field: str) -> None:
+    """The FAQ importer and the page importer have the same problem and get
+    the same answer."""
+    html = (Path("bankassist/static") / "admin.html").read_text(encoding="utf-8")
+    assert f'id="{field}"' in html
+    assert "wireFilePicker" in html
+
+
+def test_the_file_is_read_in_the_browser() -> None:
+    """FileReader rather than an upload endpoint. The text lands in the same
+    box and goes through the same preview and commit, so this adds a
+    convenience without adding a route, a stored file, or a size limit that
+    has to be enforced somewhere else as well."""
+    html = (Path("bankassist/static") / "admin.html").read_text(encoding="utf-8")
+    assert "new FileReader()" in html
+    assert "readAsText" in html
+    # No upload route was added for this.
+    assert "multipart/form-data" not in html
+
+
+def test_an_oversized_file_is_refused_not_truncated() -> None:
+    """A half-read FAQ that imports ninety of a hundred and sixty questions is
+    worse than one that refuses, because nobody counts the ones that never
+    arrived."""
+    html = (Path("bankassist/static") / "admin.html").read_text(encoding="utf-8")
+    assert "MAX_IMPORT_FILE" in html
+    block = html.split("function wireFilePicker")[1].split("function faqImportForm")[0]
+    assert "too big to read here" in block
+    assert "picker.value = \"\"" in block
