@@ -131,13 +131,29 @@ imported, tick, commit. Two steps always.
   fragments; an article has prose.
 - Marketing copy is **flagged, never filtered** — flagged sections arrive
   unticked, and the judgement stays with the bank.
-- Plain text is a first-class input, not a fallback. Most Ethiopian bank sites
-  render in the browser, so both the URL fetch and View Source see the same
-  empty shell; Ctrl+A / Ctrl+C on the rendered page is the route that works.
+- Pasted content is a first-class input, not a fallback. Most Ethiopian bank
+  sites render in the browser, so both the URL fetch and View Source see the
+  same empty shell. **Expand every accordion, then F12 → right-click `<html>`
+  → Copy → Copy outerHTML**, and paste that. Ctrl+A / Ctrl+C also works and is
+  easier, but a text selection silently drops anything inside a collapsed
+  panel — and on a bank site the collapsed panels are usually where the
+  eligibility rules and fee tables live. `diagnose()` tells the operator which
+  situation they are in rather than leaving them to guess.
 - The URL fetch is **SSRF-safe by construction**: https only, no credentials,
   no IP literals at all, no localhost, redirects not followed, size and time
   caps. Known limit, stated in the docstring: a hostname that *resolves* to a
   private address still gets through.
+
+**A bank's public website is a brochure, not a knowledge base.** Checked
+against CBE's live site (2026-08-10): product pages carry a two-sentence
+definition and a grid of cards that link onward, with the real substance —
+eligibility, benefits, target customers, the service list — folded into
+collapsed accordions. That is a page built to route a visitor to a button, not
+to answer a question. Import earns its keep on the pages that *do* have prose,
+but the corpus for a real pilot comes from what a bank already gives its own
+staff: call-centre scripts, product manuals, branch circulars, training
+material. **Ask for those in the pilot conversation; do not plan onboarding
+around scraping the website.**
 
 ## Retrieval
 

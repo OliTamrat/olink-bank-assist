@@ -97,12 +97,18 @@ What most can't offer:
    stops being a project plan and becomes a thing they just watched take
    thirty seconds.
 
-   **Caveat worth knowing before you try it live:** most Ethiopian bank
-   sites render in the browser, so a URL fetch gets an empty shell and the
-   preview comes back with only a title. That is not a failure — select the
-   page in your browser, Ctrl+A / Ctrl+C, and paste the text into the same
-   form instead. Rehearse it once on their site the night before so you know
-   which of the two routes their pages need.
+   **Rehearse this on their site the night before — do not attempt it cold.**
+   Most Ethiopian bank sites render in the browser, so a URL fetch gets an
+   empty shell and the preview comes back with only a title. The fix is to
+   expand every accordion on the page, press F12, right-click the `<html>`
+   line and Copy → Copy outerHTML, then paste that. (Ctrl+A / Ctrl+C is
+   easier but drops collapsed panels, which on a bank page is where the
+   eligibility rules and fee tables are.) If their pages turn out to be card
+   grids with no prose — CBE's are — **skip this step entirely** and make the
+   point verbally instead: their website is a brochure, and the content we
+   actually want is the call-centre script their agents already read from.
+   That is a better conversation anyway, because it is the ask you want them
+   to say yes to.
 
 ## It's been stress-tested — say so
 

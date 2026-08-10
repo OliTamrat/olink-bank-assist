@@ -597,6 +597,15 @@ A customer who needs a person gets one, on a call, inside the same chat. This
 is the feature that makes the product a banking channel rather than an FAQ
 bot, and `docs/video-teller.md` is the design document.
 
+**The media path is verified against real traffic** (LiveKit Cloud console,
+2026-08-10): 51 WebRTC participant minutes over the preceding week and a 100%
+connection success rate, on the `Olink Bank Assist` project. Sessions
+connected and audio flowed for real people on real devices. Worth writing down
+because no agent session can confirm it — `livekit.cloud` is unreachable from
+the sandbox, so every earlier claim about the call working was inference from
+green tests. **The console is the only source of truth for "did media
+actually flow"; check it there, do not try to reach LiveKit from a test.**
+
 **Shape.** The assistant offers a Connect button ONLY when a real teller is on
 duty and a media layer is configured. The customer joins a LiveKit room; the
 teller claims from a queue; the whole prior conversation travels with them, so
@@ -691,13 +700,37 @@ into the thing that answers their customers on the strength of a URL in a box.
   somewhat promotional; "open an account today and earn 7%" is both marketing
   and a real answer. Flagged sections start unticked — the judgement stays
   with the bank.
-- **Plain text is a first-class input.** Most Ethiopian bank sites render in
-  the browser, so the source is an empty shell and View Source shows the same
-  shell. Ctrl+A / Ctrl+C on the rendered page is the route that works.
+- **Pasted content is a first-class input.** Most Ethiopian bank sites render
+  in the browser, so the source is an empty shell and View Source shows the
+  same shell. **Expand the accordions first, then F12 → Copy outerHTML.** A
+  Ctrl+A text selection is easier and is what `diagnose()` used to be written
+  around, but it silently drops anything inside a collapsed panel — and on a
+  bank product page that is where eligibility rules and fee tables live, i.e.
+  precisely the content worth importing. outerHTML also keeps the headings, so
+  the paste still sections properly instead of landing as one blob.
 - **The URL fetch is SSRF by construction.** https only, no credentials, no IP
   literals at all, no localhost, redirects NOT followed, size and time caps.
   The guard is pure and separately tested. Known limit, written in the
   docstring: a hostname that resolves to a private address still gets through.
+
+**Checked against the real thing, 2026-08-10 — a bank's public website is a
+brochure, not a knowledge base.** CBE's Mobile Banking page is the honest
+sample: a two-sentence definition, a grid of cards that link onward, and the
+actual substance (eligibility criteria, benefits, financial vs non-financial
+service lists, target customers) folded into collapsed accordions. Other
+product pages are thinner still. The page exists to route a visitor to a
+button, not to answer a question — which is why the first import attempt came
+back with a title and nothing else, and why the two documents it did produce
+were both junk.
+
+**The consequence is strategic, not technical.** Import earns its keep on
+banks whose pages carry prose, and it stays the right onboarding tool. But the
+corpus for a real pilot is not on the website — it is what a bank already
+writes for its own staff: call-centre scripts, product manuals, branch
+circulars, teller training material. That content exists at every bank, it is
+already approved, and it is written in the form of questions and answers.
+**Ask for it in the pilot conversation.** A future session must not respond to
+a thin corpus by trying to scrape harder.
 
 ## Retrieval scales with the corpus
 
