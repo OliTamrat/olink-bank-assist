@@ -1,12 +1,13 @@
 # Bank Sales Demos — Prep Notes
 
-**Status: three prospect-demo tenants, demo-ready locally, not yet
-deployed.** Everything below works today via `uvicorn` on your machine;
-see "Before the meeting" for what's left to do it live in a browser you
-can hand someone. **These are private pitch materials for a sales meeting
-with the specific bank named — never a live public product, and never
-presented as anything other than a prototype you built.** See CLAUDE.md
-for why that distinction is load-bearing, not a formality.
+**Status: three prospect-demo tenants, live at
+`https://bankassist-430565798339.us-east1.run.app/widget?bank=<slug>`.**
+You can send a link rather than open a laptop. It also runs locally via
+`uvicorn` if you want it offline in a room with bad wifi. **These are
+private pitch materials for a sales meeting with the specific bank named —
+never a live public product, and never presented as anything other than a
+prototype you built.** See CLAUDE.md for why that distinction is
+load-bearing, not a formality.
 
 | Bank | Slug | Seed command | Brand color | Lead with |
 |---|---|---|---|---|
@@ -43,8 +44,14 @@ What most can't offer:
    inventing a plausible-sounding wrong answer. This is the actual
    engineering difficulty in a banking chatbot, and it's the first thing to
    demonstrate live.
+4. **There is a person behind it.** Every competitor's demo ends at "I'll
+   escalate that". Ours puts the customer on a call with a real teller
+   inside the same chat window, with the whole conversation already in
+   front of them. That is the difference between a deflection tool and a
+   banking channel — and it is the answer to the question every bank asks
+   about a chatbot: *"what happens when it can't help?"*
 
-## Demo flow (5 minutes)
+## Demo flow (7 minutes)
 
 1. **Point out the disclaimer banner first, unprompted.** "This banner is
    there on purpose — this is a prototype we built, not something live in
@@ -70,9 +77,32 @@ What most can't offer:
    sells the architecture: caution where caution is right (guardrails,
    step 5), confidence where confidence is right (selling [Bank], step 5b)
    — never confused about which situation it's in.
-6. If asked about integration: mobile banking activation, transfers, ATM
+6. **Hand them to a person, live.** With a teller on duty in the admin panel
+   on your second screen, the widget shows a Connect button. Press it, take
+   the call as the teller, and let the room watch the transcript arrive with
+   the customer — nobody re-explains themselves. Then say the part that
+   matters: *"the teller has your core banking on their own screen, with
+   their own approvals. We never touch it, and this assistant cannot move a
+   birr — not at any permission level, by design."* Banks relax visibly at
+   that sentence; it converts the AI from a risk into a front door.
+7. If asked about integration: mobile banking activation, transfers, ATM
    cards, diaspora accounts, and loan eligibility are all in every bank's
    knowledge base — invite them to ask their own question live.
+8. **Optional close, if the room is engaged: teach it something in front of
+   them.** Ask for a page from their own site they think it should know.
+   Open Knowledge Base → Import a page, paste the URL, and show them the
+   preview — which sections would be imported, which were dropped as
+   navigation, which were flagged as marketing for them to decide on. Tick
+   and commit, then ask the assistant a question from that page. Onboarding
+   stops being a project plan and becomes a thing they just watched take
+   thirty seconds.
+
+   **Caveat worth knowing before you try it live:** most Ethiopian bank
+   sites render in the browser, so a URL fetch gets an empty shell and the
+   preview comes back with only a title. That is not a failure — select the
+   page in your browser, Ctrl+A / Ctrl+C, and paste the text into the same
+   form instead. Rehearse it once on their site the night before so you know
+   which of the two routes their pages need.
 
 ## It's been stress-tested — say so
 
@@ -129,13 +159,23 @@ confidence level, so you can answer "where did this come from" instantly.
   strengths.
 - Every conversation and every "I don't know" moment is visible in the
   admin panel — it's not a black box.
+- **It cannot move money.** Not at any permission level, not for a verified
+  customer, not for a teller. There is no code path that does it. The teller
+  uses the bank's own core banking, with the bank's own approvals — we
+  connect the customer to that person and stop there.
+- The escalation lands on a **desk** — fraud, cards, lending, international,
+  payments, digital, accounts, general — with a priority, so it reaches the
+  team that can act rather than a shared inbox.
+- **Nothing about a customer's ID is stored.** They can hold it to the camera
+  for sixty seconds and the teller can freeze the frame on their own screen.
+  Nothing is uploaded. The bank's system is the system of record.
 
 ## Before any meeting
 
-- [ ] **Deploy it somewhere with a real URL** so you can send a link instead
-      of demoing on a laptop — see `DEPLOY.md` for the Cloud Run setup
-      (one-time GCP config, then every push to `main` auto-deploys). This
-      is the single highest-leverage thing left to do.
+- [ ] **Have a teller on duty** — open the admin panel, flip the On-duty
+      toggle, and confirm the Connect button appears in the widget. Without
+      that toggle the customer never sees it, which is correct behaviour and
+      a bad surprise mid-demo.
 - [ ] Optional: set `GEMINI_API_KEY` before the meeting — conversational
       mode reads noticeably better live than extractive mode, though
       extractive mode is completely fine and already demoed well.

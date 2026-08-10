@@ -310,17 +310,25 @@ What makes this safe rather than a hallucination licence:
 ## Current state
 
 **Live** at `https://bankassist-430565798339.us-east1.run.app`, deployed from
-`main` by GitHub Actions on every CI-green push. 281 tests, mypy `--strict`
-clean, ruff clean, 20 golden-question evals.
+`main` by GitHub Actions on every CI-green push. **1,107 tests**, mypy
+`--strict` clean, ruff clean, 20 golden-question evals, schema at migration
+**0022**.
 
 Four tenants seeded in the production database:
 
 | Slug | Tenant | Notes |
 |---|---|---|
-| `demo` | Demo Bank Ethiopia (fictional) | 13 docs, EN+AM, illustrative figures |
-| `cbe` | Commercial Bank of Ethiopia | 19 docs, `SOURCES.md` |
-| `dashen` | Dashen Bank | `SOURCES_DASHEN.md` |
-| `awash` | Awash Bank | `SOURCES_AWASH.md` |
+| `demo` | Demo Bank Ethiopia (fictional) | 15 seed docs, EN+AM, illustrative figures |
+| `cbe` | Commercial Bank of Ethiopia | 23 seed docs, `SOURCES.md` |
+| `dashen` | Dashen Bank | 14 seed docs, `SOURCES_DASHEN.md` |
+| `awash` | Awash Bank | 14 seed docs, `SOURCES_AWASH.md` |
+
+**The corpus is the ceiling.** A real bank's public site is several hundred
+pages; every tenant here runs on fifteen to twenty-three. Nothing about the
+model, the prompt or retrieval moves the answer rate as much as content does —
+which is why `ingest.py` exists and why the curated-answer loop matters. When
+a session is asked to "make the assistant better", check the corpus size
+first.
 
 **CBE, Dashen and Awash are private pitch-demo prototypes, not live public
 products.** Each carries a mandatory `Bank.disclaimer` banner rendered in the
@@ -583,6 +591,128 @@ customers actually ask and nobody can answer. This is product intelligence
 that sells renewals, and it is the shortest path to knowing what to write
 next. Surfaced as the **Content Gaps** tab in `admin.html`.
 
+## The live teller (ITM) — Tier 3
+
+A customer who needs a person gets one, on a call, inside the same chat. This
+is the feature that makes the product a banking channel rather than an FAQ
+bot, and `docs/video-teller.md` is the design document.
+
+**Shape.** The assistant offers a Connect button ONLY when a real teller is on
+duty and a media layer is configured. The customer joins a LiveKit room; the
+teller claims from a queue; the whole prior conversation travels with them, so
+nobody explains themselves twice. Text chat runs alongside the call, because
+account numbers and reference codes are exactly what cannot be said over a bad
+line — and it keeps the session usable when audio fails entirely.
+
+**Presence is DECLARED, not inferred** (`presence.py`). An explicit On-duty
+toggle in the sidebar with a 30s heartbeat from the shell, against a 90s
+staleness window. The first version inferred presence from whoever had the
+Live queue page open, which meant a teller working on any other screen
+silently took the bank off the air. Never reintroduce an implicit signal here:
+`teller/queue` deliberately does not touch presence.
+
+**Verification is two legs** (`verification.py`), and neither substitutes for
+the other:
+
+- identity — the Fayda ID seen, **or** the Fayda number matched against the
+  account record on the teller's own core-banking screen;
+- the account question — something only the holder could answer.
+
+Keyed on what was established, never on `session.media`: media is chosen when
+the call is requested and a customer can turn their camera on afterwards. The
+audio path exists because audio-only is the common case outside Addis, and the
+original rule required the ID to have been SEEN — unsatisfiable on most calls,
+which left a teller ticking a box for a document they never saw.
+
+**The ID is shown, never stored.** A customer can turn their camera on for
+sixty seconds to hold up their ID; the teller can freeze the frame into a
+canvas in their own browser. Nothing is uploaded, posted or persisted, and no
+new token scope was needed — `canPublishData` stays off. Do not "improve" this
+into an upload: it would make us the holder of a library of national identity
+documents in exchange for nothing, since the bank's own system is the system
+of record.
+
+**Scope, enforced in code** (`teller.py`): no scope at any verification level
+permits moving money. `MONEY` is absent from every grant list rather than
+withheld by a flag.
+
+## Escalations arrive on a desk
+
+`departments.py` puts every handoff on one of eight desks — fraud, cards,
+lending, international, payments, digital, accounts, general — with an urgent
+/ normal priority. Two axes, and conflating them is the trap: `reason` says
+why the assistant let go (a process fact), `department` says what it is about
+(who answers).
+
+Rules, never a model call. It is an eight-way choice over a small stable
+vocabulary on the highest-volume object in the product, it has to be
+explainable to a supervisor, and it has to be testable. FRAUD matches first,
+because "someone took money from my card" is a fraud matter that mentions a
+card. There is deliberately **no fees desk** — fees are a property of every
+product, not a team.
+
+## Curated answers — the bank's own words, no model call
+
+`faq.py` + the Curated Answers page. Frequent questions are surfaced from real
+traffic; the bank writes the answer once; it is then served **verbatim** with
+no retrieval and no Gemini call.
+
+Two properties that must not be relaxed:
+
+- **Matching is exact after normalisation.** Case, spacing, edge punctuation
+  (including ። and ፣), a leading greeting, NFKC. No stemming, no stopwords, no
+  synonyms, and above all no semantic similarity — "the fee for transfers TO
+  CBE" and "FROM CBE" are neighbours in any embedding space and have different
+  answers. This is the one place with no downstream gate: whatever it returns
+  is what the customer reads.
+- **The lookup sits AFTER every guardrail.** Putting it first is the obvious
+  optimisation and would let a bank publish an answer to "what is my balance".
+  `classifier.CURATABLE_INTENTS` is narrower than the auto-answer allowlist for
+  exactly this reason, and a test proves `respond()` does not serve the
+  excluded intents.
+
+## Importing a bank's published pages
+
+`ingest.py`. Paste a URL or the page text, **see what would be imported**,
+tick, commit. Two steps always — nobody should write two hundred documents
+into the thing that answers their customers on the strength of a URL in a box.
+
+- **Split on headings, not length.** The heading is the document title, and
+  that title is what `suggest_topics` offers somebody who phrased a question
+  differently.
+- **Boilerplate is dropped before anything else.** Navigation imported onto
+  every page becomes the highest document-frequency text in the corpus, so
+  BM25 rates it worthless and the informativeness gate then treats every page
+  as mostly noise — the import would make retrieval WORSE, page by page.
+- **A section needs one run of 60+ characters.** A card grid is a pile of
+  fragments; an article has prose. Link ratio alone does not catch it (the
+  real CBE block was only 37% anchor text).
+- **Marketing copy is flagged, never filtered.** Every bank product page is
+  somewhat promotional; "open an account today and earn 7%" is both marketing
+  and a real answer. Flagged sections start unticked — the judgement stays
+  with the bank.
+- **Plain text is a first-class input.** Most Ethiopian bank sites render in
+  the browser, so the source is an empty shell and View Source shows the same
+  shell. Ctrl+A / Ctrl+C on the rendered page is the route that works.
+- **The URL fetch is SSRF by construction.** https only, no credentials, no IP
+  literals at all, no localhost, redirects NOT followed, size and time caps.
+  The guard is pure and separately tested. Known limit, written in the
+  docstring: a hostname that resolves to a private address still gets through.
+
+## Retrieval scales with the corpus
+
+`index.py` builds the tokenized corpus, document frequencies and the
+informative-df ceiling **once per version of the content**, keyed by a
+three-part version stamp (chunk count, document count, latest `updated_at`),
+LRU-bounded to 8 tenants. A query scores only chunks containing one of its
+terms.
+
+At 1,964 chunks: **118.5ms → 6.9ms**. No arithmetic changed — scoring still
+runs through the same `_score_corpus` with the same corpus statistics, and a
+differential test asserts identical chunks, order and scores against an
+unindexed implementation. A faster retriever that ranked differently would be
+a product decision wearing a performance change.
+
 ## Roadmap
 
 ### Phase 1 — Demo bot ✅ complete and live
@@ -607,13 +737,14 @@ lender (smaller, faster procurement, hungrier).
 - Their brand colour and logo on the widget.
 - ~~**Analytics dashboard**: deflection rate, top questions, language mix.~~
   **Shipped** — see "The two reports" below. What is left is export (CSV /
-  print) for a bank that wants the numbers in a board pack, and a handoff
-  console so an operator can work the queue rather than just close rows.
+  print) for a bank that wants the numbers in a board pack.
 - Embedding retrieval behind the same `retrieve()` interface (BM25 stays as
   fallback); LLM intent refinement **above** the rules floor, never replacing
   it.
-- Human-agent console for the handoff queue, or a webhook into the bank's
-  existing contact-center tool.
+- ~~Human-agent console for the handoff queue~~ **Shipped** — desks, priority,
+  a live queue and the ITM call. The webhook into a bank's existing
+  contact-center tool (`handoff_webhook.py`) is also in, for banks that would
+  rather work the queue in the tool they already own.
 - **Move hosting in-country (Ethio Telecom ECS) before real customer chat logs
   exist** — chat content is personal data under Art. 22 even without account
   linkage. Reuse Onekof's `deploy-et.sh` pattern and ECS sizing.
