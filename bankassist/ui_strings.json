@@ -46,7 +46,9 @@
     "label_complaint": "Complaint",
     "label_contact_saved": "Contact saved",
     "label_knowledge_gap": "Knowledge gap",
-    "label_general": "General guidance"
+    "label_general": "General guidance",
+    "today": "Today",
+    "yesterday": "Yesterday"
   },
   "am": {
     "language": "ቋንቋ",
@@ -95,7 +97,9 @@
     "label_complaint": "ቅሬታ",
     "label_contact_saved": "አድራሻ ተቀምጧል",
     "label_knowledge_gap": "የመረጃ ክፍተት",
-    "label_general": "አጠቃላይ መመሪያ"
+    "label_general": "አጠቃላይ መመሪያ",
+    "today": "ዛሬ",
+    "yesterday": "ትናንት"
   },
   "om": {
     "language": "Afaan",
@@ -144,7 +148,9 @@
     "label_complaint": "Komii",
     "label_contact_saved": "Qunnamtiin olkaa'ameera",
     "label_knowledge_gap": "Qaawwa odeeffannoo",
-    "label_general": "Qajeelfama waliigalaa"
+    "label_general": "Qajeelfama waliigalaa",
+    "today": "Har'a",
+    "yesterday": "Kaleessa"
   },
   "ti": {
     "language": "ቋንቋ",
@@ -193,7 +199,9 @@
     "label_complaint": "ጥርዓን",
     "label_contact_saved": "መራኸቢ ተዓቂቡ",
     "label_knowledge_gap": "ጋግ ሓበሬታ",
-    "label_general": "ሓፈሻዊ መምርሒ"
+    "label_general": "ሓፈሻዊ መምርሒ",
+    "today": "ሎሚ",
+    "yesterday": "ትማሊ"
   },
   "so": {
     "language": "Luqadda",
@@ -242,6 +250,8 @@
     "label_complaint": "Cabasho",
     "label_contact_saved": "Xiriirka waa la keydiyay",
     "label_knowledge_gap": "Farqiga macluumaadka",
-    "label_general": "Hagitaan guud"
+    "label_general": "Hagitaan guud",
+    "today": "Maanta",
+    "yesterday": "Shalay"
   }
 }

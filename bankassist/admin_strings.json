@@ -197,7 +197,15 @@
     "collapse": "Collapse",
     "expand": "Expand",
     "collapse_or_expand": "Collapse or expand the sidebar",
-    "show_hide_channels": "Show or hide the channel list"
+    "show_hide_channels": "Show or hide the channel list",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "earlier_in_conversation": "Earlier in this conversation",
+    "call_started": "The customer asked for a person here",
+    "no_messages": "No messages in this conversation.",
+    "donut_all_in_one": "The single {unit} was in {label}.",
+    "channel_all_from_one": "The single conversation came from {label}.",
+    "unit_conversation": "conversation"
   },
   "am": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -397,7 +405,15 @@
     "collapse": "አጥብብ",
     "expand": "አስፋ",
     "collapse_or_expand": "የጎን አሞሌውን አጥብብ ወይም አስፋ",
-    "show_hide_channels": "የመስመሮችን ዝርዝር አሳይ ወይም ደብቅ"
+    "show_hide_channels": "የመስመሮችን ዝርዝር አሳይ ወይም ደብቅ",
+    "today": "ዛሬ",
+    "yesterday": "ትናንት",
+    "earlier_in_conversation": "ቀደም ብሎ በዚህ ውይይት",
+    "call_started": "ደንበኛው እዚህ ላይ ሰው ጠየቀ",
+    "no_messages": "በዚህ ውይይት ውስጥ መልእክት የለም።",
+    "donut_all_in_one": "ብቸኛው {unit} በ{label} ነበር።",
+    "channel_all_from_one": "ብቸኛው ውይይት ከ{label} መጥቷል።",
+    "unit_conversation": "ውይይት"
   },
   "om": {
     "nav_dashboard": "Daashboordii",
@@ -597,7 +613,15 @@
     "collapse": "Xiqqeessi",
     "expand": "Balleessi",
     "collapse_or_expand": "Cinaacha xiqqeessi ykn balleessi",
-    "show_hide_channels": "Tarreeffama karaalee agarsiisi ykn dhoksi"
+    "show_hide_channels": "Tarreeffama karaalee agarsiisi ykn dhoksi",
+    "today": "Har'a",
+    "yesterday": "Kaleessa",
+    "earlier_in_conversation": "Marii kana keessatti duraan",
+    "call_started": "Maamilaan asitti nama gaafate",
+    "no_messages": "Marii kana keessa ergaan hin jiru.",
+    "donut_all_in_one": "{unit} tokkichi {label} keessa ture.",
+    "channel_all_from_one": "Mariin tokkichi {label} irraa dhufe.",
+    "unit_conversation": "marii"
   },
   "ti": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -797,7 +821,15 @@
     "collapse": "ኣጽብብ",
     "expand": "ኣስፍሕ",
     "collapse_or_expand": "ናይ ጎኒ መስመር ኣጽብብ ወይ ኣስፍሕ",
-    "show_hide_channels": "ዝርዝር መስመራት ኣርኢ ወይ ሕባእ"
+    "show_hide_channels": "ዝርዝር መስመራት ኣርኢ ወይ ሕባእ",
+    "today": "ሎሚ",
+    "yesterday": "ትማሊ",
+    "earlier_in_conversation": "ኣቐዲሙ ኣብዚ ዝርርብ",
+    "call_started": "እቲ ዓሚል ኣብዚ ሰብ ሓቲቱ",
+    "no_messages": "ኣብዚ ዝርርብ መልእኽቲ የለን።",
+    "donut_all_in_one": "እቲ ሓደ {unit} ብ{label} ነይሩ።",
+    "channel_all_from_one": "እቲ ሓደ ዝርርብ ካብ {label} መጺኡ።",
+    "unit_conversation": "ዝርርብ"
   },
   "so": {
     "nav_dashboard": "Dashboard-ka",
@@ -997,6 +1029,14 @@
     "collapse": "Yaree",
     "expand": "Balaadhi",
     "collapse_or_expand": "Yaree ama balaadhi dhinaca",
-    "show_hide_channels": "Muuji ama qari liiska kanaalada"
+    "show_hide_channels": "Muuji ama qari liiska kanaalada",
+    "today": "Maanta",
+    "yesterday": "Shalay",
+    "earlier_in_conversation": "Horaantii wadahadalkan",
+    "call_started": "Macmiilku halkan ayuu qof weydiistay",
+    "no_messages": "Wadahadalkan fariin kuma jirto.",
+    "donut_all_in_one": "{unit} kaliya wuxuu ku jiray {label}.",
+    "channel_all_from_one": "Wadahadalka kaliya wuxuu ka yimid {label}.",
+    "unit_conversation": "wadahadal"
   }
 }

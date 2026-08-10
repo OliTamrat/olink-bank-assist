@@ -785,10 +785,31 @@ td.title { color: var(--ink); font-weight: 550; }
 .meta { font-size: 12px; color: var(--muted); }
 .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
 
+/* A transcript, not a chat — so the time is a left gutter rather than a stamp
+   tucked in the corner of a bubble. Reading one of these is scanning for
+   *when*, and a fixed column of tabular numerals scans vertically in a way a
+   ragged inline stamp does not. */
 .msgline { padding: 9px 11px; border-radius: 9px; margin-bottom: 6px;
-  font-size: 13.5px; white-space: pre-wrap; }
+  font-size: 13.5px; display: flex; gap: 12px; align-items: baseline; }
+.msgline .mt {
+  flex: none; min-width: 4.4em; white-space: nowrap;
+  font-size: 11px; color: var(--faint);
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.msgline .mx { flex: 1; min-width: 0; white-space: pre-wrap; }
 .msgline.user { background: color-mix(in srgb, var(--brand) 9%, var(--bg)); }
 .msgline.assistant { background: var(--bg); }
+/* Where the calendar day changes. Cheap to draw and it is the difference
+   between "these two messages are a minute apart" and "these two messages are
+   a fortnight apart", which no per-message clock can tell you on its own. */
+.daysep {
+  display: flex; align-items: center; gap: 10px; margin: 14px 0 8px;
+  font-size: 11px; color: var(--faint); text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.daysep::before, .daysep::after {
+  content: ""; flex: 1; height: 1px; background: var(--line);
+}
 .contact { margin: 8px 0; font-size: 13px; }
 .contact.none { color: var(--faint); font-style: italic; }
 .waiting { font-size: 12px; color: var(--warn); }
@@ -924,9 +945,18 @@ td.title { color: var(--ink); font-weight: 550; }
   flex: 1; overflow-y: auto; padding: 0 16px 12px;
   display: flex; flex-direction: column; gap: 8px; min-height: 0;
 }
+/* This one IS a chat, so the stamp goes where a chat puts it: inside the
+   bubble, pushed to its trailing edge. flex-wrap rather than a float, so a
+   long message wraps above the stamp instead of around it. */
 .callroom .msg2 {
   font-size: 12.5px; line-height: 1.5; padding: 8px 11px; border-radius: 10px;
   background: var(--surface-2); color: var(--body); max-width: 92%;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px;
+}
+.callroom .msg2 .mx { white-space: pre-wrap; min-width: 0; }
+.callroom .msg2 .mt {
+  margin-left: auto; font-size: 10px; opacity: .72;
+  font-variant-numeric: tabular-nums;
 }
 /* Alignment is "mine versus theirs", read from the TELLER's seat: the
    customer and the assistant are both the other side of this conversation
@@ -2130,9 +2160,11 @@ function donut(rows, opts) {
      * template first is safe because esc() leaves braces alone, so the
      * placeholders survive and the two values can be bolded wherever the
      * translator chose to put them. */
-    var line = esc(opts.oneline || "All {n} {unit} were in {label}.")
+    var one = total === 1;
+    var line = esc((one && opts.onelineOne) || opts.oneline ||
+                   "All {n} {unit} were in {label}.")
       .split("{n}").join("<b>" + num(total) + "</b>")
-      .split("{unit}").join(esc(opts.unit || "conversations"))
+      .split("{unit}").join(esc((one && opts.unitOne) || opts.unit || "conversations"))
       .split("{label}").join("<b>" + esc(live[0].label) + "</b>");
     return '<div class="oneline">' + line + "</div>" + coverage();
   }
@@ -2203,7 +2235,9 @@ function channelPanel(rows, opts) {
   } else if (live.length === 1) {
     // One template rather than four fragments — see donut() for why.
     head = '<div class="oneline">' +
-      esc(A("channel_all_from", "All {n} conversations came from {label}."))
+      esc(total === 1
+        ? A("channel_all_from_one", "The single conversation came from {label}.")
+        : A("channel_all_from", "All {n} conversations came from {label}."))
         .split("{n}").join("<b>" + num(total) + "</b>")
         .split("{label}").join("<b>" + esc(live[0].name) + "</b>") +
       "</div>";
@@ -2301,7 +2335,7 @@ function loadDashboard() {
         ? "<div>" + esc(a.bank_legal_name) + "</div>" : "") +
       "<div>" + esc(a.window_days
         ? A("last_n_days", null, { n: a.window_days }) : A("all_time")) +
-      " · " + esc(A("generated_at", null, { when: new Date().toLocaleString() })) +
+      " · " + esc(A("generated_at", null, { when: new Date().toLocaleString(adminLang || "en") })) +
       "</div></div>";
 
     h += '<div class="tools noprint">' +
@@ -2436,8 +2470,11 @@ function loadDashboard() {
         };
       }), {
         unit: A("unit_conversations"),
-        // One sentence, not four fragments — see donut().
-        oneline: A("donut_all_in"),
+        unitOne: A("unit_conversation", "conversation"),
+        // One sentence, not four fragments — see donut(). Two of them,
+        // because "All 1 conversations were in English" is not a sentence.
+        oneline: A("donut_all_in", "All {n} {unit} were in {label}."),
+        onelineOne: A("donut_all_in_one", "The single {unit} was in {label}."),
         label: A("conversations_by_language"),
         empty: A("no_conversations_window")
       }) + "</div>" +
@@ -2627,7 +2664,78 @@ function waited(iso) {
   if (mins < 60) return [mins + " min", mins > 30 ? "cold" : ""];
   var hrs = Math.round(mins / 60);
   if (hrs < 48) return [hrs + " h", "cold"];
-  return [Math.round(hrs / 24) + " days", "cold"];
+  // Past two days a relative age stops being information. "41 days" tells a
+  // bank investigating a complaint nothing it can act on, and the date is
+  // right there in the payload — it was being thrown away.
+  return [onDay(iso), "cold"];
+}
+
+/* --------------------------------------------------------- reading a clock
+ *
+ * Every one of these renders through the admin's own language, so a panel set
+ * to Amharic does not show its one remaining English word in the timestamp.
+ *
+ * All three take the ISO string the API sends. That string is now always
+ * offset-bearing — see iso() in api.py — so `new Date()` reads it as the UTC
+ * instant it is, and the browser converts to the reader's own zone. Before
+ * that fix a SQLite deployment sent a bare "2026-08-10T19:12:33", which the
+ * spec says to read as LOCAL time: in Addis that put every message three
+ * hours into the future and the age column went negative.
+ */
+function clockOf(iso) {
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(adminLang || "en", { hour: "numeric", minute: "2-digit" });
+}
+
+function onDay(iso) {
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(adminLang || "en",
+    { year: "numeric", month: "short", day: "numeric" });
+}
+
+/* The full stamp, for a tooltip. A relative age answers "is this urgent";
+   only an absolute one answers "which day did this happen", and a bank
+   answering a regulator needs the second. */
+function stampOf(iso) {
+  var d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : d.toLocaleString(adminLang || "en");
+}
+
+/* Today / Yesterday / the date, for a separator between days in a transcript.
+   Compared on calendar days rather than elapsed hours: a message at 00:30 and
+   one at 23:30 the day before are 1 hour apart and belong on opposite sides
+   of a separator. */
+function dayLabel(iso) {
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  var today = new Date();
+  var days = Math.round(
+    (new Date(today.getFullYear(), today.getMonth(), today.getDate()) -
+     new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  if (days === 0) return A("today");
+  if (days === 1) return A("yesterday");
+  return onDay(iso);
+}
+
+/* Rows for a transcript, with a separator wherever the calendar day changes.
+   `render` draws one message; this decides where the days break, so all three
+   transcripts get the same behaviour from one place rather than three. */
+function withDaySeparators(rows, render) {
+  var last = "";
+  return rows.map(function (m) {
+    var at = m.created_at || m.at;
+    var sep = "";
+    if (at) {
+      var label = dayLabel(at);
+      if (label && label !== last) {
+        last = label;
+        sep = '<div class="daysep"><span>' + esc(label) + "</span></div>";
+      }
+    }
+    return sep + render(m, at);
+  }).join("");
 }
 
 function loadHandoffs() {
@@ -2756,7 +2864,7 @@ function toggleHandoffDetail(id) {
   box.style.display = "";
   box.innerHTML =
     '<div class="meta">' + esc(A("reason_" + hd.reason, REASON_LABEL[hd.reason] || hd.reason)) + " · " +
-      new Date(hd.created_at).toLocaleString() + "</div>" +
+      new Date(hd.created_at).toLocaleString(adminLang || "en") + "</div>" +
     (hd.detail ? '<div style="margin:8px 0">' + esc(hd.detail) + "</div>" : "") +
     (hd.contact_name || hd.contact_phone
       ? '<div class="contact"><strong>' + esc(hd.contact_name || "Name not given") + "</strong>" +
@@ -2765,7 +2873,7 @@ function toggleHandoffDetail(id) {
       : '<div class="contact none">No contact details captured.</div>') +
     (hd.resolution ? '<div class="resolution">' + esc(hd.resolution) +
       '<div class="when">closed ' +
-      (hd.resolved_at ? new Date(hd.resolved_at).toLocaleString() : "") +
+      (hd.resolved_at ? new Date(hd.resolved_at).toLocaleString(adminLang || "en") : "") +
       "</div></div>" : "") +
     '<div class="tools" style="margin:10px 0 0">' +
       '<button class="btn ghost sm" data-tx="' + esc(hd.conversation_id) +
@@ -3250,9 +3358,12 @@ function showTranscript(conversationId, handoffId) {
   if (box.innerHTML) { box.innerHTML = ""; return; }
   box.innerHTML = '<div class="empty">Loading…</div>';
   api("/conversations/" + conversationId + "/messages").then(function (msgs) {
-    box.innerHTML = '<div style="margin-top:10px">' + msgs.map(function (m) {
-      return '<div class="msgline ' + esc(m.role) + '">' + esc(m.text) + "</div>";
-    }).join("") + "</div>";
+    box.innerHTML = '<div style="margin-top:10px">' +
+      withDaySeparators(msgs, function (m, at) {
+      return '<div class="msgline ' + esc(m.role) + '" title="' + esc(stampOf(at)) + '">' +
+        '<span class="mt">' + esc(clockOf(at)) + "</span>" +
+        '<span class="mx">' + esc(m.text) + "</span></div>";
+      }) + "</div>";
   }).catch(function (e) { box.innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
@@ -3279,6 +3390,23 @@ function exportHandoffs() {
                 h.detail || "", h.resolution || "", h.resolved_at || ""].map(csvCell).join(","));
   });
   download("escalations.csv", "﻿" + lines.join("\r\n"), "text/csv;charset=utf-8");
+}
+
+/* Conversations, as a file. Timestamps first and in full: this export exists
+   for the case where someone is asked what was said and when, and a relative
+   age is useless the moment it leaves the screen. Rows follow the filter and
+   the search actually on screen, so the file matches what was exported from
+   rather than quietly being everything. */
+function exportConvos() {
+  var rows = state.convoRows || [];
+  var lines = [["Started", "Channel", "Language", "Turns", "Reached a person",
+                "First message"].join(",")];
+  rows.forEach(function (c) {
+    lines.push([c.created_at || "", c.channel || "", c.language || "",
+                c.turns == null ? "" : c.turns, c.escalated ? "yes" : "no",
+                c.preview || ""].map(csvCell).join(","));
+  });
+  download("conversations.csv", "\ufeff" + lines.join("\r\n"), "text/csv;charset=utf-8");
 }
 
 /* --------------------------------------------------------- conversations */
@@ -3319,12 +3447,15 @@ function loadConvos() {
         // No "cold" colouring here. An old conversation is history, not a
         // customer going unanswered — amber on it would borrow the meaning
         // the escalation list gives the same column and say the opposite.
-        '<span class="age">' + esc(w[0]) + "</span>" +
+        '<span class="age" title="' + esc(stampOf(c.created_at)) + '">' +
+          esc(w[0]) + "</span>" +
         "</div>" +
         '<div class="detail" id="m-' + esc(c.id) + '" style="display:none"></div>';
     }).join("") + "</div>" : '<div class="empty">No conversations match.</div>';
 
     $("main").innerHTML = head +
+      '<div class="tools"><div style="flex:1"></div>' +
+      '<button class="btn ghost sm" id="dl-convos">' + esc(A("export_csv")) + "</button></div>" +
       '<div class="listhead">' +
       '<input id="c-q" placeholder="Search what customers asked" value="' +
       esc(state.cquery || "") + '">' +
@@ -3334,6 +3465,9 @@ function loadConvos() {
       // The red dot means it reached a person. Said once here rather than
       // relying on a colour nobody was told the meaning of.
       " · a red dot reached a person</span></div>" + body;
+    state.convoRows = shown;
+    var dl = $("dl-convos");
+    if (dl) dl.onclick = exportConvos;
     var cbox = $("c-q");
     cbox.oninput = function () {
       state.cquery = cbox.value;
@@ -3365,9 +3499,13 @@ function loadMsgs(id) {
   box.style.display = "";
   box.innerHTML = '<div class="meta">Loading…</div>';
   api("/conversations/" + id + "/messages").then(function (msgs) {
-    box.innerHTML = msgs.map(function (m) {
-      return '<div class="msgline ' + esc(m.role) + '">' + esc(m.text) + "</div>";
-    }).join("");
+    box.innerHTML = msgs.length
+      ? withDaySeparators(msgs, function (m, at) {
+      return '<div class="msgline ' + esc(m.role) + '" title="' + esc(stampOf(at)) + '">' +
+        '<span class="mt">' + esc(clockOf(at)) + "</span>" +
+        '<span class="mx">' + esc(m.text) + "</span></div>";
+        })
+      : '<div class="empty">' + esc(A("no_messages")) + "</div>";
   }).catch(function (e) { box.innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
@@ -3396,7 +3534,7 @@ function loadDocs() {
         return "<tr><td class='title'>" + esc(d.title) + "</td>" +
           '<td><span class="pill">' + esc(d.category) + "</span></td>" +
           "<td>" + esc(d.language) + "</td>" +
-          '<td class="meta">' + new Date(d.updated_at).toLocaleDateString() + "</td>" +
+          '<td class="meta">' + new Date(d.updated_at).toLocaleDateString(adminLang || "en") + "</td>" +
           (writable ? '<td><div class="rowacts">' +
             '<button class="iconbtn" title="Edit" data-edit="' + esc(d.id) + '">' + icon("edit", 15) + "</button>" +
             '<button class="iconbtn danger" title="Delete" data-del="' + esc(d.id) + '">' + icon("trash", 15) + "</button>" +
@@ -3627,7 +3765,7 @@ function loadAudit(page) {
         "<th>On</th><th>Details</th></tr></thead><tbody>" +
         d.entries.map(function (e) {
           return "<tr><td class='meta' style='white-space:nowrap'>" +
-            esc(new Date(e.at).toLocaleString()) + "</td>" +
+            esc(new Date(e.at).toLocaleString(adminLang || "en")) + "</td>" +
             "<td>" + (e.actor.by_token
               ? '<span class="pill off">Admin token</span>'
               // The name IS the filter. A separate "only this person" link under
@@ -3730,7 +3868,7 @@ function loadTeam() {
           '<td><span class="pill ' + (u.is_active ? "on" : "off") + '">' +
             esc(A(u.is_active ? "active" : "disabled")) + "</span></td>" +
           '<td class="meta">' + (u.last_login_at
-            ? esc(new Date(u.last_login_at).toLocaleString()) : esc(A("never"))) + "</td>" +
+            ? esc(new Date(u.last_login_at).toLocaleString(adminLang || "en")) : esc(A("never"))) + "</td>" +
           '<td><div class="rowacts">' + (u.is_you
             ? '<span class="meta">—</span>'
             : '<button class="btn ghost sm" data-active="' + esc(u.id) + '" data-to="' +
@@ -4499,16 +4637,30 @@ function drawThread() {
     // exactly when they are hunting for a detail.
     var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     if (!rows.length) { box.innerHTML = '<div class="empty">No messages yet.</div>'; return; }
-    box.innerHTML = rows.map(function (m) {
+    // Where the customer asked for a person. This thread deliberately carries
+    // the WHOLE conversation, not just the call, so without a mark a teller
+    // cannot tell which lines they are joining and which the assistant handled
+    // ten minutes — or ten days — earlier.
+    var askedAt = callSession.requested_at
+      ? new Date(callSession.requested_at).getTime() : null;
+    var marked = false;
+    box.innerHTML = withDaySeparators(rows, function (m, at) {
       var cls = m.role === "user" ? "user" : m.role === "teller" ? "teller" : "";
       var label = m.role === "teller"
         ? '<div class="rolelbl mine">You</div>'
         : m.role === "assistant" ? '<div class="rolelbl">Assistant</div>' : "";
+      var mark = "";
+      if (askedAt && !marked && at && new Date(at).getTime() >= askedAt) {
+        marked = true;
+        mark = '<div class="daysep"><span>' + esc(A("call_started")) + "</span></div>";
+      }
       // `text`, not `content` — the endpoint returns {role, text, at}.
       // Getting this wrong renders empty bubbles, which reads as a customer
       // who typed nothing rather than as a bug.
-      return label + '<div class="msg2 ' + cls + '">' + esc(m.text) + "</div>";
-    }).join("");
+      return mark + label + '<div class="msg2 ' + cls + '" title="' + esc(stampOf(at)) + '">' +
+        '<span class="mx">' + esc(m.text) + "</span>" +
+        (at ? '<span class="mt">' + esc(clockOf(at)) + "</span>" : "") + "</div>";
+    });
     if (atBottom) box.scrollTop = box.scrollHeight;
   }).catch(function () {
     // A failed poll must not take the call down — the teller can still talk.
