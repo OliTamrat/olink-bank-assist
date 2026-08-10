@@ -66,12 +66,29 @@ from .models import (
     TellerSession,
     User,
     UserCredential,
+    _utc,
     new_token,
 )
 from .ratelimit import SlidingWindowLimiter
 from .retrieval import content_signature, reindex_document
 
 logger = logging.getLogger(__name__)
+
+
+def iso(value: datetime | None) -> str | None:
+    """A timestamp a browser can read correctly, from either database.
+
+    Postgres returns aware values from `DateTime(timezone=True)`; SQLite has
+    no timezone type and returns naive ones, so `.isoformat()` produced
+    "2026-08-10T19:12:33" with no offset. Per the ECMAScript spec a browser
+    reads a date-TIME form without an offset as LOCAL time, so every one of
+    these was wrong by the viewer's UTC offset — in Addis, three hours into
+    the future, which is how a conversation that just happened rendered as a
+    negative age. Production runs Postgres and was unaffected; every local
+    and SQLite deployment was not, and relying on the database to make the
+    wire format correct is a trap that only stays quiet by luck.
+    """
+    return None if value is None else _utc(value).isoformat()
 
 _STATIC = Path(__file__).resolve().parent / "static"
 
@@ -1017,8 +1034,8 @@ def list_users(
             "display_name": u.display_name,
             "role": r.name,
             "is_active": u.is_active,
-            "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
-            "created_at": u.created_at.isoformat(),
+            "last_login_at": iso(u.last_login_at),
+            "created_at": iso(u.created_at),
             # So the UI can disable its own row's button rather than offering an
             # action that is always refused.
             "is_you": principal.user is not None and principal.user.id == u.id,
@@ -1218,7 +1235,7 @@ def list_documents(
     return [
         {
             "id": d.id, "title": d.title, "category": d.category,
-            "language": d.language, "updated_at": d.updated_at.isoformat(),
+            "language": d.language, "updated_at": iso(d.updated_at),
             "content": d.content,
         }
         for d in docs
@@ -1386,7 +1403,7 @@ def list_conversations(
     return [
         {
             "id": c.id, "channel": c.channel, "language": c.language,
-            "created_at": c.created_at.isoformat(),
+            "created_at": iso(c.created_at),
             # Truncated here rather than in the browser: a list endpoint that
             # ships whole transcripts to render forty characters of each is
             # the same waste as the retrieval scan, on the same screen.
@@ -1414,7 +1431,7 @@ def list_messages(
     return [
         {
             "role": m.role, "text": m.text, "intent": m.intent,
-            "sources": m.sources, "created_at": m.created_at.isoformat(),
+            "sources": m.sources, "created_at": iso(m.created_at),
         }
         for m in msgs
     ]
@@ -1465,13 +1482,13 @@ def list_handoffs(
             "id": h.id, "reason": h.reason, "detail": h.detail, "status": h.status,
             "department": h.department, "priority": h.priority,
             "department_label": departments.label(h.department),
-            "conversation_id": h.conversation_id, "created_at": h.created_at.isoformat(),
+            "conversation_id": h.conversation_id, "created_at": iso(h.created_at),
             # Who to call. The whole point of a handoff queue is that someone
             # works it, and until now a row said a customer wanted a callback
             # without saying where to.
             "contact_name": h.contact_name, "contact_phone": h.contact_phone,
             "resolution": h.resolution,
-            "resolved_at": h.resolved_at.isoformat() if h.resolved_at else None,
+            "resolved_at": iso(h.resolved_at),
         }
         for h in rows
     ]
@@ -1731,8 +1748,8 @@ def _faq_row(row: Faq) -> dict[str, Any]:
         "language": row.language,
         "status": row.status,
         "served": row.served,
-        "approved_at": row.approved_at.isoformat() if row.approved_at else None,
-        "updated_at": row.updated_at.isoformat(),
+        "approved_at": iso(row.approved_at),
+        "updated_at": iso(row.updated_at),
     }
 
 
@@ -2391,7 +2408,7 @@ def recent_activity(
             # So the panel can mark the break-glass rows rather than passing
             # them off as a colleague.
             "by_token": r.actor == TOKEN_ACTOR,
-            "at": r.created_at.isoformat(),
+            "at": iso(r.created_at),
         }
         for r in rows
     ]
@@ -2473,7 +2490,7 @@ def audit_log(
         "entries": [
             {
                 "id": r.id,
-                "at": r.created_at.isoformat(),
+                "at": iso(r.created_at),
                 "action": r.action,
                 "entity_type": r.entity_type,
                 "entity_id": r.entity_id,
@@ -2539,7 +2556,7 @@ def content_gaps(
                 "reasons": {},
                 "languages": {},
                 "examples": [],
-                "last_asked": h.created_at.isoformat(),
+                "last_asked": iso(h.created_at),
             },
         )
         gap["count"] += 1
@@ -2819,7 +2836,7 @@ def analytics(
         "bank_name": bank.display_name,
         "bank_legal_name": bank.name,
         "window_days": days,
-        "since": since.isoformat() if since else None,
+        "since": iso(since),
         "conversations": conversations,
         "daily": daily,
         # The equivalent window immediately before this one, or null when there
@@ -3136,7 +3153,7 @@ def _session_admin(db: Session, session: TellerSession) -> dict[str, Any]:
             "verified_method": session.verified_method,
             "verified_ref": session.verified_ref,
             "waited_seconds": session.waited_seconds,
-            "requested_at": session.requested_at.isoformat(),
+            "requested_at": iso(session.requested_at),
             "resolution": session.resolution,
         }
     )
@@ -3322,7 +3339,7 @@ def _thread(db: Session, session: TellerSession) -> list[dict[str, Any]]:
     return [
         {
             "id": m.id, "role": m.role, "text": m.text,
-            "at": m.created_at.isoformat(),
+            "at": iso(m.created_at),
         }
         for m in rows
     ]

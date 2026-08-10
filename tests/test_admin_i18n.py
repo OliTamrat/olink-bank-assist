@@ -207,3 +207,21 @@ def test_a_placeholder_interpolates() -> None:
     html = ADMIN_HTML.read_text(encoding="utf-8")
     block = html.split("function A(key, fallback")[1].split("function setAdminLanguage")[0]
     assert 'split("{" + name + "}")' in block
+
+
+def test_every_key_the_panel_asks_for_actually_exists() -> None:
+    """A typo in an A() key does not fail — it renders the key name into the
+    interface. That shipped once as "nav_dashboard" in the sidebar, and a
+    stale table did it again with "donut_all_in_one" mid-sentence.
+
+    Only literal single-argument keys are checkable here; the handful built by
+    concatenation (`"outcome_" + r.outcome`) are covered by their own label
+    tests, which assert the map and the agent agree.
+    """
+    import re
+
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    table = json.loads(ADMIN_JSON.read_text(encoding="utf-8"))["en"]
+    asked = set(re.findall(r'\bA\(\s*"([a-z0-9_]+)"\s*[,)]', html))
+    missing = sorted(asked - set(table))
+    assert not missing, f"admin.html asks for keys the table does not have: {missing}"
