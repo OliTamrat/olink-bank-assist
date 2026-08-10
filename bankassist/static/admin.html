@@ -2491,8 +2491,11 @@ function importForm() {
   $("doc-form").innerHTML =
     '<div class="panel"><h3>Import a page</h3>' +
     '<div class="meta" style="margin-bottom:10px">Paste the address of a page ' +
-    "on your own website, or paste the page source. You will see what would " +
-    "be imported before anything is written.</div>" +
+    "on your own website, or paste the page itself. You will see what would " +
+    "be imported before anything is written. If the address alone brings back " +
+    "nothing, open the page, expand any collapsed sections, and paste it below " +
+    "— keeping the address in the box, so the article records where it came " +
+    "from.</div>" +
     '<div class="field"><input id="imp-url" placeholder="https://www.yourbank.com/personal/savings"></div>' +
     '<div class="field"><textarea id="imp-html" rows="4" placeholder="…or open the page, select all (Ctrl+A), copy, and paste it here"></textarea></div>' +
     // Only needed for pasted TEXT — markup and fetched pages carry their own
@@ -2517,8 +2520,18 @@ function importForm() {
       title: $("imp-title").value.trim()
     };
     var url = $("imp-url").value.trim(), markup = $("imp-html").value.trim();
-    if (url) body.url = url; else if (markup) body.html = markup;
-    else { setStatus("An address or some page source, please."); return; }
+    // Pasted content wins, and an address alongside it becomes provenance
+    // rather than something to fetch. Somebody who pasted did so BECAUSE the
+    // fetch came back empty, so re-fetching would only reproduce the failure —
+    // and the address they left in the box is exactly what the article needs
+    // recorded against it. The API keeps the two meanings separate (`url`
+    // fetches, `source_url` is recorded); only this form is being kind.
+    if (markup) {
+      body.html = markup;
+      if (url) body.source_url = url;
+    } else if (url) {
+      body.url = url;
+    } else { setStatus("An address or some page source, please."); return; }
 
     $("imp-out").innerHTML = '<div class="meta" style="margin-top:12px">Reading…</div>';
     api("/ingest/preview", {

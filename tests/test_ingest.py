@@ -646,3 +646,112 @@ def test_the_preview_carries_the_marketing_flag(
         headers={"X-Admin-Token": demo_bank.admin_token},
     ).json()
     assert body["sections"] and body["sections"][0]["promotional"] is True
+
+
+# --------------------------------------------------- provenance when pasting
+#
+# Pasting is the NORMAL path against Ethiopian bank sites, not a fallback:
+# their pages build themselves in the browser, so the fetch returns an empty
+# shell and the operator copies the rendered page instead. Every document that
+# arrives that way used to land with `source_url` NULL, which quietly cost both
+# of the things migration 0022 added the column for — telling a compliance
+# reviewer where the text came from, and matching a re-import to the document
+# it replaces. The gap was invisible because the fetch path, which nobody could
+# use on these sites, recorded provenance perfectly.
+
+
+def test_pasted_content_records_the_address_the_operator_states(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """The whole point of the column. Without this a pasted import is
+    unattributable, and "somebody pasted it" is not an answer to a bank asking
+    where its assistant got a fee from."""
+    resp = client.post(
+        "/admin/api/demo/ingest/commit",
+        json={
+            "html": PAGE,
+            "titles": ["Fixed Time Deposit"],
+            "source_url": "https://www.demobank.et/personal/deposits",
+        },
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    assert resp.status_code == 200
+    db_session.expire_all()
+    row = db_session.execute(
+        select(Document).where(Document.title == "Fixed Time Deposit")
+    ).scalars().one()
+    assert row.source_url == "https://www.demobank.et/personal/deposits"
+
+
+def test_a_stated_address_is_never_fetched(
+    client: TestClient, demo_bank: Any, monkeypatch: Any
+) -> None:
+    """`source_url` is a label, not an instruction. If it were fetched, an
+    operator pasting a page that already failed to fetch would pay for the
+    failure twice — and the SSRF surface would reopen on a field whose whole
+    purpose is that nothing is requested from it."""
+    def explode(url: str) -> str:
+        raise AssertionError(f"a stated source must not be fetched: {url}")
+
+    monkeypatch.setattr("bankassist.api._fetch_page", explode)
+    resp = client.post(
+        "/admin/api/demo/ingest/preview",
+        json={"html": PAGE, "source_url": "https://www.demobank.et/deposits"},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["source_url"] == "https://www.demobank.et/deposits"
+
+
+def test_an_unusable_stated_address_fails_the_import_rather_than_vanishing(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Silently dropping it is the worst option: the operator typed an address
+    because they wanted it recorded, and would walk away believing the article
+    is attributed when it is not."""
+    resp = client.post(
+        "/admin/api/demo/ingest/preview",
+        json={"html": PAGE, "source_url": "http://169.254.169.254/latest/meta-data"},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    assert resp.status_code == 422
+
+
+def test_pasting_without_an_address_still_works(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Provenance is worth asking for, never worth blocking an import over —
+    somebody importing content they wrote themselves has no URL to give."""
+    resp = client.post(
+        "/admin/api/demo/ingest/commit",
+        json={"html": PAGE, "titles": ["Fixed Time Deposit"]},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["created"] == 1
+
+
+def test_re_importing_a_pasted_page_matches_on_what_was_stated(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """Idempotence was the second reason the column exists, and it only works
+    if the pasted path fills it too. A bank re-pasting an updated page must end
+    with one article carrying the new figure, not two disagreeing about it."""
+    src = "https://www.demobank.et/personal/deposits"
+    for markup in (PAGE, PAGE.replace("higher rate of interest", "7.5% interest")):
+        client.post(
+            "/admin/api/demo/ingest/commit",
+            json={
+                "html": markup,
+                "titles": ["Fixed Time Deposit"],
+                "source_url": src,
+            },
+            headers={"X-Admin-Token": demo_bank.admin_token},
+        )
+    db_session.expire_all()
+    rows = db_session.execute(
+        select(Document).where(Document.title == "Fixed Time Deposit")
+    ).scalars().all()
+    assert len(rows) == 1
+    assert "7.5% interest" in rows[0].content
+    assert rows[0].source_url == src
