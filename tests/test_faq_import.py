@@ -245,3 +245,74 @@ def test_another_banks_page_cannot_be_imported_into_this_one(
         "/admin/api/other/faq", headers={"X-Admin-Token": second_bank.admin_token}
     ).json()
     assert rows == []
+
+
+# ------------------------------------------- what a printed page drags in
+#
+# All of the following came from the first real bank FAQ put through this: 34
+# pages of Dashen's published questions, printed to PDF because the site cannot
+# be fetched and a PDF survives being emailed from a phone. 18% of the pairs
+# arrived with page furniture inside the answer, and two questions arrived
+# truncated to their last line.
+
+PRINTED = """Frequently Asked Questions
+Menu
+HomeAbout UsProduct & ServicesMediaSupport CenterInvestor Relations
+Contact Us
+info@dashenbanksc.com
+8/10/26, 9:36 AM
+Page 1 of 34
+Why did SWIFT make this change?
+SWIFT has upgraded its messaging system to ISO 20022.
+8/10/26, 9:36 AM
+Page 2 of 34
+Are there limits to how many coins I can
+earn?
+Yes. Certain activities are limited.
+8/10/26, 9:36 AM
+Page 3 of 34
+"""
+
+
+def test_page_furniture_never_reaches_an_answer() -> None:
+    """The one that matters: a curated answer is served verbatim, with no
+    retrieval gate and no sources for anyone to check. "Page 3 of 34" inside a
+    fee explanation is what the customer reads."""
+    for pair in faq.pairs(PRINTED):
+        assert "Page " not in pair.answer
+        assert "9:36" not in pair.answer
+        assert "info@dashenbanksc.com" not in pair.answer
+        assert "Menu" not in pair.answer
+
+
+def test_a_question_broken_across_two_lines_is_rejoined() -> None:
+    """A printed page wraps a long question, so it arrives as its tail alone —
+    "earn?" instead of the question somebody would actually type. Not wrong,
+    but dead: nothing ever matches it."""
+    questions = [p.question for p in faq.pairs(PRINTED)]
+    assert "Are there limits to how many coins I can earn?" in questions
+    assert "earn?" not in questions
+
+
+def test_an_answer_is_never_welded_onto_the_next_question() -> None:
+    """The rejoin only fires on a line that opens like a question and was left
+    unfinished. A list item above a question must stay in its own answer."""
+    found = faq.pairs(
+        "What counts?\nSending money\nReferring new users\nWhat is Amole?\n"
+        "A digital wallet."
+    )
+    assert [p.question for p in found] == ["What counts?", "What is Amole?"]
+    assert "Referring new users" in found[0].answer
+
+
+def test_a_repeated_label_is_furniture_but_a_repeated_sentence_is_not() -> None:
+    """A short label running down every page is a header. A sentence repeated
+    because two products share terms is an answer, and dropping it would lose
+    content the bank wrote."""
+    text = "\n".join(
+        f"Question {i}?\nYes, it applies.\nGlobal Banking\n" for i in range(6)
+    )
+    found = faq.pairs(text)
+    assert len(found) == 6
+    assert all("Global Banking" not in p.answer for p in found)
+    assert all("Yes, it applies." in p.answer for p in found)

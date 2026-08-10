@@ -122,6 +122,76 @@ class QAPair(NamedTuple):
     answer: str
 
 
+# A printed page marker, and the browser's date/time stamp beside it. Both are
+# injected at every page boundary when somebody prints a web page to PDF, which
+# is the realistic way an FAQ reaches us: the site blocks fetching, and a PDF
+# survives being emailed from a phone.
+_PAGE_MARK: Final[re.Pattern[str]] = re.compile(
+    r"^\s*page\s+\d+\s+of\s+\d+\s*$", re.I
+)
+_STAMP: Final[re.Pattern[str]] = re.compile(
+    r"^\s*\d{1,2}/\d{1,2}/\d{2,4},?\s*\d{1,2}:\d{2}\s*[\u202f\s]*[ap]\.?m\.?\s*$", re.I
+)
+_BARE_EMAIL: Final[re.Pattern[str]] = re.compile(r"^\s*[^\s@]+@[^\s@]+\.[^\s@]+\s*$")
+_MENU: Final[re.Pattern[str]] = re.compile(r"^\s*(?:menu|home|contact us)\s*$", re.I)
+
+# Ends a sentence in any language this product serves. A repeated line that
+# ends a sentence is an answer somebody gave twice; one that does not is a
+# label, and labels repeated down a document are furniture.
+_SENTENCE_END: Final[re.Pattern[str]] = re.compile(r"[.!?።፧:]\s*$")
+
+# How many times a label has to recur before it is furniture rather than
+# coincidence. Five is past what a real answer repeats and well under the page
+# count of any FAQ worth importing.
+_FURNITURE_REPEATS = 5
+
+
+def strip_page_furniture(text: str) -> str:
+    """Drop the header, footer and page markers a printed page carries.
+
+    Found the first time a real bank FAQ went through this: 18% of the pairs
+    came out with `Menu … info@… 8/10/26, 9:36 AM Page 3 of 34` sitting inside
+    the answer. That text is then served to a customer **verbatim**, because a
+    curated answer has no retrieval gate and no sources for anyone to check.
+
+    This is not the same problem `ingest.py` solves. There, navigation sits at
+    the edges of one HTML document and is sliced away with the first and last
+    section. Here it is re-injected at every page boundary, in the middle of
+    the answer it interrupts, so position says nothing and only shape does.
+    """
+    lines = text.splitlines()
+    counts: dict[str, int] = {}
+    for line in lines:
+        stripped = line.strip()
+        if stripped:
+            counts[stripped] = counts.get(stripped, 0) + 1
+
+    kept: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if _PAGE_MARK.match(stripped) or _STAMP.match(stripped):
+            continue
+        if _BARE_EMAIL.match(stripped) or _MENU.match(stripped):
+            continue
+        if (
+            counts.get(stripped, 0) >= _FURNITURE_REPEATS
+            and not _SENTENCE_END.search(stripped)
+            and len(stripped) <= 80
+        ):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+# A line that starts like a question. Used only to rejoin a question the page
+# broke across two lines — never to decide that something IS a question.
+_OPENS_A_QUESTION: Final[re.Pattern[str]] = re.compile(
+    r"^\s*(?:what|how|why|who|when|where|which|is|are|can|could|do|does|did|"
+    r"will|would|should|may|must)\b",
+    re.I,
+)
+
+
 def _clean(lines: list[str]) -> str:
     return "\n".join(line.rstrip() for line in lines).strip()
 
@@ -153,7 +223,7 @@ def pairs(text: str) -> list[QAPair]:
     question: str | None = None
     answer: list[str] = []
 
-    for raw in text.splitlines():
+    for raw in strip_page_furniture(text).splitlines():
         line = raw.strip()
         if not line:
             if answer:
@@ -167,6 +237,21 @@ def pairs(text: str) -> list[QAPair]:
         ) <= MAX_QUESTION
 
         if is_question:
+            # A long question wrapped across two lines arrives as a fragment
+            # ending in the question mark — "earn?" instead of "Are there
+            # limits to how many coins I can earn?". Rejoin it, but only when
+            # the line above opens like a question and was left unfinished;
+            # anything looser would weld the tail of an answer onto the front
+            # of the next question.
+            if answer:
+                above = answer[-1].strip()
+                if (
+                    above
+                    and _OPENS_A_QUESTION.match(above)
+                    and not _SENTENCE_END.search(above)
+                ):
+                    stripped = f"{above} {stripped}".strip()
+                    answer.pop()
             if question is not None and _clean(answer):
                 found.append(QAPair(question, _clean(answer)))
             question, answer = stripped, []
