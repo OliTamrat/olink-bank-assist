@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bankassist.i18n import (  # noqa: E402
+    _ADMIN_STRINGS,
     _NOTES,
     _STRINGS,
     _UI_STRINGS,
@@ -59,6 +60,21 @@ def main() -> int:
                             " it has to fit the same space as the English."]
         for lang in SUPPORTED_LANGUAGES:
             row.append(_UI_STRINGS[lang].get(key, ""))
+        row.append("")
+        rows.append(row)
+
+    # The admin panel, which had grown to a hundred and ninety-eight strings
+    # without ever reaching this sheet. A reviewer could correct every word a
+    # customer reads and not one word the staff read.
+    rows.append([""] * len(header))
+    rows.append(["— admin panel labels below —"] + [""] * (len(header) - 1))
+    for key in _ADMIN_STRINGS["en"]:
+        row = [f"admin.{key}",
+               "Bank staff, not customers. Keep it short — it has to fit the"
+               " same space as the English. Leave any {placeholder} exactly"
+               " as it is; it is replaced with a number or a name."]
+        for lang in SUPPORTED_LANGUAGES:
+            row.append(_ADMIN_STRINGS[lang].get(key, ""))
         row.append("")
         rows.append(row)
 
