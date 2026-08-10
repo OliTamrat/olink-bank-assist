@@ -1287,10 +1287,57 @@ def list_conversations(
         select(Conversation).where(*where)
         .order_by(Conversation.created_at.desc()).limit(100)
     ).scalars().all()
+    ids = [c.id for c in convos]
+
+    # What each conversation was ABOUT, how long it ran, and whether it ended
+    # up on somebody's desk. Without these the list is a hundred rows of
+    # channel-and-timestamp: identical to each other, and unreadable at the
+    # only volume that matters. Three bounded queries rather than a subquery
+    # per row.
+    previews: dict[str, str] = {}
+    if ids:
+        for cid, text in db.execute(
+            select(Message.conversation_id, Message.text)
+            .where(Message.conversation_id.in_(ids), Message.role == "user")
+            .order_by(Message.created_at)
+        ).tuples().all():
+            # First one wins — the opening question is what the conversation
+            # was about, and later turns are usually clarifications of it.
+            previews.setdefault(cid, text)
+    turns: dict[str, int] = (
+        dict(
+            db.execute(
+                select(Message.conversation_id, func.count())
+                .where(Message.conversation_id.in_(ids))
+                .group_by(Message.conversation_id)
+            ).tuples().all()
+        )
+        if ids else {}
+    )
+    escalated: set[str] = (
+        {
+            row
+            for (row,) in db.execute(
+                select(Handoff.conversation_id)
+                .where(
+                    Handoff.conversation_id.in_(ids),
+                    Handoff.needs_person.is_(True),
+                )
+                .distinct()
+            ).all()
+        }
+        if ids else set()
+    )
     return [
         {
             "id": c.id, "channel": c.channel, "language": c.language,
             "created_at": c.created_at.isoformat(),
+            # Truncated here rather than in the browser: a list endpoint that
+            # ships whole transcripts to render forty characters of each is
+            # the same waste as the retrieval scan, on the same screen.
+            "preview": (previews.get(c.id) or "")[:160],
+            "turns": int(turns.get(c.id, 0)),
+            "escalated": c.id in escalated,
         }
         for c in convos
     ]

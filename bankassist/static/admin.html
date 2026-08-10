@@ -924,6 +924,74 @@ td.title { color: var(--ink); font-weight: 550; }
 /* The two legs of the rule, named on screen. A flat list of ticks gives the
    teller no way to know which combination the server will accept until it
    refuses one, mid-call, with a customer waiting. */
+/* --------------------------------------------------------------- dense lists
+ *
+ * Both the escalation queue and the conversation log were a stack of panels,
+ * one per row, each about 200px tall. That reads well with eight rows and
+ * fails completely at a hundred a day, which is the volume the product is
+ * sold for: everything is equally prominent, so nothing is, and finding the
+ * one that matters means scrolling past ninety-nine that do not.
+ *
+ * A list is for TRIAGE — deciding what to work on. Detail is for WORKING. The
+ * old cards tried to be both and were neither: every row carried a resolution
+ * box nobody was going to type into, which is what made them tall.
+ *
+ * So: one line per row, scannable down a single column of meaning, and the
+ * detail opens in place when a row is clicked. Roughly 44px instead of 200 —
+ * about twenty rows on screen instead of three.
+ */
+.rows { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.rows .r {
+  display: flex; align-items: center; gap: 10px; padding: 10px 13px;
+  border-bottom: 1px solid var(--line); cursor: pointer; background: var(--surface);
+  font-size: 13px;
+}
+.rows .r:last-child { border-bottom: 0; }
+.rows .r:hover { background: var(--surface-2); }
+.rows .r.open { background: var(--surface-2); }
+/* The urgency lane. A dot rather than a word: at twenty rows on screen the
+   eye finds colour before it reads anything, and urgent is the only thing
+   worth finding that fast. */
+.rows .r .dot2 {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--line);
+}
+.rows .r.hot .dot2 { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.18); }
+/* The one column that says what this is. Everything else is metadata; this
+   is the sentence the customer typed, and it is what makes a list scannable
+   instead of a hundred identical rows. */
+.rows .r .what {
+  flex: 1; min-width: 0; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; color: var(--ink);
+}
+.rows .r .who { color: var(--muted); font-size: 12px; flex: none; max-width: 170px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rows .r .tag {
+  flex: none; font-size: 11px; color: var(--muted); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px;
+  white-space: nowrap;
+}
+.rows .r.open .tag { background: var(--surface); }
+.rows .r .age {
+  flex: none; color: var(--faint); font-size: 11.5px; width: 66px;
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+.rows .r .age.cold { color: #f59e0b; }
+.rows .detail {
+  padding: 14px 16px 16px; border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.rows .detail:last-child { border-bottom: 0; }
+.listhead {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 10px;
+  font-size: 12px; color: var(--faint);
+}
+.listhead input {
+  flex: 1; max-width: 320px; padding: 7px 11px; border-radius: 9px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  color: var(--ink); font: inherit; font-size: 12.5px;
+}
+
 /* The desk strip. An operator's first question of the morning is "is there
    anything on fire", and this is where that is answered — so a desk with
    urgent work is coloured rather than merely counted. */
@@ -2244,6 +2312,7 @@ function loadHandoffs() {
   ]).then(function (both) {
     var rows = both[0], desks = both[1];
     state.handoffRows = rows;
+    state.desks = desks;
     var h = '<div class="tools"><div class="seg">' +
       [["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(function (o) {
         return '<button class="' + (state.hstatus === o[0] ? "on" : "") + '" data-hs="' + o[0] + '">' + o[1] + "</button>";
@@ -2268,36 +2337,40 @@ function loadHandoffs() {
         }).join("") + "</div>";
     }
 
-    h += rows.length ? rows.map(function (hd) {
+    // A search box, because at a hundred a day filters are not enough: the
+    // question an operator actually has is "did the man from Bahir Dar call
+    // back", and no combination of status and desk answers that.
+    h += '<div class="listhead">' +
+      '<input id="h-q" placeholder="Search name, number or message" value="' +
+      esc(state.hquery || "") + '">' +
+      '<span id="h-count"></span></div>';
+
+    var q = (state.hquery || "").toLowerCase();
+    var shown = q ? rows.filter(function (hd) {
+      return ((hd.detail || "") + " " + (hd.contact_name || "") + " " +
+              (hd.contact_phone || "")).toLowerCase().indexOf(q) > -1;
+    }) : rows;
+
+    // One line each. The columns are read left to right as one sentence:
+    // how urgent, which desk, what they said, who to call, how long they have
+    // waited. Everything else — the transcript, the resolution box — opens
+    // when the row is clicked, because a resolution box on every row is what
+    // made the old cards 200px tall and the list unreadable.
+    h += shown.length ? '<div class="rows">' + shown.map(function (hd) {
       var w = waited(hd.created_at);
-      return '<div class="panel"><div style="display:flex;gap:10px;align-items:flex-start">' +
-        '<div style="flex:1;min-width:0">' +
-        '<span class="pill ' + esc(hd.status) + '">' + esc(hd.status) + "</span> " +
-        (hd.priority === "urgent" ? '<span class="pill urgent">urgent</span> ' : "") +
-        (hd.department_label
-          ? '<span class="pill desk">' + esc(hd.department_label) + "</span> " : "") +
-        '<strong style="margin-left:6px">' + esc(REASON_LABEL[hd.reason] || hd.reason) + "</strong>" +
-        (hd.status === "open" ? ' <span class="waiting ' + w[1] + '">waiting ' + w[0] + "</span>" : "") +
-        '<div class="meta" style="margin-top:5px">' + new Date(hd.created_at).toLocaleString() + "</div>" +
-        (hd.contact_name || hd.contact_phone
-          ? '<div class="contact"><strong>' + esc(hd.contact_name || "Name not given") + "</strong>" +
-            (hd.contact_phone ? ' · <a href="tel:' + esc(hd.contact_phone) + '">' + esc(hd.contact_phone) + "</a>" : "") + "</div>"
-          : '<div class="contact none">No contact details captured.</div>') +
-        (hd.detail ? "<div>" + esc(hd.detail) + "</div>" : "") +
-        (hd.resolution ? '<div class="resolution">' + esc(hd.resolution) +
-          '<div class="when">closed ' + (hd.resolved_at ? new Date(hd.resolved_at).toLocaleString() : "") + "</div></div>" : "") +
-        "</div></div>" +
-        '<div class="tools" style="margin:10px 0 0">' +
-        '<button class="btn ghost sm" data-tx="' + esc(hd.conversation_id) + '" data-hid="' + esc(hd.id) + '">View conversation</button>' +
-        (hd.status !== "open" && can("handoffs.resolve")
-          ? '<button class="btn ghost sm" data-reopen="' + esc(hd.id) + '">Reopen</button>' : "") +
+      return '<div class="r' + (hd.priority === "urgent" ? " hot" : "") +
+          '" data-row="' + esc(hd.id) + '">' +
+        '<span class="dot2"></span>' +
+        '<span class="tag">' + esc(hd.department_label || "—") + "</span>" +
+        '<span class="what">' + esc(hd.detail || REASON_LABEL[hd.reason] || hd.reason) + "</span>" +
+        '<span class="who">' + esc(hd.contact_name || hd.contact_phone || "no contact") + "</span>" +
+        (hd.status === "open"
+          ? '<span class="age ' + w[1] + '">' + esc(w[0]) + "</span>"
+          : '<span class="age">closed</span>') +
         "</div>" +
-        '<div id="tx-' + esc(hd.id) + '"></div>' +
-        (hd.status === "open" && can("handoffs.resolve")
-          ? '<div class="noteform"><input id="note-' + esc(hd.id) + '" placeholder="What was done about it? (optional)">' +
-            '<button class="btn sm" data-close="' + esc(hd.id) + '">Save &amp; close</button></div>' : "") +
-        "</div>";
-    }).join("") : '<div class="empty">Nothing in this queue.</div>';
+        '<div class="detail" id="d-' + esc(hd.id) + '" style="display:none"></div>';
+    }).join("") + "</div>"
+      : '<div class="empty">Nothing in this queue.</div>';
 
     $("main").innerHTML = h;
     wire("[data-hs]", "hs", function (v) { state.hstatus = v; loadHandoffs(); });
@@ -2305,8 +2378,100 @@ function loadHandoffs() {
     wire("[data-tx]", "tx", function (v, el) { showTranscript(v, el.getAttribute("data-hid")); });
     wire("[data-close]", "close", closeHandoff);
     wire("[data-reopen]", "reopen", reopenHandoff);
+    wire("[data-row]", "row", toggleHandoffDetail);
     $("dl-handoffs").onclick = exportHandoffs;
+    $("h-count").textContent = shown.length === rows.length
+      ? rows.length + (rows.length === 1 ? " escalation" : " escalations")
+      : shown.length + " of " + rows.length;
+    var box = $("h-q");
+    box.oninput = function () {
+      // Re-filters what is already loaded rather than re-fetching. Typing is
+      // not a reason to ask the server anything, and a request per keystroke
+      // is how a search box becomes slower than scrolling.
+      state.hquery = box.value;
+      var at = box.selectionStart;
+      loadHandoffs();
+      window.setTimeout(function () {
+        var b = $("h-q");
+        if (b) { b.focus(); b.setSelectionRange(at, at); }
+      }, 0);
+    };
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+}
+
+/* The detail for one escalation, built when it is opened and not before.
+ *
+ * Everything the old card carried on every row lives here: the full message,
+ * who to call, the transcript, the resolution box, the desk it can be moved
+ * to. None of it is worth rendering a hundred times for the one row somebody
+ * is actually going to work.
+ */
+function toggleHandoffDetail(id) {
+  var box = $("d-" + id);
+  var row = document.querySelector('[data-row="' + id + '"]');
+  if (!box) return;
+  if (box.style.display !== "none") {
+    box.style.display = "none";
+    box.innerHTML = "";
+    if (row) row.classList.remove("open");
+    return;
+  }
+  var hd = (state.handoffRows || []).filter(function (r) { return r.id === id; })[0];
+  if (!hd) return;
+  if (row) row.classList.add("open");
+  box.style.display = "";
+  box.innerHTML =
+    '<div class="meta">' + esc(REASON_LABEL[hd.reason] || hd.reason) + " · " +
+      new Date(hd.created_at).toLocaleString() + "</div>" +
+    (hd.detail ? '<div style="margin:8px 0">' + esc(hd.detail) + "</div>" : "") +
+    (hd.contact_name || hd.contact_phone
+      ? '<div class="contact"><strong>' + esc(hd.contact_name || "Name not given") + "</strong>" +
+        (hd.contact_phone ? ' · <a href="tel:' + esc(hd.contact_phone) + '">' +
+          esc(hd.contact_phone) + "</a>" : "") + "</div>"
+      : '<div class="contact none">No contact details captured.</div>') +
+    (hd.resolution ? '<div class="resolution">' + esc(hd.resolution) +
+      '<div class="when">closed ' +
+      (hd.resolved_at ? new Date(hd.resolved_at).toLocaleString() : "") +
+      "</div></div>" : "") +
+    '<div class="tools" style="margin:10px 0 0">' +
+      '<button class="btn ghost sm" data-tx="' + esc(hd.conversation_id) +
+        '" data-hid="' + esc(hd.id) + '">View conversation</button>' +
+      // Moving a desk is a select rather than a menu: eight options is a
+      // glance, and the operator who noticed the row is on the wrong desk is
+      // holding it right now.
+      (can("handoffs.resolve")
+        ? '<select class="btn ghost sm" data-move="' + esc(hd.id) + '">' +
+          (state.desks || []).map(function (d) {
+            return '<option value="' + esc(d.department) + '"' +
+              (d.department === hd.department ? " selected" : "") + ">" +
+              esc(d.label) + "</option>";
+          }).join("") + "</select>"
+        : "") +
+      (hd.status !== "open" && can("handoffs.resolve")
+        ? '<button class="btn ghost sm" data-reopen="' + esc(hd.id) + '">Reopen</button>' : "") +
+    "</div>" +
+    '<div id="tx-' + esc(hd.id) + '"></div>' +
+    (hd.status === "open" && can("handoffs.resolve")
+      ? '<div class="noteform"><input id="note-' + esc(hd.id) +
+        '" placeholder="What was done about it? (optional)">' +
+        '<button class="btn sm" data-close="' + esc(hd.id) +
+        '">Save &amp; close</button></div>' : "");
+
+  wire("[data-tx]", "tx", function (v, el) { showTranscript(v, el.getAttribute("data-hid")); });
+  wire("[data-close]", "close", closeHandoff);
+  wire("[data-reopen]", "reopen", reopenHandoff);
+  var sel = box.querySelector("[data-move]");
+  if (sel) {
+    sel.onchange = function () {
+      api("/handoffs/" + id + "/department", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ department: sel.value })
+      }).then(function (r) {
+        setStatus("Moved to " + r.department_label);
+        loadHandoffs();
+      }).catch(function (e) { setStatus(e.message); });
+    };
+  }
 }
 
 /* One handler for every drilled figure.
@@ -2396,15 +2561,56 @@ function loadConvos() {
         '<div style="flex:1"></div><span class="meta">' + rows.length +
         " shown</span></div>"
       : "";
-    $("main").innerHTML = head + (rows.length ? rows.map(function (c) {
-      return '<div class="panel"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-        '<span class="pill">' + esc(c.channel) + "</span>" +
-        '<span class="meta">' + new Date(c.created_at).toLocaleString() + "</span>" +
-        '<span class="meta">' + esc(c.language || "—") + "</span>" +
-        '<div style="flex:1"></div>' +
-        '<button class="btn ghost sm" data-msgs="' + esc(c.id) + '">View messages</button></div>' +
-        '<div id="m-' + esc(c.id) + '"></div></div>';
-    }).join("") : '<div class="empty">No conversations match.</div>');
+    var q = (state.cquery || "").toLowerCase();
+    var shown = q ? rows.filter(function (c) {
+      return ((c.preview || "") + " " + (c.channel || "") + " " +
+              (c.language || "")).toLowerCase().indexOf(q) > -1;
+    }) : rows;
+
+    // The opening question, as the column that carries the row.
+    //
+    // This list used to show a channel, a timestamp and a language — three
+    // facts that are the same on nearly every row — so a hundred
+    // conversations were a hundred identical cards and the only way to find
+    // one was to open them one at a time. What a conversation was ABOUT is
+    // the thing a person is scanning for, and it was the one thing missing.
+    var body = shown.length ? '<div class="rows">' + shown.map(function (c) {
+      var w = waited(c.created_at);
+      return '<div class="r' + (c.escalated ? " hot" : "") +
+          '" data-msgs="' + esc(c.id) + '">' +
+        '<span class="dot2"></span>' +
+        '<span class="tag">' + esc(c.channel) + "</span>" +
+        '<span class="what">' + esc(c.preview || "(no message)") + "</span>" +
+        '<span class="who">' + esc(c.language || "—") +
+          (c.turns ? " · " + c.turns + " turns" : "") + "</span>" +
+        // No "cold" colouring here. An old conversation is history, not a
+        // customer going unanswered — amber on it would borrow the meaning
+        // the escalation list gives the same column and say the opposite.
+        '<span class="age">' + esc(w[0]) + "</span>" +
+        "</div>" +
+        '<div class="detail" id="m-' + esc(c.id) + '" style="display:none"></div>';
+    }).join("") + "</div>" : '<div class="empty">No conversations match.</div>';
+
+    $("main").innerHTML = head +
+      '<div class="listhead">' +
+      '<input id="c-q" placeholder="Search what customers asked" value="' +
+      esc(state.cquery || "") + '">' +
+      "<span>" + (shown.length === rows.length
+        ? rows.length + " conversations"
+        : shown.length + " of " + rows.length) +
+      // The red dot means it reached a person. Said once here rather than
+      // relying on a colour nobody was told the meaning of.
+      " · a red dot reached a person</span></div>" + body;
+    var cbox = $("c-q");
+    cbox.oninput = function () {
+      state.cquery = cbox.value;
+      var at = cbox.selectionStart;
+      loadConvos();
+      window.setTimeout(function () {
+        var b = $("c-q");
+        if (b) { b.focus(); b.setSelectionRange(at, at); }
+      }, 0);
+    };
     wire("[data-msgs]", "msgs", loadMsgs);
     if ($("clear-filter")) {
       $("clear-filter").onclick = function () { state.convoFilter = null; loadConvos(); };
@@ -2414,11 +2620,21 @@ function loadConvos() {
 
 function loadMsgs(id) {
   var box = $("m-" + id);
-  if (box.innerHTML) { box.innerHTML = ""; return; }
+  var row = document.querySelector('[data-msgs="' + id + '"]');
+  if (!box) return;
+  if (box.style.display !== "none") {
+    box.style.display = "none";
+    box.innerHTML = "";
+    if (row) row.classList.remove("open");
+    return;
+  }
+  if (row) row.classList.add("open");
+  box.style.display = "";
+  box.innerHTML = '<div class="meta">Loading…</div>';
   api("/conversations/" + id + "/messages").then(function (msgs) {
-    box.innerHTML = '<div style="margin-top:10px">' + msgs.map(function (m) {
+    box.innerHTML = msgs.map(function (m) {
       return '<div class="msgline ' + esc(m.role) + '">' + esc(m.text) + "</div>";
-    }).join("") + "</div>";
+    }).join("");
   }).catch(function (e) { box.innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
