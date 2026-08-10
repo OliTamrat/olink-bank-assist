@@ -1,15 +1,41 @@
 # Olink Bank Assist
 
-A **white-label AI banking assistant for Ethiopian banks**. Each bank gets a
-branded assistant its customers can talk to — in **Amharic, Afaan Oromo,
-Tigrinya, Somali, or English** — about accounts, transfers, loans, fees,
-saving, and general financial education, over a **web chat widget** or a
-**Telegram bot**. When the assistant cannot or must not answer, the customer
-is handed to a **live human teller on a call, inside the same conversation**.
+**Your bank's front door, in your customer's language — with a real teller one
+tap away.**
+
+A white-label AI banking assistant for Ethiopian banks and microfinance
+institutions. Customers ask about accounts, transfers, loans, fees and saving
+in **Amharic, Afaan Oromo, Tigrinya, Somali or English**, over a **web chat
+widget** or a **Telegram bot** — the channel they already have on the phone
+they already own. When the assistant cannot answer, or must not, the customer
+is handed to **a real bank teller on a live call inside the same conversation**,
+with the whole transcript already in front of them.
+
+It is built on one hard constraint, and every other design decision follows
+from it: **the assistant never moves money and never sees an account.** Core
+banking stays where it belongs — on the teller's own screen, under the bank's
+own approvals. There is no code path that does otherwise, and a module-level
+assertion refuses to start the service if one is ever added.
+
+That constraint is what makes an AI safe to put in front of banking customers.
+It is also why the answer to *"what happens when the bot can't help?"* is a
+person, not a ticket.
+
+|  |  |
+|---|---|
+| **Five languages** | Amharic, Afaan Oromo, Tigrinya, Somali, English — detected per message, not per session |
+| **Two channels** | Embeddable web widget, Telegram bot |
+| **Three ways to answer** | The bank's curated words, its own documents, or a live human |
+| **Never invents a number** | An answer carrying a figure with no source fails the eval gate |
+| **Multi-tenant** | Every query filters by bank; cross-tenant isolation is asserted in tests |
+| **Data-residency ready** | Built for Proclamation 1321/2024 Art. 22 — deployable in-country |
+| **Runs without an API key** | Extractive mode quotes the knowledge base directly; add a model and it gets conversational, not less safe |
 
 Live at `https://bankassist-430565798339.us-east1.run.app`, deployed from
 `main` by GitHub Actions on every CI-green push. The full product plan,
 architecture doctrine and roadmap live in `CLAUDE.md`.
+
+*A product of [Olink Technologies](https://olinkgo.us).*
 
 ## The three tiers of an answer
 

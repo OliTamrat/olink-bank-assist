@@ -811,8 +811,11 @@ lender (smaller, faster procurement, hungrier).
   not a per-tenant Python seed script the way CBE/Dashen/Awash were built.
 - Their brand colour and logo on the widget.
 - ~~**Analytics dashboard**: deflection rate, top questions, language mix.~~
-  **Shipped** — see "The two reports" below. What is left is export (CSV /
-  print) for a bank that wants the numbers in a board pack.
+  **Shipped** — see "The two reports" below. ~~Export (CSV / print) for a bank
+  that wants the numbers in a board pack.~~ **Also shipped** (PR #57):
+  `exportAnalytics` / `exportHandoffs` in `admin.html` plus a print stylesheet.
+  Client-side by design — the numbers are already on the page, so a server
+  round-trip would only add a way for the file to disagree with the screen.
 - Embedding retrieval behind the same `retrieve()` interface (BM25 stays as
   fallback); LLM intent refinement **above** the rules floor, never replacing
   it.
