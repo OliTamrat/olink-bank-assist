@@ -698,6 +698,26 @@ AUTO_ANSWER_INTENTS = frozenset({
     GREETING, QUESTION, INVESTMENT_ADVICE, COMPARISON, ACCOUNT_PROCEDURE,
 })
 
+# The intents a CURATED ANSWER can actually be served for.
+#
+# Narrower than the auto-answer allowlist, and the difference is not a
+# subtlety — it is the whole reason this constant exists. In `agent.respond`
+# the curated-answer lookup sits after the greeting, account, complaint,
+# human-request and comparison branches, because a published answer must never
+# be able to skip a guardrail. The consequence is that a curated answer for
+# any of those intents is unreachable: it would sit in the admin looking
+# published and never be sent to anybody.
+#
+# Found in production. The suggestions list offered "Can I speak to a manager"
+# and "My name is Oli" as questions worth answering — one is a request for a
+# person and the other is somebody introducing themselves. An operator who
+# wrote answers for those would have watched them never appear and concluded
+# the feature was broken.
+#
+# `tests/test_faq.py` asserts this set against what `respond()` actually
+# serves, so the two cannot drift apart the way a hand-copied list would.
+CURATABLE_INTENTS = frozenset({QUESTION, ACCOUNT_PROCEDURE, INVESTMENT_ADVICE})
+
 
 # --------------------------------------------------------------- name
 
@@ -733,8 +753,34 @@ _NOT_A_NAME = frozenset(
 # Where the name sits relative to the marker differs by language: English
 # and Oromo "maqaan koo" put it after, Amharic/Tigrinya verb forms put it
 # before. Both shapes are matched explicitly rather than guessed.
+# EXPLICIT introductions — "my name is", "i am called", "call me". These say
+# outright that a name follows, so a name of more than one word is safe to
+# take, and here it is the normal case rather than an edge one: an Ethiopian
+# name is a given name and a father's name, so "My name is Oli Tamrat" is how
+# most people introduce themselves.
+#
+# It was one word. The consequence was not just a missing surname — the
+# remainder check below saw "Tamrat" left over, concluded this was not an
+# introduction at all, and classified the whole message as a QUESTION. Found
+# on the first production list of frequent questions, which was offering
+# "My name is Oli" as something for the bank to write an answer to.
+_NAME_INTRO_RE = re.compile(
+    r"\b(?:my name is|i am called|call me)\s+"
+    r"([^\s,.!?።፣]{2,40}(?:\s+[^\s,.!?።፣]{2,40}){0,2})"
+    # Must END at a word boundary. Without this a 200-character run of
+    # nonsense matches its own first 40 characters, which land inside the
+    # plausible-name ceiling and get stored as somebody's name. The old
+    # single-word pattern was saved from that by the leftover-text check in
+    # `extract_name`, which the explicit forms deliberately skip — so the
+    # guard has to be here instead. Caught by a test that already existed.
+    r"(?![^\s,.!?።፣])",
+    re.IGNORECASE,
+)
+# The LOOSE forms stay one word and must be the whole remainder — see
+# `extract_name`. "I am Oli" introduces; "I am looking for a loan" does not,
+# and no amount of wanting full names is worth reading that as one.
 _NAME_AFTER_RE = re.compile(
-    r"\b(?:my name is|i am called|call me|this is|i am|i'm|im)\s+([^\s,.!?።፣]{2,40})",
+    r"\b(?:this is|i am|i'm|im)\s+([^\s,.!?።፣]{2,40})",
     re.IGNORECASE,
 )
 _NAME_AFTER_STRICT_RE = re.compile(
@@ -773,6 +819,24 @@ def _plausible_name(candidate: str) -> str | None:
     return name
 
 
+def _longest_plausible(candidate: str) -> str | None:
+    """The longest leading run of words in `candidate` that reads as a name.
+
+    The multi-word capture is greedy, so "My name is Oli and my number is
+    0911234567" hands this "Oli and my". Rejecting the whole thing would lose
+    a name that is plainly there — and did, on a test that already existed —
+    while accepting it would store "Oli and my" and address the customer that
+    way for the rest of the conversation. Shortening from the right gives the
+    only reading that is both safe and useful.
+    """
+    words = candidate.split()
+    for take in range(len(words), 0, -1):
+        name = _plausible_name(" ".join(words[:take]))
+        if name:
+            return name
+    return None
+
+
 def extract_name(text: str) -> str | None:
     """Pull a self-introduced name out of a message, or None.
 
@@ -782,10 +846,12 @@ def extract_name(text: str) -> str | None:
     cheerfully addressing someone as "looking" or, far worse, as their own
     account number.
     """
-    for pattern in (_NAME_BETWEEN_RE, _NAME_AFTER_STRICT_RE, _NAME_BEFORE_RE):
+    for pattern in (
+        _NAME_BETWEEN_RE, _NAME_INTRO_RE, _NAME_AFTER_STRICT_RE, _NAME_BEFORE_RE,
+    ):
         match = pattern.search(text)
         if match:
-            name = _plausible_name(match.group(1))
+            name = _longest_plausible(match.group(1))
             if name:
                 return name
 

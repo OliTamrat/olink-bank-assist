@@ -129,3 +129,62 @@ def test_a_very_long_name_is_truncated_not_rejected(
     assert classifier.extract_name(f"my name is {long_name}") is None, (
         "beyond the plausible-name ceiling it should be rejected outright"
     )
+
+
+# ------------------------------------------------------- a full name is normal
+#
+# Found from a production screenshot: the frequent-questions list was offering
+# "My name is Oli" as something for the bank to write an answer to. The reason
+# was worse than the symptom — the name capture took ONE word, so "My name is
+# Oli Tamrat" left "Tamrat" over, the remainder check concluded it was not an
+# introduction, and the whole message was classified as a QUESTION.
+#
+# In Ethiopia a name is a given name and a father's name. Two words is the
+# normal form, not an edge case, so this was the common path failing.
+
+
+@pytest.mark.parametrize("message,expected", [
+    ("My name is Oli Tamrat", "Oli Tamrat"),
+    ("my name is Meron Tesfaye Bekele", "Meron Tesfaye Bekele"),
+    ("Call me Abebe Kebede", "Abebe Kebede"),
+    ("I am called Selam Girma", "Selam Girma"),
+    # Still works for one word, which is what it used to be limited to.
+    ("My name is Oli", "Oli"),
+])
+def test_an_explicit_introduction_takes_the_whole_name(
+    message: str, expected: str
+) -> None:
+    assert classifier.extract_name(message) == expected
+
+
+@pytest.mark.parametrize("message", [
+    "I am looking for a loan",
+    "I am interested in a savings account",
+    "I am trying to open an account",
+    "this is not working",
+])
+def test_the_loose_forms_stay_one_word_and_whole(message: str) -> None:
+    """The reason the explicit and loose forms are separate patterns. "I am X"
+    only introduces when X is the entire remainder — widening it to catch full
+    names would read half a customer's question as their name and then address
+    them by it for the rest of the conversation."""
+    assert classifier.extract_name(message) is None, message
+
+
+@pytest.mark.parametrize("message", [
+    "My name is Oli Tamrat",
+    "Call me Abebe Kebede",
+])
+def test_a_full_introduction_is_a_greeting_not_a_question(message: str) -> None:
+    """The knock-on effect, and the one that reached production: an
+    introduction read as a question gets retrieved for, escalated over, and
+    offered to the bank as something to write an answer to."""
+    assert classifier.classify_intent(message) == classifier.GREETING
+
+
+def test_a_name_is_still_never_taken_from_junk() -> None:
+    """The bar stays "unmistakably a name": everything captured here is echoed
+    back and persisted, so a false positive has the assistant addressing
+    somebody as "call me on" — or as their own account number."""
+    assert classifier.extract_name("my name is call me on") is None
+    assert classifier.extract_name("my name is 1000123456789") is None

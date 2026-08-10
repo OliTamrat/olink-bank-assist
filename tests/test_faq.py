@@ -277,3 +277,76 @@ def test_an_answer_is_only_served_in_the_language_it_was_written_for(
     _publish(client, demo_bank, language=language, answer="Local wording.")
     data = client.post("/chat/demo", json={"message": Q}).json()
     assert data["reply"] != "Local wording."
+
+
+# ------------------------------- only suggest what could actually be served
+#
+# Found on the first real list in production. It offered "Can I speak to a
+# manager" and "My name is Oli" as questions worth answering — one is a
+# request for a person, the other is somebody introducing themselves.
+#
+# The manager one is the dangerous suggestion, not the silly one. A curated
+# answer for it is UNREACHABLE: the human-request branch runs before the
+# lookup, deliberately, so an operator could write it, publish it, watch it
+# never appear, and reasonably conclude the whole feature was broken.
+
+
+@pytest.mark.parametrize("message,why", [
+    ("Can I speak to a manager please", "handled by the human-request branch"),
+    ("My name is Oli Tamrat", "an introduction, not a question"),
+    ("Someone stole money from my account", "handled by the complaint branch"),
+    ("What is my current account balance", "handled by the account guardrail"),
+])
+def test_unanswerable_traffic_is_never_suggested(
+    client: TestClient, demo_bank: Any, message: str, why: str
+) -> None:
+    for _ in range(3):
+        client.post("/chat/demo", json={"message": message})
+    rows = client.get(
+        "/admin/api/demo/faq/suggestions",
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    ).json()
+    assert not [
+        r for r in rows if faq.normalise(r["question"]) == faq.normalise(message)
+    ], why
+
+
+def test_ordinary_questions_are_still_suggested(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The other half. A filter that removed everything would be a page that
+    is always empty, and the temptation would then be to loosen it."""
+    for _ in range(3):
+        client.post("/chat/demo", json={"message": "Do you finance ostrich farms?"})
+    rows = client.get(
+        "/admin/api/demo/faq/suggestions",
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    ).json()
+    assert [r for r in rows if "ostrich" in r["question"].lower()]
+
+
+@pytest.mark.parametrize("intent_message", [
+    "Can I speak to a manager please",
+    "Someone stole money from my account",
+    "What is my current account balance",
+])
+def test_the_suggestion_filter_matches_what_respond_actually_serves(
+    client: TestClient, demo_bank: Any, intent_message: str
+) -> None:
+    """The consistency check, so the two lists cannot drift.
+
+    `CURATABLE_INTENTS` is a hand-written set and the branch order in
+    `respond()` is what actually decides. A set that fell out of step would
+    put work back on the suggestions page that silently does nothing — so
+    this publishes an answer for each excluded intent and proves the
+    assistant does not serve it.
+    """
+    from bankassist.classifier import CURATABLE_INTENTS, classify_intent
+
+    assert classify_intent(intent_message) not in CURATABLE_INTENTS
+    _publish(client, demo_bank, question=intent_message, answer="CURATED TEXT")
+    data = client.post("/chat/demo", json={"message": intent_message}).json()
+    assert "CURATED TEXT" not in data["reply"], (
+        "the suggestion filter excludes this intent because respond() cannot "
+        "serve it — if that stops being true, the filter is now wrong"
+    )
