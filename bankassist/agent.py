@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import classifier, departments, presence
+from . import classifier, departments, faq, presence
 from .i18n import t
 from .llm import (
     LLMDeclined,
@@ -30,7 +30,7 @@ from .llm import (
     translate_for_search,
 )
 from .logging_config import log_event
-from .models import AuditLog, Bank, Conversation, Document, Handoff, Message
+from .models import AuditLog, Bank, Conversation, Document, Faq, Handoff, Message
 from .retrieval import RetrievedChunk, retrieve, suggest_topics
 
 logger = logging.getLogger(__name__)
@@ -258,6 +258,40 @@ def _request_contact(
         return f"{reply}\n\n{t(language, 'no_contact_yet')}"
     conversation.awaiting_contact = True
     return f"{reply}\n\n{t(language, 'ask_contact')}"
+
+
+CURATED_SOURCE = "Answer approved by the bank"
+
+
+def _curated_answer(
+    db: Session, bank: Bank, text: str, language: str
+) -> Faq | None:
+    """A published answer for exactly this question, or None.
+
+    Strips a leading greeting first for the same reason retrieval does: "Selam,
+    how do I open an account?" and "How do I open an account?" are one question
+    and must not need two curated entries.
+
+    Only `published`. A draft is somebody's afternoon of half-written wording,
+    and the gap between starting one and finishing it is precisely when a
+    customer would read it.
+
+    The counter is incremented here rather than by the caller, so a route that
+    forgets cannot make a well-used answer look unused — the number is what
+    tells a bank whether curating more of these is worth anybody's time.
+    """
+    asked, _greeted = classifier.strip_greeting(text)
+    row = db.execute(
+        select(Faq).where(
+            Faq.bank_id == bank.id,
+            Faq.status == "published",
+            Faq.lookup == faq.key(asked or text, language),
+        )
+    ).scalars().first()
+    if row is None:
+        return None
+    row.served += 1
+    return row
 
 
 def _volunteered_contact(
@@ -499,6 +533,27 @@ def handle_message(
             reply = f"{intro}\n\n{why_choose.content}"
             sources = [{"document_id": why_choose.id, "title": why_choose.title}]
             result = ChatResult(reply, intent, language, sources=sources, outcome=COMPARISON)
+    elif (curated := _curated_answer(db, bank, text, language)) is not None:
+        # An answer this bank has written and approved, served verbatim. No
+        # retrieval, no model call, no latency, no cost.
+        #
+        # Its position in this chain is the safety property. Every guardrail
+        # is above it, so a curated answer can never short-circuit the account
+        # refusal, a complaint, or a request for a person — it is a faster way
+        # to answer a question, never a way to skip deciding whether the thing
+        # is a question at all. Putting it first would have been the obvious
+        # optimisation and would have let a bank publish an answer to "what is
+        # my balance".
+        result = ChatResult(
+            curated.answer,
+            intent,
+            language,
+            # Attributed, because the bank said it. A reply carrying no source
+            # reads as the model speaking, which is the opposite of what a
+            # curated answer is.
+            sources=[{"document_id": curated.id, "title": CURATED_SOURCE}],
+            outcome=ANSWERED,
+        )
     else:
         # Search the question, not the hello. Greeting words are ordinary
         # content words to BM25, so leaving them in pads the query's

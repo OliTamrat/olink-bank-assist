@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import logging
 import time
+from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -28,7 +29,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from . import (
     admin_auth,
     channels,
+    classifier,
     departments,
+    faq,
     handoff_webhook,
     livekit,
     passwords,
@@ -53,6 +56,7 @@ from .models import (
     Bank,
     Conversation,
     Document,
+    Faq,
     Handoff,
     Message,
     Role,
@@ -1420,6 +1424,222 @@ def list_handoffs(
         }
         for h in rows
     ]
+
+
+# --------------------------------------------------------- curated answers
+
+
+class FaqIn(BaseModel):
+    question: str = Field(min_length=3, max_length=400)
+    answer: str = Field(min_length=1)
+    language: str = "en"
+    status: str = "draft"
+
+
+def _faq_row(row: Faq) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "question": row.question,
+        "answer": row.answer,
+        "language": row.language,
+        "status": row.status,
+        "served": row.served,
+        "approved_at": row.approved_at.isoformat() if row.approved_at else None,
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+@app.get("/admin/api/{slug}/faq")
+def list_faq(
+    principal: Principal = NeedsDocumentsRead, db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """Every curated answer, most-served first.
+
+    Most-served rather than newest: the list is read to decide what to write
+    next, and the answer carrying a thousand customers a month is the one
+    whose wording is worth an argument.
+    """
+    rows = db.execute(
+        select(Faq)
+        .where(Faq.bank_id == principal.bank.id)
+        .order_by(Faq.served.desc(), Faq.updated_at.desc())
+    ).scalars().all()
+    return [_faq_row(r) for r in rows]
+
+
+@app.get("/admin/api/{slug}/faq/suggestions")
+def faq_suggestions(
+    principal: Principal = NeedsDocumentsRead, db: Session = Depends(get_db)
+) -> list[dict[str, Any]]:
+    """What customers keep asking, and whether it has an approved answer yet.
+
+    This is the loop. The assistant sees every question; the bank sees which
+    ones repeat; whoever owns the wording writes it once and it is served
+    verbatim from then on. Without this list the feature is a form nobody
+    knows what to type into.
+
+    Counted over the most recent traffic rather than all of it, because a
+    question that was common last March and is not asked any more is not the
+    one to spend an afternoon on.
+    """
+    bank = principal.bank
+    rows = db.execute(
+        select(Message.text, Conversation.language)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(Conversation.bank_id == bank.id, Message.role == "user")
+        .order_by(Message.created_at.desc())
+        .limit(4000)
+    ).tuples().all()
+
+    counts: Counter[tuple[str, str]] = Counter()
+    original: dict[tuple[str, str], str] = {}
+    for text, language in rows:
+        lang = language or bank.default_language
+        # Greeting-stripped and normalised, so "Selam, how do I open an
+        # account?" and "how do i open an account" are one row rather than
+        # two neither of which looks frequent enough to bother with.
+        asked, _ = classifier.strip_greeting(text)
+        asked = asked or text
+        if len(asked) < 8:
+            continue        # "ok", "yes", "thanks" — not questions
+        k = (lang, faq.normalise(asked))
+        counts[k] += 1
+        original.setdefault(k, asked)
+
+    have = {
+        row.lookup: row
+        for row in db.execute(
+            select(Faq).where(Faq.bank_id == bank.id)
+        ).scalars().all()
+    }
+    out = []
+    for (lang, norm), n in counts.most_common(40):
+        if n < 2:
+            continue        # asked once is not a pattern
+        existing = have.get(f"{lang}\x1f{norm}")
+        out.append({
+            "question": original[(lang, norm)],
+            "language": lang,
+            "asked": n,
+            "faq_id": existing.id if existing else None,
+            "status": existing.status if existing else None,
+        })
+    return out
+
+
+@app.post("/admin/api/{slug}/faq", status_code=201)
+def create_faq(
+    payload: FaqIn,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Write an answer the bank stands behind.
+
+    `documents.write`, the same bar as editing the knowledge base — because it
+    is the same act. This text is served to customers verbatim, with no model
+    between it and them, which if anything makes it the more consequential of
+    the two.
+    """
+    bank = principal.bank
+    if payload.language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=422, detail="Unsupported language")
+    if payload.status not in ("draft", "published"):
+        raise HTTPException(status_code=422, detail="Unknown status")
+    lookup = faq.key(payload.question, payload.language)
+    if db.execute(
+        select(Faq.id).where(Faq.bank_id == bank.id, Faq.lookup == lookup)
+    ).first() is not None:
+        # Refused, not silently merged. Two answers to one question is a
+        # support call nobody can reproduce; a 409 is a sentence an operator
+        # can act on.
+        raise HTTPException(
+            status_code=409, detail="There is already an answer for that question"
+        )
+    row = Faq(
+        bank_id=bank.id, question=payload.question.strip(), lookup=lookup,
+        answer=payload.answer.strip(), language=payload.language,
+        status=payload.status,
+    )
+    if payload.status == "published":
+        row.approved_by = principal.user.id if principal.user else None
+        row.approved_at = datetime.now(UTC)
+    db.add(row)
+    db.flush()
+    _audit(
+        db, bank, "faq_created", "faq", row.id,
+        {"question": row.question, "status": row.status},
+        actor=principal.audit_actor,
+    )
+    db.commit()
+    return _faq_row(row)
+
+
+@app.put("/admin/api/{slug}/faq/{faq_id}")
+def update_faq(
+    faq_id: str,
+    payload: FaqIn,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Edit or publish one.
+
+    Re-approval is recorded on every publish, not only the first. An answer
+    edited after approval and still carrying the original sign-off would be a
+    record of somebody approving words they never read.
+    """
+    bank = principal.bank
+    row = db.get(Faq, faq_id)
+    if row is None or row.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown answer")
+    if payload.language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=422, detail="Unsupported language")
+    if payload.status not in ("draft", "published"):
+        raise HTTPException(status_code=422, detail="Unknown status")
+    lookup = faq.key(payload.question, payload.language)
+    clash = db.execute(
+        select(Faq.id).where(
+            Faq.bank_id == bank.id, Faq.lookup == lookup, Faq.id != row.id
+        )
+    ).first()
+    if clash is not None:
+        raise HTTPException(
+            status_code=409, detail="Another answer already covers that question"
+        )
+    row.question = payload.question.strip()
+    row.lookup = lookup
+    row.answer = payload.answer.strip()
+    row.language = payload.language
+    was = row.status
+    row.status = payload.status
+    if payload.status == "published":
+        row.approved_by = principal.user.id if principal.user else None
+        row.approved_at = datetime.now(UTC)
+    _audit(
+        db, bank, "faq_updated", "faq", row.id,
+        {"question": row.question, "from": was, "to": row.status},
+        actor=principal.audit_actor,
+    )
+    db.commit()
+    return _faq_row(row)
+
+
+@app.delete("/admin/api/{slug}/faq/{faq_id}")
+def delete_faq(
+    faq_id: str,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    bank = principal.bank
+    row = db.get(Faq, faq_id)
+    if row is None or row.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown answer")
+    _audit(
+        db, bank, "faq_deleted", "faq", row.id,
+        {"question": row.question}, actor=principal.audit_actor,
+    )
+    db.delete(row)
+    db.commit()
+    return {"deleted": True}
 
 
 @app.get("/admin/api/{slug}/integrations")
