@@ -33,6 +33,7 @@ from . import (
     departments,
     faq,
     handoff_webhook,
+    i18n,
     ingest,
     livekit,
     llm,
@@ -451,6 +452,13 @@ def bank_public(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         # thinly a bank staffs its queue is its business, not the public
         # internet's, and the customer only needs to know whether to wait.
         "teller_available": _teller_available(db, bank),
+        # Every interface label, in every language, in one payload. The widget
+        # has a language picker, and fetching a new table on each switch would
+        # put a network round trip between a customer and the language they
+        # can actually read — on the connection this product is used on, that
+        # is the moment they give up. A few kilobytes once is the better
+        # trade.
+        "ui": i18n.all_ui_strings(),
     }
 
 

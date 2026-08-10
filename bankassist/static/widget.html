@@ -733,6 +733,48 @@
   var langSel = document.getElementById("lang");
   var bankName = "";
 
+  // Interface strings for every language, sent once with the bank config.
+  // Switching language must not cost a network round trip: on the connection
+  // this product is actually used on, that pause is where somebody gives up.
+  var UI = {};
+  var uiLang = "en";
+
+  // A label in the current language. Falls back through English to the key
+  // itself, because a button reading "end_call" is at least debuggable while
+  // an empty button is just broken.
+  function T(key, vars) {
+    var table = UI[uiLang] || UI.en || {};
+    var text = table[key] || (UI.en || {})[key] || key;
+    if (vars) {
+      Object.keys(vars).forEach(function (name) {
+        text = text.split("{" + name + "}").join(vars[name]);
+      });
+    }
+    return text;
+  }
+
+  // Everything on screen that is not a chat message. Re-run on every language
+  // change, so the interface follows the picker rather than only new replies.
+  function applyLanguage(code) {
+    uiLang = code || "en";
+    document.documentElement.lang = uiLang;
+    langSel.title = T("language");
+    input.placeholder = T("ask_placeholder");
+    send.title = T("send");
+    send.setAttribute("aria-label", T("send"));
+    var m = {
+      "callTitle": "call_with_teller", "btnCam": "camera", "btnId": "show_my_id",
+      "btnMsgs": "messages", "btnEnd": "end_call", "idHint": "hold_id_to_camera",
+      "callMsgsTitle": "messages"
+    };
+    Object.keys(m).forEach(function (id) {
+      var node = document.getElementById(id);
+      if (node) { node.textContent = T(m[id]); node.title = T(m[id]); }
+    });
+    var ci = document.getElementById("callInput");
+    if (ci) ci.placeholder = T("type_message");
+  }
+
   var LANGS = { en: "English", am: "አማርኛ", om: "Afaan Oromoo", ti: "ትግርኛ", so: "Soomaali" };
 
   // Intent -> what the bank's evaluator should understand happened. These
@@ -796,10 +838,10 @@
   // shipped on the API should not surface as "dispute_intake" in a bank's
   // customer-facing widget before anyone has written the sentence for it.
   var CAPABILITY = {
-    general_guidance: "Explain products, fees and eligibility",
-    own_records:      "Look up your own application or account records",
-    document_capture: "Take a copy of your ID or a completed form",
-    dispute_intake:   "File a complaint or dispute on your behalf"
+    general_guidance: T("can_explain"),
+    own_records:      T("cannot_lookup"),
+    document_capture: T("cannot_take_id"),
+    dispute_intake:   T("cannot_complain")
   };
 
   // What no session can do, at any level of verification. Shown up front and
@@ -810,8 +852,8 @@
   // A customer who queues ten minutes to ask for a transfer and is refused
   // live has had a far worse experience than one told before they waited.
   var CANNOT = [
-    "Move money — deposits, withdrawals or transfers",
-    "Change your PIN, password or security details"
+    T("cannot_move_money"),
+    T("cannot_change_pin")
   ];
 
   function svg(name, extra) {
@@ -924,7 +966,7 @@
       (data.sources || []).forEach(function (s, idx) {
         cites.appendChild(el("div", "cite",
           '<span class="n">' + (idx + 1) + '</span><span><span class="t">' +
-          String(s.title).replace(/[<>&]/g, "") + '</span><br>Official ' + bankName + ' information</span>'));
+          String(s.title).replace(/[<>&]/g, "") + '</span><br>' + esc(T("sources_official", { bank: bankName })) + '</span>'));
       });
       turn.appendChild(cites);
       var tog = meta.querySelector('[data-toggle]');
@@ -949,7 +991,7 @@
   function thinking() {
     var t = el("div", "think",
       '<div class="spark">' + svg("spark", ' style="fill:currentColor;stroke:none"') + '</div>' +
-      '<span class="label">Searching official information…</span>');
+      '<span class="label">' + esc(T("searching")) + '</span>');
     t.querySelector(".spark svg").style.color = getComputedStyle(document.documentElement).getPropertyValue("--accent");
     chat.appendChild(t);
     scroll();
@@ -1009,17 +1051,28 @@
       // customer behind nobody is worse than no button.
       tellerAvailable = !!cfg.teller_available;
 
+      UI = cfg.ui || {};
+      applyLanguage(cfg.default_language || "en");
+
       var auto = el("option"); auto.value = ""; auto.textContent = "Auto";
       langSel.appendChild(auto);
       (cfg.languages || []).forEach(function (l) {
         var o = el("option"); o.value = l.code; o.textContent = l.name;
         langSel.appendChild(o);
       });
+      // The picker used to tag the next outgoing message and nothing else, so
+      // choosing አማርኛ changed what the assistant replied in while every
+      // button around it stayed English. It now moves the whole interface.
+      // Blank means Auto: fall back to the tenant's default rather than
+      // leaving the chrome in whatever was chosen last.
+      langSel.addEventListener("change", function () {
+        applyLanguage(langSel.value || cfg.default_language || "en");
+      });
 
-      addBot("Selam! I'm " + cfg.name + "'s AI assistant. Ask me about accounts, transfers, loans or saving — in English or አማርኛ, I'll follow your language automatically.", false);
+      addBot(T("greeting", { bank: cfg.name }), false);
       addSuggestions([
-        "How do I open an account?",
-        "What do I need for a loan?",
+        T("suggest_open_account"),
+        T("suggest_loan"),
         "ሰላም፣ የሞባይል ባንኪንግ እንዴት እጠቀማለሁ?"
       ]);
     })
@@ -1161,9 +1214,9 @@
   function offerTeller() {
     var card = el("div", "teller-offer",
       '<div class="ico">' + svg("head") + '</div>' +
-      '<div class="txt"><b>Speak to a ' + bankName + ' teller</b>' +
-      '<span>Available now — audio or video</span></div>' +
-      '<button type="button">Connect</button>');
+      '<div class="txt"><b>' + esc(T("teller_offer_title", { bank: bankName })) + '</b>' +
+      '<span>' + esc(T("teller_offer_sub")) + '</span></div>' +
+      '<button type="button">' + esc(T("connect")) + '</button>');
     card.querySelector("button").addEventListener("click", function () {
       card.remove();
       openPreflight();
@@ -1196,22 +1249,22 @@
     }).join("");
 
     openSheet(
-      '<h2 id="sheetTitle">Speak to a teller</h2>' +
+      '<h2 id="sheetTitle">' + esc(T("teller_sheet_title")) + '</h2>' +
       '<p class="lede">A ' + bankName + ' teller will join you on a call. ' +
       'They will ask to see your Fayda ID and check a detail on your account ' +
       'before discussing anything specific to you.</p>' +
       '<div class="can">' +
-        '<div class="hd">Straight away</div>' + yes +
-        '<div class="hd">Once they have checked your ID</div>' + more +
-        '<div class="hd">Not on this call, ever</div>' + no +
+        '<div class="hd">' + esc(T("teller_when_talk")) + '</div>' + yes +
+        '<div class="hd">' + esc(T("teller_when_account")) + '</div>' + more +
+        '<div class="hd">' + esc(T("teller_never_money")) + '</div>' + no +
       '</div>' +
       '<div class="media">' +
-        '<label>' + svg("mic") + '<input type="radio" name="media" value="audio" checked hidden>Audio</label>' +
-        '<label>' + svg("cam") + '<input type="radio" name="media" value="video" hidden>Video</label>' +
+        '<label>' + svg("mic") + '<input type="radio" name="media" value="audio" checked hidden>' + esc(T("audio")) + '</label>' +
+        '<label>' + svg("cam") + '<input type="radio" name="media" value="video" hidden>' + esc(T("video")) + '</label>' +
       '</div>' +
       '<div class="actions">' +
-        '<button type="button" class="btn-quiet" id="tCancel">Not now</button>' +
-        '<button type="button" class="btn-primary" id="tGo">Join the queue</button>' +
+        '<button type="button" class="btn-quiet" id="tCancel">' + esc(T("not_now")) + '</button>' +
+        '<button type="button" class="btn-primary" id="tGo">' + esc(T("join_queue")) + '</button>' +
       '</div>'
     );
     // The radios are visually hidden but still the source of truth, so the
@@ -1277,11 +1330,11 @@
           ? "You're first in the queue"
           : "in the queue, " + ahead + " ahead of you") + '</div>';
       openSheet(
-        '<h2 id="sheetTitle">Waiting for a teller</h2>' +
+        '<h2 id="sheetTitle">' + esc(T("waiting_for_teller")) + '</h2>' +
         '<div class="queue"><div class="ring"></div>' + pos +
         '<div class="timer" id="tTimer">0:00</div></div>' +
         '<div class="actions">' +
-          '<button type="button" class="btn-quiet" id="tLeave">Leave the queue</button>' +
+          '<button type="button" class="btn-quiet" id="tLeave">' + esc(T("leave_queue")) + '</button>' +
         '</div>'
       );
       document.getElementById("tLeave").addEventListener("click", leaveQueue);
@@ -1367,7 +1420,7 @@
     // that promises a command which does not exist is worse than none. Leaving
     // clears `session`, so the next turn a person would genuinely have helped
     // with offers the queue again on its own.
-    addBot("You've left the queue. I'm here if there's anything else I can help with.", false);
+    addBot(T("left_queue"), false);
   }
 
   // ------------------------------------------------------------- the call
