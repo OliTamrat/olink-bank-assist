@@ -1441,6 +1441,18 @@ class IngestIn(BaseModel):
     title: str = ""
     language: str = "en"
     category: str = "general"
+    # Where pasted content came from. Optional, and only meaningful alongside
+    # `html` — a fetched import already knows its own address.
+    #
+    # This exists because pasting is the NORMAL path here, not a fallback: most
+    # Ethiopian bank sites build their pages in the browser, so a fetch returns
+    # an empty shell and the operator copies the rendered page instead. Without
+    # this field every document imported that way lands with no provenance,
+    # which costs both of the things `documents.source_url` was added for —
+    # answering a compliance reviewer's "where is this text from", and matching
+    # a re-import to the document it should replace. Somebody who just copied a
+    # page knows its address; asking for it is far cheaper than losing it.
+    source_url: str | None = None
 
 
 class IngestCommitIn(IngestIn):
@@ -1495,6 +1507,22 @@ def _fetch_page(url: str) -> str:
     return resp.text
 
 
+def _stated_source(raw: str | None) -> str | None:
+    """The address an operator says pasted content came from, or None.
+
+    Validated but never fetched. A rejected address fails the import rather
+    than being dropped silently: somebody who typed one wants it recorded, and
+    quietly storing nothing would leave them believing the document is
+    attributed when it is not.
+    """
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return ingest.check_url(raw)
+    except ingest.UnsafeUrl as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 def _proposed(payload: IngestIn) -> tuple[list[ingest.Section], str | None]:
     if payload.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=422, detail="Unsupported language")
@@ -1507,11 +1535,16 @@ def _proposed(payload: IngestIn) -> tuple[list[ingest.Section], str | None]:
         return ingest.sections(markup, fallback_title=""), payload.url.strip()
     if payload.html:
         pasted = payload.html
+        # Held to the same rule as a fetched address even though nothing is
+        # requested from it. One notion of a legitimate page address is easier
+        # to reason about than two, and a provenance line that a reviewer
+        # cannot open is not provenance.
+        stated = _stated_source(payload.source_url)
         if not ingest.looks_like_markup(pasted):
             # Somebody selected the page and copied it, which is the only
             # thing that works on a site that builds itself in the browser.
-            return ingest.plain_text_section(pasted, payload.title), None
-        return ingest.sections(pasted, fallback_title=payload.title), None
+            return ingest.plain_text_section(pasted, payload.title), stated
+        return ingest.sections(pasted, fallback_title=payload.title), stated
     raise HTTPException(status_code=422, detail="Nothing to import")
 
 
