@@ -1890,6 +1890,121 @@ def delete_faq(
     return {"deleted": True}
 
 
+class FaqImportIn(BaseModel):
+    """A copied FAQ page, and optionally which of its questions to keep."""
+
+    text: str = Field(min_length=1)
+    language: str = "en"
+    # Empty means "everything found", matching the page importer. Selection is
+    # by question rather than by index so that ticking a box and then editing
+    # the pasted text cannot silently import a different answer than the one
+    # on screen.
+    questions: list[str] = Field(default_factory=list)
+
+
+def _faq_proposed(payload: FaqImportIn, bank_id: str, db: Session) -> list[
+    dict[str, Any]
+]:
+    if payload.language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=422, detail="Unsupported language")
+    existing = {
+        row.lookup: row.status
+        for row in db.execute(
+            select(Faq).where(Faq.bank_id == bank_id)
+        ).scalars().all()
+    }
+    out: list[dict[str, Any]] = []
+    for pair in faq.pairs(payload.text):
+        held = existing.get(faq.key(pair.question, payload.language))
+        out.append({
+            "question": pair.question,
+            "answer": pair.answer,
+            "chars": len(pair.answer),
+            # Named rather than a boolean, because "you already answer this,
+            # and it is live right now" is a different decision from "you have
+            # a draft of this".
+            "existing": held,
+        })
+    return out
+
+
+@app.post("/admin/api/{slug}/faq/import/preview")
+def faq_import_preview(
+    payload: FaqImportIn,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """What a pasted FAQ page would become. Nothing is written.
+
+    A bank's published FAQ is the best content it owns and the only content
+    that arrives in exactly the shape this table wants — somebody has already
+    chosen the questions that matter and written the approved answer to each.
+    The reason a bank with forty published answers ends up with four curated
+    is that the only way in was typing them back one at a time.
+    """
+    found = _faq_proposed(payload, principal.bank.id, db)
+    note = None
+    if not found:
+        # Same doctrine as the page importer: an empty preview must say what
+        # to do next, not leave somebody staring at a page they can see has
+        # questions on it.
+        note = (
+            "No questions found. This reads each line that ends in a question "
+            "mark as a question, and everything under it as the answer — so "
+            "copy the questions and answers themselves rather than a list of "
+            "links, and expand any collapsed ones first."
+        )
+    return {"pairs": found, "note": note}
+
+
+@app.post("/admin/api/{slug}/faq/import")
+def faq_import(
+    payload: FaqImportIn,
+    principal: Principal = NeedsDocumentsWrite,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Write the chosen questions as **drafts**.
+
+    Drafts, always, and this is not a convenience default that can be
+    relaxed later. `approved_by` is the entire difference between a curated
+    answer and a cache with extra steps — publishing on import would put a
+    bank's name on wording nobody at the bank has read, at the one point in
+    this product where nothing downstream can catch a mistake.
+
+    Existing answers are left alone rather than overwritten. An import that
+    silently replaced a published answer would let a stale copy of a page undo
+    a correction somebody made deliberately.
+    """
+    bank = principal.bank
+    found = _faq_proposed(payload, bank.id, db)
+    wanted = set(payload.questions)
+    chosen = [p for p in found if p["question"] in wanted] if wanted else found
+    if not chosen:
+        raise HTTPException(status_code=422, detail="Nothing was selected")
+
+    created, skipped = 0, 0
+    for pair in chosen:
+        if pair["existing"] is not None:
+            skipped += 1
+            continue
+        db.add(Faq(
+            bank_id=bank.id,
+            question=pair["question"][:400],
+            lookup=faq.key(pair["question"], payload.language),
+            answer=pair["answer"],
+            language=payload.language,
+            status="draft",
+        ))
+        created += 1
+    _audit(
+        db, bank, "faq_imported", "bank", bank.id,
+        {"created": created, "skipped": skipped, "language": payload.language},
+        actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"created": created, "skipped": skipped}
+
+
 @app.get("/admin/api/{slug}/integrations")
 def integration_settings(
     principal: Principal = NeedsIntegrationsManage, db: Session = Depends(get_db)

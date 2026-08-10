@@ -2635,8 +2635,10 @@ function loadFaq() {
     h += '<div class="panel"><div style="display:flex;align-items:center">' +
       "<h3 style='flex:1'>Approved answers</h3>" +
       (can("documents.write")
-        ? '<button class="btn sm" id="faq-new">Write one</button>' : "") +
-      "</div>" +
+        ? '<button class="btn ghost sm" id="faq-import">Import an FAQ page</button>' +
+          '<button class="btn sm" id="faq-new" style="margin-left:8px">Write one</button>'
+        : "") +
+      "</div><div id=\"faq-imp\"></div>" +
       (mine.length ? '<div class="rows">' + mine.map(function (f) {
         return '<div class="r" data-faq="' + esc(f.id) + '">' +
           '<span class="dot2"' + (f.status === "published"
@@ -2663,7 +2665,99 @@ function loadFaq() {
       faqForm(row, row.question, row.language, box);
     });
     if ($("faq-new")) $("faq-new").onclick = function () { faqForm(null, "", "en"); };
+    if ($("faq-import")) $("faq-import").onclick = faqImportForm;
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+}
+
+
+/* Reading a bank's own published FAQ page in.
+ *
+ * The bank has already done the hard part — chosen the questions that matter
+ * and written the approved answer to each. Retyping forty of those is why a
+ * bank with forty published answers ends up with four curated.
+ *
+ * Everything imported arrives as a DRAFT and says so on the button, because
+ * approval with nobody's name on it is a cache with extra steps. The page
+ * shown here is the bank's; the approval still has to be theirs.
+ */
+function faqImportForm() {
+  $("faq-imp").innerHTML =
+    '<div class="panel" style="margin-top:12px"><h3>Import an FAQ page</h3>' +
+    '<div class="meta" style="margin-bottom:10px">Open your FAQ page, expand ' +
+    "every collapsed question, select all and paste it below. Each line ending " +
+    "in a question mark is read as a question and everything under it as the " +
+    "answer. You will see every pair before anything is written, and they all " +
+    "arrive as drafts for you to approve.</div>" +
+    '<div class="field"><textarea id="fi-text" rows="6" placeholder="Paste the FAQ page here"></textarea></div>' +
+    '<div class="tools">' +
+      '<select id="fi-lang">' + LANGS.map(function (l) {
+        return '<option value="' + l + '">' + l + "</option>";
+      }).join("") + "</select>" +
+      '<button class="btn" id="fi-preview">See what would be imported</button>' +
+      '<button class="btn ghost" id="fi-cancel">Cancel</button>' +
+    '</div><div id="fi-out"></div></div>';
+
+  $("fi-cancel").onclick = function () { $("faq-imp").innerHTML = ""; };
+  $("fi-preview").onclick = function () {
+    var body = {
+      text: $("fi-text").value, language: $("fi-lang").value
+    };
+    if (!body.text.trim()) { setStatus("Paste the page first."); return; }
+    $("fi-out").innerHTML = '<div class="meta" style="margin-top:12px">Reading…</div>';
+    api("/faq/import/preview", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (!r.pairs.length) {
+        $("fi-out").innerHTML = '<div class="empty" style="text-align:left">' +
+          esc(r.note || "No questions found.") + "</div>";
+        return;
+      }
+      // Already-answered pairs start unticked and cannot be imported anyway —
+      // shown rather than hidden, so "we already answer eight of these" is
+      // visible rather than looking like the parser missed them.
+      var held = r.pairs.filter(function (p) { return p.existing; }).length;
+      $("fi-out").innerHTML =
+        '<div class="meta" style="margin:14px 0 8px">' + r.pairs.length +
+        " question" + (r.pairs.length === 1 ? "" : "s") + " found" +
+        (held ? " · " + held + " you already answer, left alone" : "") +
+        "</div>" +
+        '<div class="rows">' + r.pairs.map(function (p) {
+          return '<label class="r" style="cursor:pointer;align-items:flex-start">' +
+            '<input type="checkbox" class="fi-pick"' +
+              (p.existing ? " disabled" : " checked") +
+              ' value="' + esc(p.question) + '" style="width:auto;flex:none;margin:2px 0 0">' +
+            '<span class="what"><b>' + esc(p.question) + "</b><br>" +
+              '<span class="meta">' + esc(p.answer.slice(0, 140)) +
+              (p.answer.length > 140 ? "…" : "") + "</span></span>" +
+            (p.existing
+              ? '<span class="tag">already ' + esc(p.existing) + "</span>" : "") +
+            '<span class="age">' + p.chars + " ch</span></label>";
+        }).join("") + "</div>" +
+        '<div class="tools" style="margin-top:12px">' +
+        '<button class="btn" id="fi-commit">Import the ticked as drafts</button></div>';
+
+      $("fi-commit").onclick = function () {
+        body.questions = Array.prototype.slice
+          .call(document.querySelectorAll(".fi-pick:checked"))
+          .map(function (c) { return c.value; });
+        if (!body.questions.length) { setStatus("Nothing ticked."); return; }
+        $("fi-commit").disabled = true;
+        api("/faq/import", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }).then(function (out) {
+          setStatus(out.created + " imported as drafts — approve them to go live");
+          loadFaq();
+        }).catch(function (e) {
+          $("fi-commit").disabled = false;
+          setStatus(e.message);
+        });
+      };
+    }).catch(function (e) {
+      $("fi-out").innerHTML = '<div class="empty">' + esc(e.message) + "</div>";
+    });
+  };
 }
 
 /* The editor. Publishing is a separate button from saving, because they are

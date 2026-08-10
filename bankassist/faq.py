@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Final
+from typing import Final, NamedTuple
 
 # Punctuation to shed from the ends, including the Ethiopic full stop and
 # question mark — a question typed with ። must match the same question typed
@@ -91,3 +91,225 @@ def matches(stored_question: str, stored_language: str,
     one definition of "the same question" in the system and a test can pin it.
     """
     return key(stored_question, stored_language) == key(asked, asked_language)
+
+
+# ------------------------------------------------- reading a published FAQ
+#
+# A bank's FAQ page is the single best content it owns, and the only one that
+# arrives in exactly the shape this table wants: somebody has already decided
+# which questions matter and written the approved answer to each. Typing them
+# back in one at a time is the reason a bank with forty published answers ends
+# up with four curated.
+
+# The question mark, Latin and Ethiopic. A line that ends in one is a question
+# in every language this product serves.
+_ASKS: Final[re.Pattern[str]] = re.compile(r"[?？፧]\s*$")
+
+# The other shape: an explicit label. Covers FAQ pages whose questions are
+# statements ("Account activation") and would otherwise be invisible, and
+# survives a copy from a PDF where the layout is gone.
+_Q_LABEL: Final[re.Pattern[str]] = re.compile(r"^\s*(?:q|question)\s*[:.)-]\s*", re.I)
+_A_LABEL: Final[re.Pattern[str]] = re.compile(r"^\s*(?:a|ans|answer)\s*[:.)-]\s*", re.I)
+
+# `Faq.question` is String(400). A "question" longer than that is a paragraph
+# that happened to end in a question mark, and importing it would create a key
+# no customer will ever type.
+MAX_QUESTION = 400
+
+
+class QAPair(NamedTuple):
+    question: str
+    answer: str
+
+
+# A printed page marker, and the browser's date/time stamp beside it. Both are
+# injected at every page boundary when somebody prints a web page to PDF, which
+# is the realistic way an FAQ reaches us: the site blocks fetching, and a PDF
+# survives being emailed from a phone.
+_PAGE_MARK: Final[re.Pattern[str]] = re.compile(
+    r"^\s*page\s+\d+\s+of\s+\d+\s*$", re.I
+)
+_STAMP: Final[re.Pattern[str]] = re.compile(
+    r"^\s*\d{1,2}/\d{1,2}/\d{2,4},?\s*\d{1,2}:\d{2}\s*[\u202f\s]*[ap]\.?m\.?\s*$", re.I
+)
+_BARE_EMAIL: Final[re.Pattern[str]] = re.compile(r"^\s*[^\s@]+@[^\s@]+\.[^\s@]+\s*$")
+_MENU: Final[re.Pattern[str]] = re.compile(r"^\s*(?:menu|home|contact us)\s*$", re.I)
+
+# Ends a sentence in any language this product serves. A repeated line that
+# ends a sentence is an answer somebody gave twice; one that does not is a
+# label, and labels repeated down a document are furniture.
+_SENTENCE_END: Final[re.Pattern[str]] = re.compile(r"[.!?።፧:]\s*$")
+
+# How many times a label has to recur before it is furniture rather than
+# coincidence. Five is past what a real answer repeats and well under the page
+# count of any FAQ worth importing.
+_FURNITURE_REPEATS = 5
+
+
+# Icon-font glyphs from the private use area. An accordion's expand arrow is
+# drawn from a font like this, so it survives a print-to-PDF as a character
+# that means nothing and belongs in no answer.
+_ICON_GLYPH: Final[re.Pattern[str]] = re.compile(r"[\ue000-\uf8ff]")
+
+# A question mark with NO space after it. On a printed web page that is the
+# seam where two separate elements were flattened into one line — the question
+# and the answer that followed it in the markup. A question mark FOLLOWED by a
+# space is ordinary prose and is left alone, which is what keeps two collapsed
+# questions on one line from being split into a question and a fake answer.
+_GLUED: Final[re.Pattern[str]] = re.compile(r"\?(?=\S)")
+
+
+def unglue(text: str) -> str:
+    """Put back the line breaks a print-to-PDF flattened away."""
+    return _GLUED.sub("?\n", _ICON_GLYPH.sub("", text))
+
+
+def strip_page_furniture(text: str) -> str:
+    """Drop the header, footer and page markers a printed page carries.
+
+    Found the first time a real bank FAQ went through this: 18% of the pairs
+    came out with `Menu … info@… 8/10/26, 9:36 AM Page 3 of 34` sitting inside
+    the answer. That text is then served to a customer **verbatim**, because a
+    curated answer has no retrieval gate and no sources for anyone to check.
+
+    This is not the same problem `ingest.py` solves. There, navigation sits at
+    the edges of one HTML document and is sliced away with the first and last
+    section. Here it is re-injected at every page boundary, in the middle of
+    the answer it interrupts, so position says nothing and only shape does.
+    """
+    lines = text.splitlines()
+    counts: dict[str, int] = {}
+    for line in lines:
+        stripped = line.strip()
+        if stripped:
+            counts[stripped] = counts.get(stripped, 0) + 1
+
+    kept: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if _PAGE_MARK.match(stripped) or _STAMP.match(stripped):
+            continue
+        if _BARE_EMAIL.match(stripped) or _MENU.match(stripped):
+            continue
+        if (
+            counts.get(stripped, 0) >= _FURNITURE_REPEATS
+            and not _SENTENCE_END.search(stripped)
+            and len(stripped) <= 80
+        ):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+# A line that starts like a question. Used only to rejoin a question the page
+# broke across two lines — never to decide that something IS a question.
+_OPENS_A_QUESTION: Final[re.Pattern[str]] = re.compile(
+    r"^\s*(?:what|how|why|who|when|where|which|is|are|can|could|do|does|did|"
+    r"will|would|should|may|must)\b",
+    re.I,
+)
+
+
+def _clean(lines: list[str]) -> str:
+    return "\n".join(line.rstrip() for line in lines).strip()
+
+
+def pairs(text: str) -> list[QAPair]:
+    """Question/answer pairs from a copied FAQ page.
+
+    Two signals, and no others:
+
+    - a line ending in a question mark, Latin or Ethiopic;
+    - a line explicitly labelled `Q:` / `Question:`.
+
+    Everything from there until the next question is that question's answer.
+
+    **Under-detection is the correct failure.** A looser rule — treating short
+    lines or title-case lines as questions — would turn body text and headings
+    into curated answers, and curated answers are the one path with nothing
+    downstream to catch a mistake: no retrieval gate, no INSUFFICIENT_CONTEXT,
+    no sources for anyone to check. Whatever this produces is what a customer
+    reads. A question this misses costs somebody typing one entry by hand; a
+    question this invents costs the bank's credibility, so the rule stays
+    strict and the preview exists to catch the rest.
+
+    Pairs arrive with no status of their own — the caller stores them as
+    drafts, because an import has nobody's name on it and `approved_by` is the
+    entire difference between a curated answer and a cache.
+
+    **Known gap: two-column tables.** A large part of a real bank FAQ is laid
+    out as a table, and those questions frequently carry no question mark at
+    all — "Can I use the app abroad", "Are there any fees for using the Super
+    App". On the real Dashen FAQ that is roughly 137 further questions this
+    reader does not see.
+
+    Two attempts at it were written and thrown away, and the reason is worth
+    keeping. Flattened text loses the column boundary, so recovering it means
+    guessing from line length or from a line "looking like a question", and a
+    guessed boundary puts half an answer under the wrong question — served
+    verbatim, with nothing downstream to catch it. Extracting with the PDF
+    layout preserved does keep the columns, but it also keeps the justification
+    spacing inside each cell and misaligns rows against section headers, which
+    produced 308 pairs of visibly worse text than the 160 this returns.
+
+    Closing it properly needs a real table extractor working from the PDF's own
+    cell geometry, not heuristics over text. Until then this reads what it can
+    read correctly, which is the trade this module always makes.
+    """
+    found: list[QAPair] = []
+    question: str | None = None
+    answer: list[str] = []
+
+    for raw in unglue(strip_page_furniture(text)).splitlines():
+        line = raw.strip()
+        if not line:
+            if answer:
+                answer.append("")
+            continue
+
+        labelled = bool(_Q_LABEL.match(line))
+        stripped = _Q_LABEL.sub("", line).strip() if labelled else line
+        is_question = (labelled or bool(_ASKS.search(line))) and len(
+            stripped
+        ) <= MAX_QUESTION
+
+        if is_question:
+            # A long question wrapped across two lines arrives as a fragment
+            # ending in the question mark — "earn?" instead of "Are there
+            # limits to how many coins I can earn?". Rejoin it, but only when
+            # the line above opens like a question and was left unfinished;
+            # anything looser would weld the tail of an answer onto the front
+            # of the next question.
+            if answer:
+                above = answer[-1].strip()
+                if (
+                    above
+                    and _OPENS_A_QUESTION.match(above)
+                    and not _SENTENCE_END.search(above)
+                ):
+                    stripped = f"{above} {stripped}".strip()
+                    answer.pop()
+            if question is not None and _clean(answer):
+                found.append(QAPair(question, _clean(answer)))
+            question, answer = stripped, []
+            continue
+
+        if question is not None:
+            answer.append(_A_LABEL.sub("", line) if _A_LABEL.match(line) else line)
+
+    if question is not None and _clean(answer):
+        found.append(QAPair(question, _clean(answer)))
+
+    # Two entries under one key is a database error at write time and a race
+    # over which answer a customer sees. Keep the first: a well-built FAQ page
+    # answers a question where it is asked, and repeats it later under a
+    # heading like "See also".
+    seen: set[str] = set()
+    unique: list[QAPair] = []
+    for pair in found:
+        k = normalise(pair.question)
+        if k in seen:
+            continue
+        seen.add(k)
+        unique.append(pair)
+    return unique
