@@ -223,6 +223,28 @@ def test_language_mix_is_reported_with_display_names(
     assert langs["am"]["name"] == "አማርኛ"
 
 
+def test_language_mix_carries_an_outcome_breakdown(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The Languages panel expands a card per language the same way Most
+    Asked expands one per topic — "what happened when someone asked in
+    Amharic" needs the outcome counts to already be on the row, joined
+    through Conversation since language lives there, not on Message."""
+    _ask(client, "demo", ANSWERABLE)
+    _ask(client, "demo", UNANSWERABLE)
+    _ask(client, "demo", "የቁጠባ ሂሳብ እንዴት እከፍታለሁ?")
+    langs = {row["language"]: row for row in _analytics(client, demo_bank)["languages"]}
+    assert langs["en"]["outcomes"] == {
+        agent_module.ANSWERED: 1,
+        agent_module.UNANSWERED: 1,
+    }
+    assert langs["am"]["outcomes"] == {agent_module.ANSWERED: 1}
+    # A supported language nobody has used yet carries no traffic and no
+    # outcomes — not a KeyError, not a guessed zero-count outcome.
+    assert langs["ti"]["count"] == 0
+    assert langs["ti"]["outcomes"] == {}
+
+
 def test_analytics_requires_the_admin_token(client: TestClient, demo_bank: Any) -> None:
     assert client.get("/admin/api/demo/analytics").status_code == 401
     assert (
