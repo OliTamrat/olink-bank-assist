@@ -1,0 +1,40 @@
+name: Prune merged branches
+
+# scripts/prune_merged_branches.py says plainly why it exists as a script
+# rather than something run ad hoc: both the GitHub API and `git push
+# --delete` are refused with 403 by the agent sandbox's proxy, and asking
+# for a personal access token defeats the point of a one-command tool. A
+# GitHub-hosted runner has neither restriction and the default GITHUB_TOKEN
+# is enough — no PAT to create or store.
+#
+# Manual only. Defaults to a dry run so the four groups the script prints
+# (open, closed-unmerged, no-PR, safe-to-delete) are visible in the run log
+# before anything irreversible happens.
+on:
+  workflow_dispatch:
+    inputs:
+      write:
+        description: "Actually delete (unchecked = dry run, lists only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ inputs.write }}" = "true" ]; then
+            python scripts/prune_merged_branches.py --write
+          else
+            python scripts/prune_merged_branches.py
+          fi

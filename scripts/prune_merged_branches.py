@@ -8,6 +8,12 @@ with normal GitHub access — the agent sandbox cannot do this: both the API
 path and `git push --delete` are refused by its proxy with a 403, so this
 exists to make the job one command rather than a hundred.
 
+**Or skip having a token at all:** `.github/workflows/prune-merged-branches.yml`
+runs this exact script on a GitHub-hosted runner, where neither restriction
+applies and the default `GITHUB_TOKEN` is sufficient — Actions tab → this
+workflow → "Run workflow", tick "write" to actually delete, leave it
+unticked for the same dry-run listing above.
+
 **Merged is decided by the pull request, not by ancestry.** This repo
 squash-merges, so a merged branch's commits are NOT ancestors of `main` and
 `git branch --merged` reports zero of them. Asking the PR is the only answer
