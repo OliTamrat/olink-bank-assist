@@ -256,3 +256,28 @@ def test_no_key_is_translated_and_then_never_used() -> None:
         f"translated into five languages and never rendered: {orphans}. "
         "Either wire them up or delete them."
     )
+
+
+def test_the_fayda_name_is_never_translated() -> None:
+    """Fayda is the name of Ethiopia's digital ID, not a word.
+
+    A product name does not get translated — the same rule that leaves
+    Telegram and WhatsApp alone. In Latin-script languages it stays "Fayda"
+    literally; in Amharic and Tigrinya it is written ፋይዳ, which is the same
+    name in the script the reader uses and the form the National ID Program
+    itself publishes. Only the words AROUND it — number, ID, matches — are
+    translated.
+
+    Pinned because the failure is silent and embarrassing: a teller told to
+    check a document whose name they will not find printed on it.
+    """
+    table = json.loads(ADMIN_JSON.read_text(encoding="utf-8"))
+    names = ("Fayda", "ፋይዳ")
+    carriers = [k for k, v in table["en"].items() if "Fayda" in v]
+    assert carriers, "no string mentions Fayda — did the identity panel move?"
+    for key in carriers:
+        for lang in SUPPORTED_LANGUAGES:
+            value = table[lang][key]
+            assert any(n in value for n in names), (
+                f"{key} [{lang}] lost the Fayda name: {value!r}"
+            )
