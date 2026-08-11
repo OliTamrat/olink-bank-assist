@@ -1277,7 +1277,8 @@ td.title { color: var(--ink); font-weight: 550; }
         <button class="iconbtn" id="refresh" title="Reload this page's data"
                 aria-label="Reload this page's data"></button>
         <button class="qbtn hidden" id="queue-btn"
-                title="Open the escalation queue">
+                title="Open the escalation queue"
+                aria-label="Open the escalation queue">
           <span class="lbl" id="queue-lbl">Queue</span><span class="cnt" id="queue-count">0</span>
         </button>
         <button class="iconbtn" id="theme-toggle" title="Switch between dark and light"
@@ -1313,7 +1314,7 @@ td.title { color: var(--ink); font-weight: 550; }
     <div class="transcript" id="callTranscript"></div>
     <form class="composer2" id="callComposer">
       <input id="callSay" type="text" autocomplete="off" placeholder="Message the customer…">
-      <button class="btn sm" type="submit">Send</button>
+      <button class="btn sm" type="submit" id="callSend">Send</button>
     </form>
     <div class="verify" id="callVerify"></div>
     <!-- The bank's approved wording, one search away while the teller is
@@ -1871,12 +1872,23 @@ function paintAdminChrome() {
     if (n) n.textContent = A(m[id]);
   });
   var t = {
-    cMic: "mute", cCam: "camera", cHang: "end_session", adminLang: "search"
+    cMic: "mute", cCam: "camera", cHang: "end_session", adminLang: "search",
+    "queue-btn": "open_escalation_queue", "theme-toggle": "switch_dark_light"
   };
   Object.keys(t).forEach(function (id) {
     var n = document.getElementById(id);
     if (n && id !== "adminLang") n.title = A(t[id]);
   });
+  // A hover title a screen reader never speaks is half the job. Both of these
+  // carry an aria-label as well, and it has to follow the language with it.
+  ["queue-btn", "theme-toggle"].forEach(function (id) {
+    var n = document.getElementById(id);
+    if (n && n.getAttribute("aria-label")) n.setAttribute("aria-label", A(t[id]));
+  });
+  var room = document.getElementById("callroom");
+  if (room) room.setAttribute("aria-label", A("live_session"));
+  var send = document.getElementById("callSend");
+  if (send) send.textContent = A("send");
   // The rail toggle says what it will DO, so its label flips with the state
   // as well as with the language.
   var rail = document.getElementById("rail-label");
@@ -4184,33 +4196,26 @@ function renderTellerQueue(rows) {
     // `chanlist rich` rather than a bare row: this line carries a sentence of
     // explanation, and the plain row ellipsises it — the truncated half is
     // the half that says what to do about it.
-    h += '<div class="panel"><h3>Live sessions</h3>' +
+    h += '<div class="panel"><h3>' + esc(A("live_sessions")) + "</h3>" +
       '<div class="chanlist rich"><div class="chan q">' +
       '<span class="dot" style="background:var(' +
         (live_ ? "--ok" : on ? "--warn" : "--faint") + ')"></span>' +
       '<span class="cname">' +
-        (!on ? "Switched off for this bank"
+        esc(!on ? A("switched_off_for_bank")
              : live_ ? (canServe && !iAmOn
-                          ? "Customers can reach a colleague — you are off duty"
-                          : "Customers can reach a teller now")
-                     : "Switched on — but nobody is on duty") +
+                          ? A("customers_reach_colleague")
+                          : A("customers_can_reach_teller"))
+                     : A("switched_on_nobody_on_duty")) +
       '<div class="meta">' +
-        (!on
-          ? "No “Speak to a teller” button appears in your widget."
+        esc(!on
+          ? A("no_teller_button")
           : canServe
-            ? (iAmOn
-                ? "You are on duty, so waiting customers can be routed to you. " +
-                  "Go off duty from the sidebar when you step away — you stay " +
-                  "on the air anywhere in the console until you do."
-                : "Switch On duty in the sidebar to start taking calls. It " +
-                  "follows you across every page, so you no longer have to " +
-                  "keep this one open.")
-            : "A colleague with permission to take calls has to be on duty " +
-              "before customers are offered one.") +
+            ? (iAmOn ? A("on_duty_explainer") : A("off_duty_explainer"))
+            : A("colleague_must_be_on_duty")) +
       "</div></span>" +
       (can("integrations.manage")
         ? '<button class="btn sm" id="teller-toggle">' +
-          (on ? "Switch off" : "Switch on") + "</button>"
+          esc(A(on ? "switch_off" : "switch_on")) + "</button>"
         : "") +
       "</div></div>";
 
@@ -4220,83 +4225,77 @@ function renderTellerQueue(rows) {
     // where neither party can proceed.
     if (canServe && tellerSettings.all_languages) {
       var mine = tellerSettings.languages || [];
-      h += '<div class="meta" style="margin-top:14px">I can hold a conversation in:</div>' +
+      h += '<div class="meta" style="margin-top:14px">' +
+        esc(A("i_can_converse_in")) + "</div>" +
         '<div class="tools" style="margin-top:8px" id="lang-pills">' +
         tellerSettings.all_languages.map(function (l) {
           var picked = mine.indexOf(l.code) !== -1;
           return '<button class="btn sm' + (picked ? "" : " ghost") +
             '" data-lang="' + esc(l.code) + '">' + esc(l.name) + "</button>";
         }).join("") + "</div>" +
-        '<div class="note">' + (mine.length
-          ? "Customers writing in these reach you first. Everyone else still " +
-            "reaches you — after a short wait, so nobody is stranded."
-          : "Nothing selected, so every waiting customer is offered to you in " +
-            "plain oldest-first order.") + "</div>";
+        '<div class="note">' +
+        esc(A(mine.length ? "languages_picked_note" : "languages_none_note")) + "</div>";
     }
     h += "</div>";
   }
 
   h += '<div class="row row-half">' +
-    '<div class="panel"><h3>Waiting</h3>' +
+    '<div class="panel"><h3>' + esc(A("waiting")) + "</h3>" +
     (waiting.length
       ? '<div class="chanlist">' + waiting.map(function (r) {
           return '<div class="chan q">' +
             '<span class="dot" style="background:var(--warn)"></span>' +
-            '<span class="cname">' + esc(LANG_NAME[r.language] || "Waiting") +
+            '<span class="cname">' + esc(LANG_NAME[r.language] || A("language_unknown")) +
             // Only flagged when it does NOT match, and only once the teller
             // has declared something. A green tick on every matching row is
             // noise; the row worth a second look is the one you may not be
             // able to talk to.
             (r.speaks === false
-              ? ' <span class="pill">not your language</span>' : "") +
-            '<div class="meta">' + esc(r.media === "video" ? "Video" : "Audio") +
-            " · " + esc(r.scope === "verified" ? "Identified" : "Not yet identified") +
+              ? ' <span class="pill">' + esc(A("not_your_language")) + "</span>" : "") +
+            '<div class="meta">' + esc(A(r.media === "video" ? "media_video" : "media_audio")) +
+            " · " + esc(A(r.scope === "verified" ? "identified" : "not_yet_identified")) +
             "</div></span>" +
             '<span class="n">' + esc(waitedSeconds(r.waited_seconds)) + "</span>" +
             (canServe
-              ? '<button class="btn sm" data-claim="' + esc(r.id) + '">Take</button>'
+              ? '<button class="btn sm" data-claim="' + esc(r.id) + '">' +
+                esc(A("take")) + "</button>"
               : "") +
             "</div>";
         }).join("") + "</div>"
-      : '<div class="empty">Nobody is waiting.</div>') +
+      : '<div class="empty">' + esc(A("no_one_waiting")) + "</div>") +
     (waiting.length
       // The note has to match what the list is actually doing. With languages
       // declared it is no longer plain oldest-first, and leaving that claim up
       // would have a teller reading the order as a bug.
       ? '<div class="note">' + (
-          (tellerSettings && (tellerSettings.languages || []).length)
-            ? "Your languages first, longest wait within each. Anyone waiting " +
-              "too long moves to the top whatever they speak."
-            : "Oldest first. The longest wait is the one to take."
+          esc((tellerSettings && (tellerSettings.languages || []).length)
+            ? A("languages_first_note") : A("oldest_first"))
         ) + "</div>"
       : "") +
     "</div>" +
-    '<div class="panel"><h3>In progress</h3>' +
+    '<div class="panel"><h3>' + esc(A("in_progress")) + "</h3>" +
     (live.length
       ? '<div class="chanlist">' + live.map(function (r) {
           return '<div class="chan q">' +
             '<span class="dot" style="background:var(--ok)"></span>' +
             '<span class="cname">' +
-            esc(r.scope === "verified" ? "Identified" : "Not yet identified") +
-            '<div class="meta">' + esc(r.media === "video" ? "Video" : "Audio") +
+            esc(A(r.scope === "verified" ? "identified" : "not_yet_identified")) +
+            '<div class="meta">' + esc(A(r.media === "video" ? "media_video" : "media_audio")) +
             (r.verified_ref ? " · Fayda ••••" + esc(r.verified_ref) : "") +
             "</div></span>" +
-            '<span class="n">' + esc(waitedSeconds(r.waited_seconds)) + " wait</span>" +
+            '<span class="n">' + esc(waitedSeconds(r.waited_seconds)) +
+            " " + esc(A("wait_suffix")) + "</span>" +
             "</div>";
         }).join("") + "</div>"
-      : '<div class="empty">No session in progress.</div>') +
+      : '<div class="empty">' + esc(A("no_session_in_progress")) + "</div>") +
     "</div></div>";
 
   // The boundary, on the page rather than in a training deck. A teller who
   // has to remember what they may not do will eventually not remember.
-  h += '<div class="panel"><h3>What a session covers</h3>' +
-    '<div class="meta">Before someone is identified: general questions about ' +
-    "products, eligibility and how to apply. Once you have checked their Fayda " +
-    "ID against the account and asked something only the account holder could " +
-    "answer: their own application, documents and disputes.</div>" +
-    '<div class="note" style="color:var(--bad)">Never, at any point and for ' +
-    "anyone: deposits, withdrawals or transfers. Those do not happen on a " +
-    "call.</div></div>";
+  h += '<div class="panel"><h3>' + esc(A("what_session_covers")) + "</h3>" +
+    '<div class="meta">' + esc(A("session_scope_body")) + "</div>" +
+    '<div class="note" style="color:var(--bad)">' +
+    esc(A("never_money_movement")) + "</div></div>";
 
   $("main").innerHTML = h;
   var toggle = $("teller-toggle");
@@ -4312,7 +4311,7 @@ function renderTellerQueue(rows) {
       })
         .then(function (s) {
           tellerSettings = s;
-          setStatus(s.enabled ? "Live sessions on" : "Live sessions off", "ok");
+          setStatus(A(s.enabled ? "live_sessions_on" : "live_sessions_off"), "ok");
           renderTellerQueue(rows);
         })
         .catch(function (e) { toggle.disabled = false; setStatus(e.message, "error"); });
@@ -4330,7 +4329,7 @@ function renderTellerQueue(rows) {
         body: JSON.stringify({ languages: mine })
       }).then(function (res) {
         tellerSettings.languages = res.languages;
-        setStatus("Languages updated", "ok");
+        setStatus(A("languages_updated"), "ok");
         // Redraw from the server's answer, not the optimistic local copy —
         // it normalises order and drops duplicates, and a list that disagrees
         // with what routing uses is worse than no list.
@@ -4346,7 +4345,7 @@ function renderTellerQueue(rows) {
         // Straight into the call. Claiming and then having to find a second
         // button would leave a customer who has already waited listening to
         // silence while the teller hunts for the way in.
-        .then(function (s) { setStatus("Session taken", "ok"); openCall(s); })
+        .then(function (s) { setStatus(A("session_taken"), "ok"); openCall(s); })
         .catch(function (e) { b.disabled = false; setStatus(e.message, "error"); loadTellerQueue(); });
     };
   });
@@ -4405,9 +4404,9 @@ function openCall(session) {
   // Amharic speaker in English is the first thing that goes wrong on a call,
   // and the conversation already knows which it is.
   $("callLang").textContent =
-    (LANG_NAME[session.language] || "Language unknown") +
-    " · " + (session.media === "video" ? "Video" : "Audio");
-  callMsg("Connecting…");
+    (LANG_NAME[session.language] || A("language_unknown")) +
+    " · " + A(session.media === "video" ? "media_video" : "media_audio");
+  callMsg(A("connecting"));
   paintCallControls();
   renderVerify();
   startCallChat();
@@ -4441,7 +4440,7 @@ function openCall(session) {
         document.body.appendChild(a);
         // Audio-only is the normal case outside Addis, not a degraded one —
         // so this says connected rather than leaving "Connecting…" up.
-        callMsg("Connected — audio only");
+        callMsg(A("connected_audio_only"));
       }
     });
     r.on(LK.RoomEvent.TrackUnsubscribed, function (t) {
@@ -4449,7 +4448,7 @@ function openCall(session) {
       if (t.kind === LK.Track.Kind.Video) { clearFreeze(); showFreeze(false); }
     });
     r.on(LK.RoomEvent.ParticipantDisconnected, function () {
-      callMsg("The customer has left the call.");
+      callMsg(A("customer_left_call"));
       var v = document.querySelector(".callroom video.remote");
       if (v) v.remove();
       $("callWaiting").style.display = "";
@@ -4462,7 +4461,7 @@ function openCall(session) {
 
     return r.connect(grant.url, grant.token).then(function () {
       callJoined = true;
-      callMsg("Waiting for the customer…");
+      callMsg(A("waiting_for_customer"));
       return r.localParticipant.setMicrophoneEnabled(true).then(function () {
         // Camera only on a video session. A teller's camera coming on during
         // an audio call is a surprise for both of them.
@@ -4484,9 +4483,9 @@ function openCall(session) {
   }).catch(function (err) {
     var name = err && err.name;
     if (name === "NotAllowedError" || name === "SecurityError") {
-      callMsg("Microphone access is blocked. Allow it in your browser and take the session again.");
+      callMsg(A("mic_blocked"));
     } else {
-      callMsg("Couldn't connect: " + ((err && err.message) || "unknown error"));
+      callMsg(A("couldnt_connect") + ((err && err.message) || A("unknown_error")));
     }
   });
 }
@@ -4537,7 +4536,10 @@ function loadApprovedAnswers(language) {
     // A failure here must never interrupt a live call. The teller loses a
     // convenience, not the customer.
     var list = $("ansList");
-    if (list) list.innerHTML = '<div class="ansEmpty">Approved answers unavailable.</div>';
+    if (list) {
+      list.innerHTML = '<div class="ansEmpty">' +
+        esc(A("approved_answers_unavailable")) + "</div>";
+    }
   });
 }
 
@@ -4555,11 +4557,12 @@ function renderAnswers(query) {
   }).slice(0, 40);
 
   if (!approvedAnswers.length) {
-    list.innerHTML = '<div class="ansEmpty">No approved answers yet.</div>';
+    list.innerHTML = '<div class="ansEmpty">' + esc(A("no_approved_answers")) + "</div>";
     return;
   }
   if (!hits.length) {
-    list.innerHTML = '<div class="ansEmpty">Nothing matches “' + esc(query) + '”.</div>';
+    list.innerHTML = '<div class="ansEmpty">' +
+      esc(A("nothing_matches")) + " “" + esc(query) + "”.</div>";
     return;
   }
   list.innerHTML = hits.map(function (f) {
@@ -4613,11 +4616,11 @@ function watchSession() {
   api("/teller/sessions/" + id).then(function (s) {
     if (!callSession || callSession.id !== id) return;   // already moved on
     if (s.state === "ended" || s.state === "abandoned" || s.state === "failed") {
-      callMsg("The customer has left the call.");
+      callMsg(A("customer_left_call"));
       // Closed rather than left open with a notice: a finished session on
       // screen is one a teller can keep typing into, and every message after
       // this point goes to somebody who is not there.
-      setStatus("The customer ended the call");
+      setStatus(A("customer_ended_call"));
       closeCall();
     }
   }).catch(function () {
@@ -4636,7 +4639,9 @@ function drawThread() {
     // yanking them to the bottom every three seconds makes the panel unusable
     // exactly when they are hunting for a detail.
     var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    if (!rows.length) { box.innerHTML = '<div class="empty">No messages yet.</div>'; return; }
+    if (!rows.length) {
+      box.innerHTML = '<div class="empty">' + esc(A("no_messages_yet")) + "</div>"; return;
+    }
     // Where the customer asked for a person. This thread deliberately carries
     // the WHOLE conversation, not just the call, so without a mark a teller
     // cannot tell which lines they are joining and which the assistant handled
@@ -4647,8 +4652,9 @@ function drawThread() {
     box.innerHTML = withDaySeparators(rows, function (m, at) {
       var cls = m.role === "user" ? "user" : m.role === "teller" ? "teller" : "";
       var label = m.role === "teller"
-        ? '<div class="rolelbl mine">You</div>'
-        : m.role === "assistant" ? '<div class="rolelbl">Assistant</div>' : "";
+        ? '<div class="rolelbl mine">' + esc(A("you_label")) + "</div>"
+        : m.role === "assistant"
+          ? '<div class="rolelbl">' + esc(A("assistant_label")) + "</div>" : "";
       var mark = "";
       if (askedAt && !marked && at && new Date(at).getTime() >= askedAt) {
         marked = true;
@@ -4664,7 +4670,9 @@ function drawThread() {
     if (atBottom) box.scrollTop = box.scrollHeight;
   }).catch(function () {
     // A failed poll must not take the call down — the teller can still talk.
-    if (!box.innerHTML) box.innerHTML = '<div class="empty">Conversation unavailable.</div>';
+    if (!box.innerHTML) {
+      box.innerHTML = '<div class="empty">' + esc(A("conversation_unavailable")) + "</div>";
+    }
   });
 }
 
@@ -4694,11 +4702,10 @@ function renderVerify() {
   if (!callSession) { box.innerHTML = ""; return; }
   if (callSession.scope === "verified") {
     box.innerHTML = '<div class="verified">' + icon("audit", 15) +
-      "Identity confirmed" +
+      esc(A("identity_confirmed")) +
       (callSession.verified_ref ? " · Fayda ••••" + esc(callSession.verified_ref) : "") +
       "</div>" +
-      '<div class="scope">You can now discuss their own records, take documents ' +
-      "and file a dispute. Never a deposit, withdrawal or transfer.</div>";
+      '<div class="scope">' + esc(A("verified_scope")) + "</div>";
     return;
   }
   box.innerHTML =
@@ -4707,21 +4714,22 @@ function renderVerify() {
     // ticks, because the rule the server enforces IS two legs — and a teller
     // reading a flat list has no way to tell which combination will be
     // accepted until it is refused.
-    '<div class="vleg">Establish who they are — either one</div>' +
+    '<div class="vleg">' + esc(A("establish_who_they_are")) + "</div>" +
     '<label><input type="checkbox" data-chk="id_document">' +
-      "<span>Fayda ID shown and matches the account name</span></label>" +
+      "<span>" + esc(A("chk_id_document")) + "</span></label>" +
     '<label><input type="checkbox" data-chk="fayda_matched">' +
-      "<span>Fayda number matches the account record <em>(on your own " +
-      "screen — works on an audio call)</em></span></label>" +
+      "<span>" + esc(A("chk_fayda_matched")) +
+      " <em>(" + esc(A("chk_fayda_matched_note")) + ")</em></span></label>" +
     '<label><input type="checkbox" data-chk="id_photo_matches">' +
-      "<span>Photo on the ID matches the person on the call <em>(video only)</em></span></label>" +
-    '<div class="vleg">And confirm the account is theirs</div>' +
+      "<span>" + esc(A("chk_id_photo")) +
+      " <em>(" + esc(A("chk_video_only")) + ")</em></span></label>" +
+    '<div class="vleg">' + esc(A("confirm_account_theirs")) + "</div>" +
     '<label><input type="checkbox" data-chk="account_detail">' +
-      "<span>Answered a question only the account holder could</span></label>" +
-    '<input type="text" id="vFayda" placeholder="Fayda number" autocomplete="off">' +
-    '<button class="btn sm" id="vGo">Confirm identity</button>' +
-    '<div class="scope">Until this is done you can only give general guidance ' +
-    "— products, eligibility and how to apply.</div>";
+      "<span>" + esc(A("account_question_answered")) + "</span></label>" +
+    '<input type="text" id="vFayda" placeholder="' + esc(A("fayda_number")) +
+      '" autocomplete="off">' +
+    '<button class="btn sm" id="vGo">' + esc(A("confirm_identity")) + "</button>" +
+    '<div class="scope">' + esc(A("unverified_scope")) + "</div>";
 
   // Ticking "the number matches" without the number is refused by the server,
   // and finding that out after pressing the button — mid-call, with a
@@ -4729,9 +4737,8 @@ function renderVerify() {
   // instant the box is ticked.
   var faydaBox = box.querySelector('[data-chk="fayda_matched"]');
   var syncFayda = function () {
-    $("vFayda").placeholder = faydaBox.checked
-      ? "Fayda number (required — it is what the record keeps)"
-      : "Fayda number (optional)";
+    $("vFayda").placeholder = A(
+      faydaBox.checked ? "fayda_number_required" : "fayda_number_optional");
   };
   faydaBox.addEventListener("change", syncFayda);
   syncFayda();
@@ -4748,7 +4755,7 @@ function renderVerify() {
       body: JSON.stringify({ checks: checks, fayda_number: fayda || null })
     }).then(function (s) {
       callSession = s;
-      setStatus("Identity confirmed", "ok");
+      setStatus(A("identity_confirmed"), "ok");
       renderVerify();
     }).catch(function (e) {
       $("vGo").disabled = false;
@@ -4800,7 +4807,7 @@ function toggleFreeze() {
   c.height = v.videoHeight;
   c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
   c.style.display = "";
-  $("callFreeze").textContent = "Back to live";
+  $("callFreeze").textContent = A("back_to_live");
 }
 
 function paintCallControls() {
@@ -4813,7 +4820,7 @@ function paintCallControls() {
   var mic = $("cMic");
   mic.innerHTML = cicon(micOn ? "mic" : "micoff");
   mic.classList.toggle("off", !micOn);
-  mic.title = micOn ? "Mute" : "Unmute";
+  mic.title = A(micOn ? "mute" : "unmute");
   var cam = $("cCam");
   cam.style.display = hasCam ? "grid" : "none";
   cam.innerHTML = cicon(camOn ? "cam" : "camoff");
@@ -4854,14 +4861,14 @@ function closeCall() {
 function hangUpCall() {
   if (!callSession) { closeCall(); return; }
   var id = callSession.id;
-  var note = prompt("What did this session cover? (optional)", "");
+  var note = prompt(A("session_summary_prompt"), "");
   // A cancelled prompt is "I did not mean to hang up", not "end with no
   // note" — the two are one keystroke apart and only one is recoverable.
   if (note === null) return;
   api("/teller/sessions/" + id + "/end", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ resolution: note || null })
-  }).then(function () { setStatus("Session ended", "ok"); })
+  }).then(function () { setStatus(A("session_ended"), "ok"); })
     .catch(function (e) { setStatus(e.message, "error"); })
     .then(closeCall, closeCall);
 }

@@ -33,7 +33,11 @@ which is what it always was at runtime.
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -373,3 +377,62 @@ def test_no_stylesheet_reaches_for_a_colour_that_does_not_exist(page: str) -> No
         f"{page} references custom properties nothing defines: {missing}. "
         "A fallback does not make this fine — it pins one theme's colour."
     )
+
+
+# ------------------------------------------------------------ it parses
+#
+# The scanner above is regex over source text, so it reads a BROKEN file just
+# as happily as a working one. Wiring the teller console up to the string
+# table swallowed the opening quote of a literal and left its closing quote
+# behind, so a line ended mid-string — and every check in this file passed. The
+# page did not load at all: one syntax error takes the whole panel down, sign-in
+# included.
+#
+# node is present in this environment, and `--check` parses without executing,
+# so it needs none of the browser globals these files depend on.
+
+
+def _node() -> str | None:
+    return shutil.which("node")
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_the_page_is_syntactically_valid_javascript(page: str) -> None:
+    node = _node()
+    if node is None:
+        pytest.skip("node is not on PATH here; CI has it")
+    html = (Path("bankassist/static") / page).read_text(encoding="utf-8")
+    # The real source, not the stripped copy — a stripped file has had its
+    # string literals replaced and would parse even when the original cannot.
+    js = "\n".join(re.findall(r"<script>(.*?)</script>", html, re.S))
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".js", delete=False, encoding="utf-8"
+    ) as fh:
+        fh.write(js)
+        path = fh.name
+    try:
+        result = subprocess.run(
+            [node, "--check", path], capture_output=True, text=True, timeout=30
+        )
+    finally:
+        os.unlink(path)
+    assert result.returncode == 0, f"{page} does not parse:\n{result.stderr}"
+
+
+def test_the_syntax_check_can_actually_fail() -> None:
+    """The same file with one quote removed must be reported."""
+    node = _node()
+    if node is None:
+        pytest.skip("node is not on PATH here; CI has it")
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".js", delete=False, encoding="utf-8"
+    ) as fh:
+        fh.write('var a = "unterminated\nvar b = 1;\n')
+        path = fh.name
+    try:
+        result = subprocess.run(
+            [node, "--check", path], capture_output=True, text=True, timeout=30
+        )
+    finally:
+        os.unlink(path)
+    assert result.returncode != 0
