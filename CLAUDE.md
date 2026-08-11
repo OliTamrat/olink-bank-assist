@@ -986,6 +986,14 @@ Remaining polish, not blockers:
       Tigrinya and Somali classifier rules are drafted from my own phrasings,
       so that sheet is now load-bearing rather than cosmetic.
 - [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`.
+- [ ] **Run "Ask OKM" for the first time** — `bankassist/seed_okm.py`
+      (ADR-0015, PR #115) has never touched a real database.
+      `docs/runbooks/ask-okm-refresh.md` has the two-command loop: sync
+      `olink-knowledge`'s content, then seed the `okm` tenant against
+      `BANKASSIST_DATABASE_URL`.
+- [ ] **Trigger the branch-prune workflow once** —
+      `.github/workflows/prune-merged-branches.yml` (PR #114) has never
+      been run. Dry run first from the Actions tab, then tick "write".
 
 ### Phase 2 — First pilot (one bank or MFI)
 Target: a bank innovation department, or a microfinance institution / digital
