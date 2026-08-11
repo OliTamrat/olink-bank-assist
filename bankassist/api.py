@@ -3170,6 +3170,29 @@ def analytics(
             )
     languages.sort(key=lambda row: (-int(row["count"]), str(row["language"])))
 
+    # What happened when someone asked in each language — the same idea as
+    # top_topics' outcome breakdown, joined through Conversation because
+    # language lives there, not on Message. outcome is written to the user
+    # row of a turn too (see agent.py), so this filters exactly the way
+    # top_topics does: substantive questions only, never greetings or the
+    # contact exchange.
+    language_outcome_rows = db.execute(
+        select(Conversation.language, Message.outcome, func.count())
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Message.bank_id == bank.id,
+            Message.role == "user",
+            Message.outcome.in_(agent_module.SUBSTANTIVE),
+        )
+        .where(*_window(Message.created_at))
+        .group_by(Conversation.language, Message.outcome)
+    ).all()
+    language_outcomes: dict[str, dict[str, int]] = {}
+    for lang, outcome, n in language_outcome_rows:
+        language_outcomes.setdefault(lang or "unknown", {})[outcome] = n
+    for row in languages:
+        row["outcomes"] = language_outcomes.get(row["language"], {})
+
     # Every channel in the catalogue, whether or not anyone has used it —
     # deliberately not just the ones GROUP BY returns.
     #

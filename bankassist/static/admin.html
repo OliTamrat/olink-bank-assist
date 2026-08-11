@@ -2309,15 +2309,22 @@ function topicDetailCard(item) {
       : "") + "</div>";
 }
 
-function wireTopicDetail() {
+/* The click side of donut()'s topicIdx hook, scoped to one panel at a time
+ * (`containerId`) so two donuts on the same page — Most Asked, Languages —
+ * each expand their own detail card without reading each other's data or
+ * fighting over a shared "which row is open" flag. `getDetail()` returns the
+ * array to index into; `render` turns one entry into the card's HTML. */
+function wireDetailPanel(containerId, boxId, getDetail, render) {
+  var container = $(containerId);
+  if (!container) return;
   var openIdx = null;
-  Array.prototype.forEach.call(document.querySelectorAll("[data-topic-idx]"), function (el) {
+  Array.prototype.forEach.call(container.querySelectorAll("[data-topic-idx]"), function (el) {
     function toggle() {
       var idx = parseInt(el.getAttribute("data-topic-idx"), 10);
-      var box = $("topic-detail");
+      var box = $(boxId);
       if (!box) return;
       if (openIdx === idx) { box.innerHTML = ""; openIdx = null; return; }
-      box.innerHTML = topicDetailCard(state.topicDetail[idx]);
+      box.innerHTML = render(getDetail()[idx]);
       openIdx = idx;
       wireDrills();
       box.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -2327,6 +2334,32 @@ function wireTopicDetail() {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
     };
   });
+}
+
+/* The Languages panel's detail card — what happened when someone asked in
+ * this language, plus a "View Conversations" button (the same drill the
+ * panel used to fire directly on click, now a secondary action inside the
+ * card instead of the click's only behaviour). No question text here, unlike
+ * topicDetailCard: a language isn't one question, so there's nothing to
+ * quote. */
+function languageDetailCard(item) {
+  var outcomes = item.outcomes || {};
+  var keys = Object.keys(outcomes);
+  var rows = keys.map(function (outcome) {
+    var cls = outcome === "unanswered" ? "bad"
+      : (["human_request", "complaint", "account_blocked"].indexOf(outcome) > -1 ? "warn" : "");
+    return '<div class="topic' + (cls ? " " + cls : "") + '"><span class="n">' +
+      outcomes[outcome] + "</span><span>" +
+      esc(A("outcome_" + outcome, OUTCOME_LABEL[outcome] || outcome)) + "</span></div>";
+  }).join("");
+  var canView = item.count && can("conversations.read");
+  return '<div class="topicdetail">' +
+    '<h3>' + esc(item.name) + "</h3>" +
+    (keys.length ? rows : '<div class="note">' + esc(A("nothing_asked_yet")) + "</div>") +
+    (canView
+      ? '<button class="btn ghost sm" data-drill="convos:language=' + item.language + '">' +
+        esc(A("view_conversations")) + "</button>"
+      : "") + "</div>";
 }
 
 /* The channel panel: the catalogue, with traffic folded in.
@@ -2453,6 +2486,11 @@ function loadDashboard() {
     var topicData = topicDonutData(a.top_topics);
     var topicRows = topicData.rows;
     state.topicDetail = topicData.detail;
+    // Languages needs no head/other split like topics — SUPPORTED_LANGUAGES
+    // plus "unknown" is at most six, well inside one donut's wedge budget —
+    // so the analytics rows themselves (each already carrying an `outcomes`
+    // breakdown from the backend) are the detail array as-is.
+    state.languageDetail = a.languages;
 
     // Brand in the heading so the page is recognisable across a table; the
     // registered name beneath it so the document is exact when read closely.
@@ -2573,7 +2611,7 @@ function loadDashboard() {
       (a.unclassified_turns ? '<div class="note">' +
         esc(A("unclassified_note", null, { n: num(a.unclassified_turns) })) + "</div>" : "") +
       "</div>" +
-      '<div class="panel"><h3>' + esc(A("most_asked")) + "</h3>" +
+      '<div class="panel" id="most-asked-panel"><h3>' + esc(A("most_asked")) + "</h3>" +
       donut(topicRows, {
         unit: A("unit_questions", "questions"),
         label: A("most_asked"),
@@ -2585,13 +2623,11 @@ function loadDashboard() {
 
     /* Row 3 — coverage beside who did what. */
     h += '<div class="row row-half">' +
-      '<div class="panel"><h3>' + esc(A("languages")) + "</h3>" +
-      donut(a.languages.map(function (r) {
+      '<div class="panel" id="languages-panel"><h3>' + esc(A("languages")) + "</h3>" +
+      donut(a.languages.map(function (r, i) {
         return {
           label: r.name || r.language, count: r.count,
-          slot: LANG_SLOT[r.language],
-          drill: r.count && can("conversations.read")
-            ? "convos:language=" + r.language : null
+          slot: LANG_SLOT[r.language], topicIdx: i
         };
       }), {
         unit: A("unit_conversations"),
@@ -2602,7 +2638,8 @@ function loadDashboard() {
         onelineOne: A("donut_all_in_one", "The single {unit} was in {label}."),
         label: A("conversations_by_language"),
         empty: A("no_conversations_window")
-      }) + "</div>" +
+      }) +
+      '<div id="lang-detail"></div></div>' +
       '<div class="panel noprint" id="activity"><h3>' + esc(A("recent_activity")) + "</h3>" +
       '<div class="empty">' + esc(A("loading")) + "</div></div>" +
       "</div>";
@@ -2624,7 +2661,8 @@ function loadDashboard() {
     $("do-print").onclick = function () { window.print(); };
     wireChartTip(a.daily);
     wireDrills();
-    wireTopicDetail();
+    wireDetailPanel("most-asked-panel", "topic-detail", function () { return state.topicDetail; }, topicDetailCard);
+    wireDetailPanel("languages-panel", "lang-detail", function () { return state.languageDetail; }, languageDetailCard);
     loadActivity();
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
