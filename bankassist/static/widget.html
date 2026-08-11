@@ -1134,7 +1134,17 @@
         applyLanguage(langSel.value || cfg.default_language || "en");
       });
 
-      addBot(T("greeting", { bank: cfg.name }), false);
+      var greetTurn = addBot(T("greeting", { bank: cfg.name }), false);
+      // The languages spoken, shown as chips rather than named in the
+      // greeting sentence — the same visual element addMeta() already uses
+      // for "detected language" on every reply afterward, so a first-time
+      // visitor learns the icon once, here, before they've typed anything.
+      if (cfg.languages && cfg.languages.length) {
+        var langChips = cfg.languages.map(function (l) {
+          return '<span class="chip">' + svg("globe") + l.name + '</span>';
+        }).join("");
+        greetTurn.appendChild(el("div", "meta", langChips));
+      }
       addSuggestions([
         T("suggest_open_account"),
         T("suggest_loan"),

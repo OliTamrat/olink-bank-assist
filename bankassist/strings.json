@@ -1,7 +1,7 @@
 {
   "en": {
-    "greeting": "Hello! I am {bank}'s virtual assistant. Ask me anything about our accounts, services, fees, or how to bank with us.",
-    "greeting_named": "Hello {name}! I am {bank}'s virtual assistant. Ask me anything about our accounts, services, fees, or how to bank with us.",
+    "greeting": "Hello! I am {bank}'s virtual assistant. Ask me anything about our accounts, services, fees, or how to bank with us.\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
+    "greeting_named": "Hello {name}! I am {bank}'s virtual assistant. Ask me anything about our accounts, services, fees, or how to bank with us.\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
     "ack_named": "Thanks {name} —",
     "unknown": "I don't have verified information about that yet, so I won't guess. I've noted your question for our customer service team — they can follow up with you.",
     "general_guidance": "General guidance — this is standard banking practice, not {bank}'s own published information. Please check with {bank} for anything specific to your account.",
@@ -22,8 +22,8 @@
     "no_contact_yet": "I don't have contact details for you, so I can't promise a call back."
   },
   "am": {
-    "greeting": "ሰላም! እኔ የ{bank} ዲጂታል ረዳት ነኝ። ስለ ሂሳቦቻችን፣ አገልግሎቶቻችን፣ ክፍያዎች ወይም አጠቃቀም ማንኛውንም ጥያቄ ይጠይቁኝ።",
-    "greeting_named": "ሰላም {name}! እኔ የ{bank} ዲጂታል ረዳት ነኝ። ስለ ሂሳቦቻችን፣ አገልግሎቶቻችን፣ ክፍያዎች ወይም አጠቃቀም ማንኛውንም ጥያቄ ይጠይቁኝ።",
+    "greeting": "ሰላም! እኔ የ{bank} ዲጂታል ረዳት ነኝ። ስለ ሂሳቦቻችን፣ አገልግሎቶቻችን፣ ክፍያዎች ወይም አጠቃቀም ማንኛውንም ጥያቄ ይጠይቁኝ።\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
+    "greeting_named": "ሰላም {name}! እኔ የ{bank} ዲጂታል ረዳት ነኝ። ስለ ሂሳቦቻችን፣ አገልግሎቶቻችን፣ ክፍያዎች ወይም አጠቃቀም ማንኛውንም ጥያቄ ይጠይቁኝ።\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
     "ack_named": "አመሰግናለሁ {name} —",
     "unknown": "ስለዚህ ጉዳይ የተረጋገጠ መረጃ ስለሌለኝ መገመት አልፈልግም። ጥያቄዎን ለደንበኞች አገልግሎት ቡድናችን አስተላልፌዋለሁ — በቅርቡ ያገኙዎታል።",
     "general_guidance": "አጠቃላይ መመሪያ — ይህ የተለመደ የባንክ አሠራር እንጂ የ{bank} ይፋዊ መረጃ አይደለም። ከሂሳብዎ ጋር ለተያያዘ ማንኛውም ጉዳይ {bank}ን ያማክሩ።",
@@ -44,8 +44,8 @@
     "no_contact_yet": "የመገኛ መረጃዎ ስለሌለን፣ ተመልሶ እንደሚደወልልዎ ቃል መግባት አልችልም።"
   },
   "om": {
-    "greeting": "Akkam! Ani gargaaraa dijitaalaa {bank} ti. Waa'ee herregaa, tajaajilaa, kaffaltii fi fayyadama keenyaa gaaffii kamiyyuu na gaafadhaa.",
-    "greeting_named": "Akkam {name}! Ani gargaaraa dijitaalaa {bank} dha. Waa'ee herregaa, tajaajilaa, kaffaltii yookaan itti fayyadama gaafadhaa.",
+    "greeting": "Akkam! Ani gargaaraa dijitaalaa {bank} ti. Waa'ee herregaa, tajaajilaa, kaffaltii fi fayyadama keenyaa gaaffii kamiyyuu na gaafadhaa.\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
+    "greeting_named": "Akkam {name}! Ani gargaaraa dijitaalaa {bank} dha. Waa'ee herregaa, tajaajilaa, kaffaltii yookaan itti fayyadama gaafadhaa.\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
     "ack_named": "Galatoomi {name} —",
     "unknown": "Waa'ee kanaa odeeffannoo mirkanaa'e waan hin qabneef tilmaamuu hin barbaadu. Gaaffii keessan garee tajaajila maamiltootaa keenyaaf dabarseera — dhiyootti isin qunnamu.",
     "general_guidance": "Qajeelfama waliigalaa — kun hojimaata baankii idilee malee odeeffannoo ifaa {bank} miti. Waan herrega keessan ilaallatu kamiyyuu {bank} gaafadhaa.",
@@ -66,8 +66,8 @@
     "no_contact_yet": "Odeeffannoo qunnamtii keessan waan hin qabneef, deebi'anii akka isiniif bilbilan waadaa galuu hin danda'u."
   },
   "ti": {
-    "greeting": "ሰላም! ኣነ ናይ {bank} ዲጂታላዊ ሓጋዚ እየ። ብዛዕባ ሕሳባትና፣ ኣገልግሎታትና፣ ክፍሊታት ወይ ኣጠቓቕማ ዝኾነ ሕቶ ሕተቱኒ።",
-    "greeting_named": "ሰላም {name}! ኣነ ናይ {bank} ዲጂታላዊ ሓጋዚ እየ። ብዛዕባ ሕሳባትና፣ ኣገልግሎትና፣ ክፍሊት ወይ ኣጠቓቕማ ዝኾነ ሕቶ ሕተቱኒ።",
+    "greeting": "ሰላም! ኣነ ናይ {bank} ዲጂታላዊ ሓጋዚ እየ። ብዛዕባ ሕሳባትና፣ ኣገልግሎታትና፣ ክፍሊታት ወይ ኣጠቓቕማ ዝኾነ ሕቶ ሕተቱኒ።\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
+    "greeting_named": "ሰላም {name}! ኣነ ናይ {bank} ዲጂታላዊ ሓጋዚ እየ። ብዛዕባ ሕሳባትና፣ ኣገልግሎትና፣ ክፍሊት ወይ ኣጠቓቕማ ዝኾነ ሕቶ ሕተቱኒ።\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
     "ack_named": "የቐንየለይ {name} —",
     "unknown": "ብዛዕባ እዚ ዝተረጋገጸ ሓበሬታ ስለ ዘይብለይ ክግምት ኣይደልን። ሕቶኹም ናብ ጉጅለ ኣገልግሎት ዓማዊልና ኣመሓላሊፈዮ ኣለኹ — ኣብ ቀረባ ግዜ ክረኽቡኹም እዮም።",
     "general_guidance": "ሓፈሻዊ መምርሒ — እዚ ልሙድ ናይ ባንክ ኣሰራርሓ እምበር ወግዓዊ ሓበሬታ {bank} ኣይኮነን። ምስ ሕሳብኩም ዝተኣሳሰር ዝኾነ ነገር {bank} ሕተቱ።",
@@ -88,8 +88,8 @@
     "no_contact_yet": "ናይ ርክብ ሓበሬታኹም ስለ ዘይብልና፡ ተመሊሶም ክድውሉልኩም እዮም ኢለ ቃል ክኣቱ ኣይክእልን።"
   },
   "so": {
-    "greeting": "Salaan! Waxaan ahay kaaliyaha dijitaalka ah ee {bank}. Wax kasta oo ku saabsan xisaabaadka, adeegyada, khidmadaha iyo isticmaalka i weydii.",
-    "greeting_named": "Salaan {name}! Waxaan ahay kaaliyaha dijitaalka ah ee {bank}. Wax walba oo ku saabsan xisaabaha, adeegyada, khidmadaha ama isticmaalka i weydii.",
+    "greeting": "Salaan! Waxaan ahay kaaliyaha dijitaalka ah ee {bank}. Wax kasta oo ku saabsan xisaabaadka, adeegyada, khidmadaha iyo isticmaalka i weydii.\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
+    "greeting_named": "Salaan {name}! Waxaan ahay kaaliyaha dijitaalka ah ee {bank}. Wax walba oo ku saabsan xisaabaha, adeegyada, khidmadaha ama isticmaalka i weydii.\n\n🌐 English · አማርኛ · Afaan Oromoo · ትግርኛ · Soomaali",
     "ack_named": "Mahadsanid {name} —",
     "unknown": "Arrintan macluumaad la xaqiijiyey kama hayo, mana doonayo inaan qiyaaso. Su'aashaada waxaan u gudbiyey kooxda adeegga macaamiisha — dhawaan way kula soo xiriiri doonaan.",
     "general_guidance": "Hagaajin guud — kani waa hab-dhaqanka caadiga ah ee bangiyada, ma aha macluumaadka rasmiga ah ee {bank}. Wax kasta oo la xiriira xisaabtaada la xaqiiji {bank}.",
