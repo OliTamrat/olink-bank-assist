@@ -3070,6 +3070,79 @@ function importForm() {
  * answer" button is a form nobody knows what to type into; the same page
  * headed by "forty people asked this" is a to-do list ordered by value.
  */
+/* The curated answers, as the sheet a translator works in.
+ *
+ * Same file `scripts/faq_export.py` writes and `scripts/faq_import.py` reads
+ * back — one row per question, one per answer, one column per language. It is
+ * here as a BUTTON because the script needs the production database, and the
+ * person who has the answers is signed into this panel rather than holding a
+ * database URL. Making that a prerequisite is how a translation does not get
+ * done.
+ *
+ * Grouped by `source_faq_id`, never by question text: a translation is by
+ * definition a different string from its original, so grouping on the words
+ * would put every language on its own row and hand a reviewer five unrelated
+ * lines instead of one to correct.
+ */
+var FAQ_NEWLINE = "⏎";   // must match scripts/faq_export.py
+
+function faqCell(text) {
+  // Tabs and newlines would silently eat a column. The marker is visible, so
+  // a reviewer can see where a line break belongs, and the importer puts it
+  // back — an eligibility list flattened to one line is a different answer.
+  return String(text == null ? "" : text)
+    .replace(/\t/g, " ").replace(/\r\n/g, "\n").replace(/\n/g, FAQ_NEWLINE);
+}
+
+function downloadFaqSheet() {
+  var rows = state.faqRows || [];
+  if (!rows.length) { setStatus(A("nothing_to_download"), "error"); return; }
+
+  var LANGS = ["en", "am", "om", "ti", "so"];
+  var groups = {}, order = [];
+  rows.forEach(function (f) {
+    var key = f.source_faq_id || f.id;
+    if (!groups[key]) { groups[key] = {}; order.push(key); }
+    groups[key][f.language] = f;
+  });
+
+  var head = ["question (en)", "status", "field"];
+  LANGS.forEach(function (l) { head.push(l + " (" + (LANG_NAME[l] || l) + ")"); });
+  head.push("reviewer notes");
+  var out = [head];
+
+  order.sort(function (a, b) {
+    var qa = (groups[a].en || groups[a][Object.keys(groups[a])[0]]).question;
+    var qb = (groups[b].en || groups[b][Object.keys(groups[b])[0]]).question;
+    return qa.localeCompare(qb);
+  });
+
+  order.forEach(function (key) {
+    var langs = groups[key];
+    var anchor = langs.en || langs[Object.keys(langs)[0]];
+    ["question", "answer"].forEach(function (field) {
+      var line = [
+        field === "question" ? faqCell(anchor.question) : "",
+        langs.en ? langs.en.status : "—",
+        field
+      ];
+      LANGS.forEach(function (l) {
+        line.push(langs[l] ? faqCell(langs[l][field]) : "");
+      });
+      line.push("");
+      out.push(line);
+    });
+  });
+
+  // The BOM is what makes Excel read this as UTF-8 rather than mojibake —
+  // without it Amharic arrives as garbage and the reviewer's first
+  // impression is that the tool is broken.
+  download("faq-" + state.slug + ".tsv",
+    "\ufeff" + out.map(function (r) { return r.join("\t"); }).join("\n") + "\n",
+    "text/tab-separated-values;charset=utf-8");
+  setStatus(order.length + " questions × " + LANGS.length + " languages", "ok");
+}
+
 function loadFaq() {
   Promise.all([api("/faq"), api("/faq/suggestions")]).then(function (both) {
     var mine = both[0], asked = both[1];
@@ -3093,7 +3166,9 @@ function loadFaq() {
     h += '<div class="panel"><div style="display:flex;align-items:center">' +
       "<h3 style='flex:1'>Approved answers</h3>" +
       (can("documents.write")
-        ? '<button class="btn ghost sm" id="faq-import">Import an FAQ page</button>' +
+        ? '<button class="btn ghost sm" id="faq-dl">' +
+            esc(A("download_for_translation")) + "</button>" +
+          '<button class="btn ghost sm" id="faq-import" style="margin-left:8px">Import an FAQ page</button>' +
           '<button class="btn sm" id="faq-new" style="margin-left:8px">Write one</button>'
         : "") +
       "</div><div id=\"faq-imp\"></div>" +
@@ -3124,6 +3199,7 @@ function loadFaq() {
     });
     if ($("faq-new")) $("faq-new").onclick = function () { faqForm(null, "", "en"); };
     if ($("faq-import")) $("faq-import").onclick = faqImportForm;
+    if ($("faq-dl")) $("faq-dl").onclick = downloadFaqSheet;
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 

@@ -248,7 +248,9 @@
     "confirm_account_theirs": "And confirm the account is theirs",
     "confirm_identity": "Confirm identity",
     "unverified_scope": "Until this is done you can only give general guidance — products, eligibility and how to apply.",
-    "fayda_number_required": "Fayda number (required — it is what the record keeps)"
+    "fayda_number_required": "Fayda number (required — it is what the record keeps)",
+    "download_for_translation": "Download for translation",
+    "nothing_to_download": "No approved answers to download yet."
   },
   "am": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -499,7 +501,9 @@
     "confirm_account_theirs": "እና ሂሳቡ የእነሱ መሆኑን ያረጋግጡ",
     "confirm_identity": "ማንነት አረጋግጥ",
     "unverified_scope": "ይህ እስኪከናወን ድረስ አጠቃላይ መመሪያ ብቻ መስጠት ይችላሉ — ምርቶች፣ ብቁነትና እንዴት ማመልከት እንደሚቻል።",
-    "fayda_number_required": "የፋይዳ ቁጥር (ያስፈልጋል — መዝገቡ የሚይዘው ይህ ነው)"
+    "fayda_number_required": "የፋይዳ ቁጥር (ያስፈልጋል — መዝገቡ የሚይዘው ይህ ነው)",
+    "download_for_translation": "ለትርጉም አውርድ",
+    "nothing_to_download": "እስካሁን የሚወርድ የተፈቀደ መልስ የለም።"
   },
   "om": {
     "nav_dashboard": "Daashboordii",
@@ -750,7 +754,9 @@
     "confirm_account_theirs": "Akkasumas herregni kan isaanii ta'uu mirkaneessaa",
     "confirm_identity": "Eenyummaa mirkaneessi",
     "unverified_scope": "Hanga kun raawwatutti qajeelfama waliigalaa qofa kennuu dandeessu — oomishaalee, ulaagaa fi akkaataa itti iyyatan.",
-    "fayda_number_required": "Lakkoofsa Fayda (barbaachisaa — kan galmeen qabatu isa kana)"
+    "fayda_number_required": "Lakkoofsa Fayda (barbaachisaa — kan galmeen qabatu isa kana)",
+    "download_for_translation": "Hiikkaaf buufadhu",
+    "nothing_to_download": "Hanga ammaatti deebiin mirkanaa'e buufamu hin jiru."
   },
   "ti": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -1001,7 +1007,9 @@
     "confirm_account_theirs": "ከምኡ'ውን እቲ ሕሳብ ናቶም ምዃኑ ኣረጋግጹ",
     "confirm_identity": "መንነት ኣረጋግጽ",
     "unverified_scope": "እዚ ክሳብ ዝፍጸም ሓፈሻዊ መምርሒ ጥራይ ክትህቡ ትኽእሉ — ኣቕሑ፣ ብቕዓትን ከመይ ጌርካ ከም እትሓትትን።",
-    "fayda_number_required": "ቁጽሪ ፋይዳ (የድሊ — እቲ መዝገብ ዝሕዞ እዚ እዩ)"
+    "fayda_number_required": "ቁጽሪ ፋይዳ (የድሊ — እቲ መዝገብ ዝሕዞ እዚ እዩ)",
+    "download_for_translation": "ንትርጉም ኣውርድ",
+    "nothing_to_download": "ክሳብ ሕጂ ዝወርድ ዝጸደቐ መልሲ የለን።"
   },
   "so": {
     "nav_dashboard": "Dashboard-ka",
@@ -1252,6 +1260,8 @@
     "confirm_account_theirs": "Xaqiiji in xisaabtu tahay tooda",
     "confirm_identity": "Xaqiiji aqoonsiga",
     "unverified_scope": "Ilaa tan la sameeyo waxaad kaliya bixin kartaa hagaajin guud — alaabta, u-qalmitaanka iyo sida loo codsado.",
-    "fayda_number_required": "Lambarka Fayda (loo baahan yahay — waa waxa diiwaanku hayo)"
+    "fayda_number_required": "Lambarka Fayda (loo baahan yahay — waa waxa diiwaanku hayo)",
+    "download_for_translation": "Soo dejiso turjumaadda",
+    "nothing_to_download": "Weli ma jiraan jawaabo la ansixiyay oo la soo dejiyo."
   }
 }
