@@ -971,7 +971,12 @@ Remaining polish, not blockers:
       ever needed again.
 - [ ] **Split the runtime service account** — `bankassist-runtime` with only
       `secretmanager.secretAccessor`, replacing `bankassist-deployer` as the
-      Cloud Run runtime identity.
+      Cloud Run runtime identity. **Runbook ready:**
+      `docs/runbooks/split-runtime-service-account.md` has the exact
+      commands; not yet run — needs a live `gcloud` session against the
+      project, which no agent sandbox has, and the `deploy.yml` line only
+      changes after the new SA + bindings are confirmed, since this
+      pipeline auto-deploys on every green push to `main`.
 - [ ] **Linguist review of OM/TI/SO** — the one open language item, and it
       now covers more than wording. `review/Olink_Bank_Assist_language_review.xlsx`
       carries four sheets: the assistant's replies, the phrasebook, the
