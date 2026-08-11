@@ -1,225 +1,348 @@
-"""The return leg of the curated-answer loop.
+"""Reading a bank's own published FAQ page in, instead of retyping it.
 
-`faq_export.py` has referred to `faq_import.py` since the day it was written
-and the file did not exist. So a bank's answers could be exported and
-translated, and there was no way to get them back in — the loop had no return
-leg, which is a strange thing to discover about a workflow the product's one
-remaining language gap depends on.
+A bank's FAQ is the best content it owns and the only content that arrives in
+exactly the shape the `faqs` table wants: somebody has already decided which
+questions matter and written the approved answer to each. The reason a bank
+with forty published answers ends up with four curated is that the only way in
+was typing them back one at a time.
 
-Everything here is about what it REFUSES. A curated answer is served verbatim
-with no retrieval and no model call: it is the single path in this product
-with no gate after it, so a bad row is not a bad label, it is a bank telling a
-customer something untrue in a language nobody on the team reads.
+Two properties carry this feature, and neither is about parsing:
+
+- **Imports land as drafts.** `approved_by` is the whole difference between a
+  curated answer and a cache with extra steps, and an import has nobody's name
+  on it.
+- **Under-detection is the correct failure.** Curated answers are the one path
+  with nothing downstream to catch a mistake — no retrieval gate, no
+  INSUFFICIENT_CONTEXT, no sources for anyone to check. A missed question costs
+  one manual entry; an invented one costs the bank's credibility.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
-from pathlib import Path
 from typing import Any
 
-import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from bankassist import faq as faqlib
+from bankassist import faq
 from bankassist.models import Faq
 
-ROOT = Path(__file__).resolve().parent.parent
+PAGE = """Frequently Asked Questions
+
+How do I open an account?
+Visit any branch with a valid ID and one passport photograph.
+Your account is usually active the same day.
+
+What is the minimum balance on a savings account?
+One hundred birr.
+
+Q: Card activation
+A: A branch officer activates the card, for security reasons.
+"""
 
 
-def _sheet(tmp_path: Path, rows: list[list[str]]) -> Path:
-    header = ["question (en)", "status", "field", "en (English)", "am (አማርኛ)",
-              "om (Afaan Oromoo)", "ti (ትግርኛ)", "so (Soomaali)", "reviewer notes"]
-    out = ROOT / "review" / "faq-demo.tsv"
-    out.parent.mkdir(exist_ok=True)
-    out.write_text(
-        "﻿" + "\n".join("\t".join(r) for r in [header] + rows) + "\n",
-        encoding="utf-8",
+def _import(client: TestClient, bank: Any, **body: Any) -> Any:
+    return client.post(
+        "/admin/api/demo/faq/import",
+        json={"text": PAGE, **body},
+        headers={"X-Admin-Token": bank.admin_token},
     )
-    return out
 
 
-def _run(slug: str, *flags: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "scripts/faq_import.py", slug, *flags],
-        capture_output=True, text=True, cwd=ROOT, timeout=120,
+# ------------------------------------------------------------------ parsing
+
+
+def test_a_question_mark_starts_a_pair_and_the_rest_is_the_answer() -> None:
+    found = faq.pairs(PAGE)
+    assert found[0].question == "How do I open an account?"
+    assert "passport photograph" in found[0].answer
+    assert "same day" in found[0].answer
+
+
+def test_a_labelled_question_is_read_even_without_a_question_mark() -> None:
+    """FAQ pages whose questions are statements are common, and would be
+    invisible to a question-mark rule alone."""
+    assert faq.pairs(PAGE)[2] == (
+        "Card activation",
+        "A branch officer activates the card, for security reasons.",
     )
 
 
-def _load_importer() -> Any:
-    """Load scripts/faq_import.py by path.
-
-    Not `import_module("scripts.faq_import")`: bare `pytest` (what CI runs)
-    does not put the repo root on sys.path, while `python -m pytest` does. The
-    module name resolves locally and not in CI, which is a difference worth
-    never relying on again.
-    """
-    import importlib.util
-
-    path = ROOT / "scripts" / "faq_import.py"
-    spec = importlib.util.spec_from_file_location("faq_import_under_test", path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def test_an_ethiopic_question_mark_counts() -> None:
+    """Amharic must not have a worse import rate than English for punctuation
+    reasons alone — the same doctrine as `normalise`."""
+    found = faq.pairs("ሒሳብ እንዴት እከፍታለሁ፧\nማንኛውንም ቅርንጫፍ ይጎብኙ።")
+    assert len(found) == 1
+    assert found[0].answer == "ማንኛውንም ቅርንጫፍ ይጎብኙ።"
 
 
-def test_it_exists_at_all() -> None:
-    """The export's docstring promised this file for weeks."""
-    assert (ROOT / "scripts" / "faq_import.py").exists()
-    export = (ROOT / "scripts" / "faq_export.py").read_text(encoding="utf-8")
-    assert "faq_import.py" in export
+def test_prose_is_not_mistaken_for_questions() -> None:
+    """The failure that matters. A looser rule turns headings and body text
+    into answers served verbatim to customers."""
+    assert faq.pairs(
+        "Our Services\nWe offer savings, loans and foreign exchange.\n"
+        "Visit us today\nBranches are open until five."
+    ) == []
 
 
-def test_a_missing_sheet_is_an_error_not_a_no_op() -> None:
-    result = _run("demo-with-no-sheet-at-all")
-    assert result.returncode != 0
+def test_a_question_with_no_answer_under_it_is_dropped() -> None:
+    """A heading that happens to end in a question mark, with the answer
+    behind a click that was never expanded."""
+    assert faq.pairs("Need help?\n\nWhat is a PIN?\nA four digit code.") == [
+        ("What is a PIN?", "A four digit code.")
+    ]
 
 
-def test_it_refuses_an_unknown_bank(
-    db_session: Session, demo_bank: Any, tmp_path: Path, capsys: Any
-) -> None:
-    """In-process rather than through a subprocess: this one needs the test
-    engine, and a slug that does not exist has to be named as such rather
-    than fall through to an empty import."""
-    sheet = ROOT / "review" / "faq-no-such-bank-anywhere.tsv"
-    _sheet(tmp_path, [])
-    sheet.write_text(
-        (ROOT / "review" / "faq-demo.tsv").read_text(encoding="utf-8"),
-        encoding="utf-8",
+def test_a_paragraph_ending_in_a_question_mark_is_not_a_question() -> None:
+    """`Faq.question` is 400 characters. Anything longer is prose that happens
+    to end in punctuation, and would create a key nobody will ever type."""
+    assert faq.pairs("x " * 300 + "?\nAn answer.") == []
+
+
+def test_the_same_question_twice_yields_one_pair() -> None:
+    """Two rows under one key is a database error at write time and a race over
+    which answer a customer sees."""
+    found = faq.pairs(
+        "What is Amole?\nA digital wallet.\nWhat is amole?\nSee above."
     )
-    module = _load_importer()
-    try:
-        code = module.main(["faq_import.py", "no-such-bank-anywhere"])
-    finally:
-        sheet.unlink()
-    assert code == 1
-    assert "no such bank" in capsys.readouterr().out
+    assert len(found) == 1
+    assert found[0].answer == "A digital wallet."
 
 
-def test_half_a_pair_is_skipped(
-    db_session: Session, demo_bank: Any, tmp_path: Path
+# ------------------------------------------------------------------ the API
+
+
+def test_preview_writes_nothing(
+    client: TestClient, demo_bank: Any, db_session: Any
 ) -> None:
-    """A question with no answer is not publishable and neither is the
-    reverse. Mid-review sheets are full of these."""
-    db_session.add(Faq(
-        bank_id=demo_bank.id, language="en", question="What are your hours?",
-        answer="Nine to five.", status="published",
-        lookup=faqlib.key("What are your hours?", "en"),
-    ))
-    db_session.commit()
-    _sheet(tmp_path, [
-        ["What are your hours?", "published", "question",
-         "What are your hours?", "የስራ ሰዓታችሁ መቼ ነው?", "", "", "", ""],
-        ["", "published", "answer", "Nine to five.", "", "", "", "", ""],
-    ])
-    result = _run("demo")
-    assert result.returncode == 0
-    assert "half a pair" in result.stdout
+    before = len(db_session.execute(select(Faq)).scalars().all())
+    resp = client.post(
+        "/admin/api/demo/faq/import/preview",
+        json={"text": PAGE},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["pairs"]) == 3
+    db_session.expire_all()
+    assert len(db_session.execute(select(Faq)).scalars().all()) == before
 
 
-def test_nothing_is_written_without_the_flag(
-    db_session: Session, demo_bank: Any, tmp_path: Path
+def test_an_empty_preview_says_what_to_do_next(
+    client: TestClient, demo_bank: Any
 ) -> None:
-    """Dry run by default. This writes the words a customer reads with
-    nothing downstream to catch a mistake."""
-    db_session.add(Faq(
-        bank_id=demo_bank.id, language="en", question="Where are you?",
-        answer="Addis Ababa.", status="published",
-        lookup=faqlib.key("Where are you?", "en"),
-    ))
-    db_session.commit()
-    _sheet(tmp_path, [
-        ["Where are you?", "published", "question",
-         "Where are you?", "የት ነው ያላችሁት?", "", "", "", ""],
-        ["", "published", "answer", "Addis Ababa.", "አዲስ አበባ።", "", "", "", ""],
-    ])
-    result = _run("demo")
-    assert result.returncode == 0
-    assert "pass --write" in result.stdout
+    body = client.post(
+        "/admin/api/demo/faq/import/preview",
+        json={"text": "Savings\nLoans\nForeign exchange"},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    ).json()
+    assert body["pairs"] == []
+    assert body["note"] and "question mark" in body["note"]
+
+
+def test_imported_answers_are_drafts_with_nobody_approving_them(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """The property this whole feature rests on. Publishing on import would put
+    the bank's name on wording nobody at the bank has read, at the one point
+    where nothing downstream can catch it."""
+    assert _import(client, demo_bank).status_code == 200
+    db_session.expire_all()
     rows = db_session.execute(
-        select(Faq).where(Faq.bank_id == demo_bank.id, Faq.language == "am")
+        select(Faq).where(Faq.question == "How do I open an account?")
     ).scalars().all()
-    assert not rows, "a dry run wrote to the database"
+    assert len(rows) == 1
+    assert rows[0].status == "draft"
+    assert rows[0].approved_by is None
+    assert rows[0].approved_at is None
 
 
-def test_a_translation_lands_as_a_draft(
-    db_session: Session, demo_bank: Any, tmp_path: Path
+def test_a_draft_import_is_not_served_to_customers(
+    client: TestClient, demo_bank: Any
 ) -> None:
-    """The rule that matters most. A translation must never arrive straight
-    into the live path — approving is a separate, deliberate act, and it is
-    the whole reason the review step exists."""
-    db_session.add(Faq(
-        bank_id=demo_bank.id, language="en", question="Do you offer loans?",
-        answer="Yes, several kinds.", status="published",
-        lookup=faqlib.key("Do you offer loans?", "en"),
-    ))
-    db_session.commit()
-    _sheet(tmp_path, [
-        ["Do you offer loans?", "published", "question",
-         "Do you offer loans?", "ብድር ትሰጣላችሁ?", "", "", "", ""],
-        ["", "published", "answer", "Yes, several kinds.", "አዎ፣ የተለያዩ ዓይነቶች።",
-         "", "", "", ""],
-    ])
-    assert _run("demo", "--write").returncode == 0
+    """The end-to-end version of the same property: importing a page must not
+    change one word of what a customer reads until somebody publishes it."""
+    _import(client, demo_bank)
+    reply = client.post(
+        "/chat/demo",
+        json={"message": "What is the minimum balance on a savings account?"},
+    ).json()
+    assert reply["reply"].strip() != "One hundred birr."
+
+
+def test_only_the_ticked_questions_are_written(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    _import(client, demo_bank, questions=["What is the minimum balance on a savings account?"])
     db_session.expire_all()
-    am = db_session.execute(
-        select(Faq).where(Faq.bank_id == demo_bank.id, Faq.language == "am")
+    stored = {
+        r.question for r in db_session.execute(select(Faq)).scalars().all()
+    }
+    assert "What is the minimum balance on a savings account?" in stored
+    assert "How do I open an account?" not in stored
+
+
+def test_an_existing_answer_is_never_overwritten(
+    client: TestClient, demo_bank: Any, db_session: Any
+) -> None:
+    """A stale copy of a page must not undo a correction somebody made
+    deliberately."""
+    client.post(
+        "/admin/api/demo/faq",
+        json={
+            "question": "How do I open an account?",
+            "answer": "The corrected answer.",
+            "status": "published",
+        },
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    body = _import(client, demo_bank).json()
+    assert body["skipped"] == 1
+    db_session.expire_all()
+    rows = db_session.execute(
+        select(Faq).where(Faq.question == "How do I open an account?")
     ).scalars().all()
-    assert len(am) == 1
-    assert am[0].question == "ብድር ትሰጣላችሁ?"
-    assert am[0].status == "draft", "a translation went live without review"
+    assert len(rows) == 1
+    assert rows[0].answer == "The corrected answer."
+    assert rows[0].status == "published"
 
 
-def test_a_newline_marker_becomes_a_real_line_break(
-    db_session: Session, demo_bank: Any, tmp_path: Path
+def test_the_preview_says_which_ones_are_already_answered(
+    client: TestClient, demo_bank: Any
 ) -> None:
-    """Answers are bulleted often enough — eligibility lists, prize tiers —
-    that flattening one changes what the customer reads."""
-    db_session.add(Faq(
-        bank_id=demo_bank.id, language="en", question="What do I need?",
-        answer="A\nB", status="published",
-        lookup=faqlib.key("What do I need?", "en"),
-    ))
-    db_session.commit()
-    _sheet(tmp_path, [
-        ["What do I need?", "published", "question",
-         "What do I need?", "ምን ያስፈልጋል?", "", "", "", ""],
-        ["", "published", "answer", "A⏎B", "ሀ⏎ለ", "", "", "", ""],
-    ])
-    assert _run("demo", "--write").returncode == 0
-    db_session.expire_all()
-    am = db_session.execute(
-        select(Faq).where(Faq.bank_id == demo_bank.id, Faq.language == "am")
-    ).scalars().one()
-    assert am.answer == "ሀ\nለ"
+    """"Three new, one you already publish" is a different decision from
+    "four new"."""
+    client.post(
+        "/admin/api/demo/faq",
+        json={
+            "question": "How do I open an account?",
+            "answer": "Ours.",
+            "status": "published",
+        },
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    )
+    pairs = client.post(
+        "/admin/api/demo/faq/import/preview",
+        json={"text": PAGE},
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    ).json()["pairs"]
+    held = {p["question"]: p["existing"] for p in pairs}
+    assert held["How do I open an account?"] == "published"
+    assert held["What is the minimum balance on a savings account?"] is None
 
 
-def test_a_row_matching_nothing_is_reported_not_invented(
-    db_session: Session, demo_bank: Any, tmp_path: Path
+def test_import_needs_documents_write(client: TestClient, demo_bank: Any) -> None:
+    """Same bar as editing the knowledge base, because it is the same act."""
+    assert client.post(
+        "/admin/api/demo/faq/import", json={"text": PAGE}
+    ).status_code in (401, 403)
+
+
+def test_another_banks_page_cannot_be_imported_into_this_one(
+    client: TestClient, demo_bank: Any, second_bank: Any
 ) -> None:
-    """A pasted-in row that matches no existing answer is a corrupted sheet.
-    Creating a curated answer out of it would be the worst possible read of
-    the situation."""
-    _sheet(tmp_path, [
-        ["A question nobody ever asked", "draft", "question",
-         "A question nobody ever asked", "ጥያቄ", "", "", "", ""],
-        ["", "draft", "answer", "An answer", "መልስ", "", "", "", ""],
-    ])
-    result = _run("demo", "--write")
-    assert result.returncode == 0
-    assert "matched no existing answer" in result.stdout
-    db_session.expire_all()
-    assert not db_session.execute(
-        select(Faq).where(Faq.bank_id == demo_bank.id, Faq.language == "am")
-    ).scalars().all()
+    _import(client, demo_bank)
+    rows = client.get(
+        "/admin/api/other/faq", headers={"X-Admin-Token": second_bank.admin_token}
+    ).json()
+    assert rows == []
 
 
-@pytest.fixture(autouse=True)
-def _clean_sheet() -> Any:
-    yield
-    sheet = ROOT / "review" / "faq-demo.tsv"
-    if sheet.exists():
-        sheet.unlink()
+# ------------------------------------------- what a printed page drags in
+#
+# All of the following came from the first real bank FAQ put through this: 34
+# pages of Dashen's published questions, printed to PDF because the site cannot
+# be fetched and a PDF survives being emailed from a phone. 18% of the pairs
+# arrived with page furniture inside the answer, and two questions arrived
+# truncated to their last line.
+
+PRINTED = """Frequently Asked Questions
+Menu
+HomeAbout UsProduct & ServicesMediaSupport CenterInvestor Relations
+Contact Us
+info@dashenbanksc.com
+8/10/26, 9:36 AM
+Page 1 of 34
+Why did SWIFT make this change?
+SWIFT has upgraded its messaging system to ISO 20022.
+8/10/26, 9:36 AM
+Page 2 of 34
+Are there limits to how many coins I can
+earn?
+Yes. Certain activities are limited.
+8/10/26, 9:36 AM
+Page 3 of 34
+"""
+
+
+def test_page_furniture_never_reaches_an_answer() -> None:
+    """The one that matters: a curated answer is served verbatim, with no
+    retrieval gate and no sources for anyone to check. "Page 3 of 34" inside a
+    fee explanation is what the customer reads."""
+    for pair in faq.pairs(PRINTED):
+        assert "Page " not in pair.answer
+        assert "9:36" not in pair.answer
+        assert "info@dashenbanksc.com" not in pair.answer
+        assert "Menu" not in pair.answer
+
+
+def test_a_question_broken_across_two_lines_is_rejoined() -> None:
+    """A printed page wraps a long question, so it arrives as its tail alone —
+    "earn?" instead of the question somebody would actually type. Not wrong,
+    but dead: nothing ever matches it."""
+    questions = [p.question for p in faq.pairs(PRINTED)]
+    assert "Are there limits to how many coins I can earn?" in questions
+    assert "earn?" not in questions
+
+
+def test_an_answer_is_never_welded_onto_the_next_question() -> None:
+    """The rejoin only fires on a line that opens like a question and was left
+    unfinished. A list item above a question must stay in its own answer."""
+    found = faq.pairs(
+        "What counts?\nSending money\nReferring new users\nWhat is Amole?\n"
+        "A digital wallet."
+    )
+    assert [p.question for p in found] == ["What counts?", "What is Amole?"]
+    assert "Referring new users" in found[0].answer
+
+
+def test_a_repeated_label_is_furniture_but_a_repeated_sentence_is_not() -> None:
+    """A short label running down every page is a header. A sentence repeated
+    because two products share terms is an answer, and dropping it would lose
+    content the bank wrote."""
+    text = "\n".join(
+        f"Question {i}?\nYes, it applies.\nGlobal Banking\n" for i in range(6)
+    )
+    found = faq.pairs(text)
+    assert len(found) == 6
+    assert all("Global Banking" not in p.answer for p in found)
+    assert all("Yes, it applies." in p.answer for p in found)
+
+
+def test_a_question_glued_to_its_answer_is_split() -> None:
+    """Printing a web page flattens separate elements onto one line, so the
+    answer arrives welded to the question mark with no space. On the real
+    Dashen FAQ this alone was the difference between 22 pairs and 160."""
+    found = faq.pairs(
+        "Will this change affect domestic transfers?No. This applies only to "
+        "international payments."
+    )
+    assert len(found) == 1
+    assert found[0].question == "Will this change affect domestic transfers?"
+    assert found[0].answer.startswith("No. This applies")
+
+
+def test_two_questions_on_one_line_are_not_split_into_a_fake_answer() -> None:
+    """The discriminator is the space. A question mark followed by a space is
+    ordinary prose; splitting there would turn the next collapsed question into
+    an answer to the previous one — inventing content, which is the failure
+    this whole module is built to avoid."""
+    found = faq.pairs("What is Murabaha Plus? What are its features?\nA product.")
+    assert len(found) == 1
+    assert found[0].answer == "A product."
+
+
+def test_icon_font_glyphs_never_reach_an_answer() -> None:
+    """An accordion's expand arrow is drawn from an icon font, so it survives
+    a print-to-PDF as a private-use character that means nothing."""
+    found = faq.pairs("What is Amole?\nA digital wallet.")
+    assert found == [("What is Amole?", "A digital wallet.")]
