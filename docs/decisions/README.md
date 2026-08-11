@@ -24,3 +24,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0012 | Security controls are mutation-tested |
 | 0013 | Docs are tested against code |
 | 0014 | SMS is a contract, not an integration |
+| 0015 | "Ask OKM" pulls the portal's content; it is never pushed to |
