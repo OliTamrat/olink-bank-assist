@@ -36,6 +36,20 @@ Live at `https://bankassist-430565798339.us-east1.run.app`, deployed from
 `main` by GitHub Actions on every CI-green push. The full product plan,
 architecture doctrine and roadmap live in `CLAUDE.md`.
 
+## Documentation
+
+`docs/` is this product's OKM (Olink Knowledge Management) tree —
+`overview.md`, `architecture.md`, `runbooks/`, `integrations/`, and
+`decisions/` (ADRs recording *why* each load-bearing choice was made).
+Checkable claims there are graded against the actual code by
+`tests/test_docs_truth.py` in CI, not just written down. It's also the
+knowledge base behind **Ask OKM**, an internal tenant of this same product
+that answers questions over the whole Olink fleet's documentation
+(`bankassist/seed_okm.py`, ADR-0015).
+
+All seven Olink products follow this same taxonomy and aggregate into one
+searchable portal at [`olink-knowledge`](https://github.com/OliTamrat/olink-knowledge).
+
 *A product of [Olink Technologies](https://olinkgo.us).*
 
 ## The three tiers of an answer
