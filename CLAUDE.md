@@ -22,8 +22,11 @@ actually behaves, the rules that must not regress, and the roadmap.
 and microfinance institutions, by Olink Technologies. Each bank deploys a
 branded assistant its customers talk to about accounts, transfers, loans,
 fees, saving, and financial education — in **Amharic, Afaan Oromo, Tigrinya,
-Somali, or English** — over a web chat widget and Telegram (Ethiopia's
-dominant messaging channel). Phase 3 adds authenticated account servicing.
+Somali, or English** — over a web chat widget, Telegram (Ethiopia's dominant
+messaging channel), Viber, WhatsApp, Facebook Messenger, Instagram Direct and
+SMS. All seven adapters are built; Telegram and Viber are self-serve to
+connect, the Meta three await the bank's business verification, SMS awaits an
+aggregator agreement. Phase 3 adds authenticated account servicing.
 
 **This repo is the product's only home.** It briefly incubated inside
 `olink-dispatch` (`bank-assist/`, PR #12, closed unmerged) — founder decision
@@ -63,7 +66,11 @@ other repo.
   - Neither configured → deterministic extractive answers. The demo still
     works. `active_backend()` returns `vertex | gemini | none`.
 - **Retrieval:** dependency-free BM25, five-language stopwords, per-tenant
-- **Channels:** embeddable widget (`static/widget.html`), Telegram webhook
+- **Channels:** embeddable widget (`static/widget.html`) + webhook adapters
+  for Telegram, Viber, the Meta trio (one module — `meta.py`) and SMS
+  (`sms.py`, an aggregator contract). `channels.py` is the honest catalogue;
+  `_channel_reply()` in `api.py` owns the shared conversation/disclaimer/agent
+  steps so an adapter is only transport
 - **Admin:** single-page panel (`static/admin.html`) — KB CRUD + bulk import,
   transcripts, handoff queue, **Content Gaps**, **Overview** (the landing tab)
 
@@ -409,7 +416,10 @@ was. Both were caught by re-running rather than by re-reading.
 6. **Multi-tenant from day one.** Every query filters `bank_id`; tests assert
    cross-tenant isolation (documents, chats, conversations, admin tokens).
 7. **Secrets fail closed, compare constant-time** (`hmac.compare_digest` for
-   admin tokens and Telegram webhook secrets).
+   admin tokens and every channel's webhook credential — Telegram's secret,
+   Viber's body signature, Meta's `X-Hub-Signature-256`, the SMS shared
+   secret). An unset credential accepts nothing; HMAC-with-empty-key is
+   explicitly refused.
 8. **Audit log** (`actor/action/entity_type/entity_id/metadata`) on handoffs
    and every admin mutation. `entity_id` is TEXT — always `str(uuid)`.
 9. **Chat text is never logged.** `log_event()` carries metadata only
@@ -418,9 +428,12 @@ was. Both were caught by re-running rather than by re-reading.
 ## Current state
 
 **Live** at `https://bankassist-430565798339.us-east1.run.app`, deployed from
-`main` by GitHub Actions on every CI-green push. **1,289 tests**, mypy
-`--strict` clean, ruff clean, 20 golden-question evals, schema at migration
-**0023**.
+`main` by GitHub Actions on every CI-green push. **1,350+ tests** (the CI run
+is the exact count — do not hard-code one here, it drifts), mypy `--strict`
+clean, ruff clean, 20 golden-question evals, schema at migration **0025**.
+`tests/test_docs_truth.py` checks the claims in this paragraph against the
+code; if you change the schema head or add channels, it will tell you what
+prose to update.
 
 Four tenants seeded in the production database:
 
@@ -1002,7 +1015,9 @@ lender (smaller, faster procurement, hungrier).
 ### Phase 4 — Scale & financial education layer
 - ESX / capital-markets explainers, savings nudges; possible co-brand with
   ECMA's investor-education mandate.
-- Additional channels: WhatsApp Business, USSD/IVR for feature phones.
+- Additional channels: USSD/IVR for feature phones (WhatsApp, Messenger,
+  Instagram and SMS adapters are already built — what Phase 4 adds there is
+  the business accounts, not code).
 - Multi-bank operations: shared model improvements, per-tenant KBs strictly
   isolated.
 - Business model: setup fee + monthly SaaS tiered by conversation volume

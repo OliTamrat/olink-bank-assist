@@ -5,9 +5,10 @@ tap away.**
 
 A white-label AI banking assistant for Ethiopian banks and microfinance
 institutions. Customers ask about accounts, transfers, loans, fees and saving
-in **Amharic, Afaan Oromo, Tigrinya, Somali or English**, over a **web chat
-widget** or a **Telegram bot** — the channel they already have on the phone
-they already own. When the assistant cannot answer, or must not, the customer
+in **Amharic, Afaan Oromo, Tigrinya, Somali or English**, over the channel
+they already have on the phone they already own — a **web chat widget**,
+**Telegram**, **Viber**, **WhatsApp**, **Facebook Messenger**, **Instagram
+Direct** or **SMS**. When the assistant cannot answer, or must not, the customer
 is handed to **a real bank teller on a live call inside the same conversation**,
 with the whole transcript already in front of them.
 
@@ -24,7 +25,7 @@ person, not a ticket.
 |  |  |
 |---|---|
 | **Five languages** | Amharic, Afaan Oromo, Tigrinya, Somali, English — detected per message, not per session |
-| **Two channels** | Embeddable web widget, Telegram bot |
+| **Seven channels** | Web widget, Telegram, Viber, WhatsApp, Messenger, Instagram, SMS — every adapter built; each goes live when its credential is pasted |
 | **Three ways to answer** | The bank's curated words, its own documents, or a live human |
 | **Never invents a number** | An answer carrying a figure with no source fails the eval gate |
 | **Multi-tenant** | Every query filters by bank; cross-tenant isolation is asserted in tests |
@@ -303,7 +304,7 @@ Uvicorn binds `$PORT` (default 8000) — deploy Cloud Run/ECS with a matching
 | `GOOGLE_GENAI_USE_VERTEXAI` | unset | Use Vertex AI instead of the API-key path |
 | `GOOGLE_CLOUD_PROJECT` / `VERTEX_LOCATION` | unset | Vertex project and region |
 | `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | unset | Live teller media. Unset = no Connect button, cleanly |
-| `APP_BASE_URL` | `http://localhost:8100` | Public URL, used for Telegram webhooks |
+| `APP_BASE_URL` | `http://localhost:8100` | Public URL, used to build every channel's webhook/callback |
 | `BANKASSIST_LOG_LEVEL` | `INFO` | JSON log level |
 | `BANKASSIST_CHAT_RATE_PER_IP` | `60` | Chat messages/min per client IP (`<=0` disables) |
 | `BANKASSIST_CHAT_RATE_PER_CONVERSATION` | `20` | Chat messages/min per conversation (`<=0` disables) |
@@ -330,14 +331,22 @@ read-everything bundle so a compliance officer can be given it alone, and
 asynchronously and appearing live as the bank are different jobs with different
 training. `docs/per-person-logins.md` covers the login model.
 
-## Connecting a Telegram bot
+## Connecting a channel
 
-1. Create a bot with @BotFather, copy the token.
-2. `POST /admin/api/{slug}/telegram/connect` with `{"bot_token": "..."}` and
-   the `X-Admin-Token` header. This stores the token, mints a per-bank webhook
-   secret, and registers `{APP_BASE_URL}/webhooks/telegram/{slug}`.
-3. Incoming updates are verified against the secret
-   (`X-Telegram-Bot-Api-Secret-Token`, constant-time compare) — fail-closed.
+Every messaging adapter is built; connecting one is credential entry. The
+full per-channel story — what to create, what each vendor signs, and what is
+still gated on a business account — lives in `docs/integrations/`.
+
+| Channel | Connect | Waits on |
+|---|---|---|
+| Telegram | `POST /admin/api/{slug}/telegram/connect` with a @BotFather token | nothing — minutes |
+| Viber | `POST /admin/api/{slug}/viber/connect` with a partners.viber.com token | nothing — minutes |
+| WhatsApp / Messenger / Instagram | `POST /admin/api/{slug}/meta/connect`, then paste the returned callback URL + verify token into Meta's dashboard | Meta business verification and review |
+| SMS | `POST /admin/api/{slug}/sms/connect` with the aggregator's send URL | an aggregator agreement (Ethio Telecom) |
+
+Every webhook fails closed on an unset credential and compares
+signatures/secrets constant-time. One callback serves all three Meta
+products — they are one app with one signature scheme.
 
 ## Architecture
 
@@ -360,6 +369,9 @@ olink-bank-assist/
     roles.py          Per-bank role rows and permission lookup
     llm.py            Gemini REST (httpx, no SDK) with a strict context-only prompt
     telegram.py       Bot API send/setWebhook
+    viber.py          Channels API send/signature — Viber reports errors inside HTTP 200
+    meta.py           WhatsApp + Messenger + Instagram: one app, one callback, one signature
+    sms.py            Aggregator contract: generous inbound parsing, numbered billed segments
     channels.py       The honest channel catalogue for Settings — live, and what each costs
     handoff_webhook.py Deliver escalations into a bank's existing contact-centre tool
     i18n.py           Assistant strings in en/am/om/ti/so, with translator notes
@@ -368,10 +380,11 @@ olink-bank-assist/
     seed*.py          Demo Bank Ethiopia (15 docs) + CBE / Dashen / Awash prospect tenants
     evals.py          Golden-question eval runner
     static/           widget.html (embeddable chat + call), admin.html (the whole console)
-  migrations/         Alembic environment + versions (0001 baseline .. 0023 head)
-  docs/               video-teller.md, per-person-logins.md
-  tests/              1,274 tests: tenancy, guardrails, retrieval, teller lifecycle,
-                      verification, departments, FAQ, ingest, i18n, permissions, evals
+  migrations/         Alembic environment + versions (0001 baseline .. 0025 head)
+  docs/               The knowledge base: overview, architecture, runbooks/,
+                      integrations/, decisions/ (ADRs) — see docs/README.md
+  tests/              1,350+ tests: tenancy, guardrails, retrieval, teller lifecycle,
+                      verification, departments, FAQ, channels, i18n, permissions, evals
   .github/workflows/  CI: ruff + mypy strict + pytest + evals + migration round-trip + Docker
 ```
 
