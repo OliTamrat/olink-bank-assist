@@ -390,10 +390,21 @@ def test_the_channel_list_does_not_promise_what_is_not_built(
     rows = {c["key"]: c for c in admin.get("/admin/api/demo/integrations").json()["channels"]}
 
     assert rows["web"]["status"] == channels.LIVE
-    assert rows["telegram"]["status"] == channels.AVAILABLE  # no token set yet
-    for key in ("whatsapp", "messenger", "instagram", "viber", "sms"):
+    # Built, no credential pasted yet. Both are self-serve — the bank can turn
+    # them on without waiting on anyone's approval.
+    assert rows["telegram"]["status"] == channels.AVAILABLE
+    assert rows["viber"]["status"] == channels.AVAILABLE
+    # Genuinely not built. Each is blocked on someone else's process — Meta's
+    # review, or an Ethio Telecom agreement — and that is what has to stay
+    # visible rather than being softened into "coming soon".
+    for key in ("whatsapp", "messenger", "instagram", "sms"):
         assert rows[key]["status"] == channels.PLANNED, key
-        assert rows[key]["needs"], f"{key} claims to be planned but lists no prerequisite"
+
+    # The prerequisite list is what makes a non-live claim checkable rather
+    # than reassuring, so it is required of AVAILABLE as much as of PLANNED.
+    for key, row in rows.items():
+        if row["status"] != channels.LIVE:
+            assert row["needs"], f"{key} is not live but lists no prerequisite"
 
 
 def test_connecting_telegram_moves_it_to_live(

@@ -87,10 +87,14 @@ CATALOGUE: Final[tuple[dict[str, Any], ...]] = (
     {
         "key": "viber",
         "name": "Viber",
-        "status": PLANNED,
-        "blurb": "Still common in parts of the diaspora. Bot accounts are "
-                 "self-serve, so this is the cheapest of the planned channels.",
-        "needs": ["A Viber bot account and its authentication token."],
+        "status": AVAILABLE,
+        "blurb": "Customers message your bank's Viber account. Still common in "
+                 "parts of the diaspora, and — like Telegram — it can be turned "
+                 "on today without anyone's approval.",
+        "needs": [
+            "A bot account from partners.viber.com — self-serve, and it issues "
+            "the authentication token immediately.",
+        ],
     },
     {
         "key": "sms",
@@ -108,12 +112,15 @@ CATALOGUE: Final[tuple[dict[str, Any], ...]] = (
 )
 
 
-def catalogue(*, telegram_connected: bool) -> list[dict[str, Any]]:
+def catalogue(
+    *, telegram_connected: bool, viber_connected: bool = False
+) -> list[dict[str, Any]]:
     """The catalogue with this tenant's live state folded in."""
+    connected = {"telegram": telegram_connected, "viber": viber_connected}
     out: list[dict[str, Any]] = []
     for entry in CATALOGUE:
         row = dict(entry)
-        if row["key"] == "telegram" and telegram_connected:
+        if connected.get(str(row["key"])):
             row["status"] = LIVE
         out.append(row)
     return out

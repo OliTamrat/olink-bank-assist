@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import time
 from collections import Counter
@@ -44,6 +45,7 @@ from . import (
     telegram,
     teller,
     verification,
+    viber,
 )
 from . import agent as agent_module
 from .agent import handle_message
@@ -703,6 +705,149 @@ async def telegram_webhook(
     if bank.telegram_bot_token:
         telegram.send_message(bank.telegram_bot_token, chat_id, result.reply)
     return {"ok": True}
+
+
+# ------------------------------------------------------------------- viber
+
+
+@app.post("/webhooks/viber/{slug}")
+async def viber_webhook(
+    slug: str, request: Request, db: Session = Depends(get_db)
+) -> dict[str, bool]:
+    bank = _get_bank(db, slug)
+
+    # The raw body, before any parsing: the signature covers the exact bytes
+    # Viber sent, so re-serialising the parsed JSON would produce a different
+    # string and fail every check.
+    raw = await request.body()
+    if not viber.valid_signature(
+        bank.viber_auth_token or "",
+        raw,
+        request.headers.get("X-Viber-Content-Signature", ""),
+    ):
+        raise HTTPException(status_code=403, detail="Bad webhook signature")
+
+    try:
+        event = json.loads(raw or b"{}")
+    except ValueError:
+        # Signature-valid but unparseable should not be a 500 — a 500 makes
+        # Viber retry the same broken body indefinitely.
+        logger.warning("viber sent a signed body that is not JSON")
+        return {"ok": True}
+    kind = event.get("event")
+
+    # Viber's own validation ping, sent the moment set_webhook is called and
+    # before any customer exists. It must return 200 or registration fails.
+    if kind in {"webhook", "delivered", "seen", "failed", "unsubscribed"}:
+        return {"ok": True}
+
+    # `conversation_started` is Viber's analogue of Telegram's /start: the
+    # customer opened the chat and has typed nothing. `user` carries the
+    # identity here, where a `message` event uses `sender`.
+    if kind == "conversation_started":
+        person = event.get("user") or {}
+        receiver = person.get("id")
+        if receiver and bank.viber_auth_token:
+            # Disclaimer first, for the reason spelled out on the Telegram
+            # route: a bot is publicly discoverable and has no pinned banner.
+            if bank.disclaimer:
+                viber.send_message(
+                    bank.viber_auth_token, receiver, bank.disclaimer, bank.display_name
+                )
+            viber.send_message(
+                bank.viber_auth_token,
+                receiver,
+                translate(bank.default_language, "greeting", bank=bank.display_name),
+                bank.display_name,
+            )
+        return {"ok": True}
+
+    if kind != "message":
+        return {"ok": True}
+
+    message = event.get("message") or {}
+    text = message.get("text")
+    sender = event.get("sender") or {}
+    external_id = sender.get("id")
+    # Stickers, images and location shares all arrive as `message` events with
+    # no text. There is nothing for the agent to read, and answering anyway
+    # would mean replying to a question nobody asked.
+    if not text or not external_id:
+        return {"ok": True}
+
+    external_id = str(external_id)
+    conversation = db.execute(
+        select(Conversation).where(
+            Conversation.bank_id == bank.id,
+            Conversation.channel == "viber",
+            Conversation.external_user_id == external_id,
+        )
+    ).scalar_one_or_none()
+    started = conversation is None
+    if conversation is None:
+        conversation = Conversation(
+            bank_id=bank.id, channel="viber", external_user_id=external_id
+        )
+        db.add(conversation)
+        db.flush()
+
+    # A customer can reach this without ever firing `conversation_started` —
+    # Viber only sends that event when the chat is opened fresh, and a returning
+    # customer messaging an old thread skips it. So the disclaimer is tied to
+    # the conversation row being new, not to the event type.
+    if started and bank.disclaimer and bank.viber_auth_token:
+        viber.send_message(
+            bank.viber_auth_token, external_id, bank.disclaimer, bank.display_name
+        )
+
+    result = handle_message(db, bank, conversation, text)
+    if bank.viber_auth_token:
+        viber.send_message(
+            bank.viber_auth_token, external_id, result.reply, bank.display_name
+        )
+    return {"ok": True}
+
+
+class ViberConnectIn(BaseModel):
+    auth_token: str = Field(min_length=10)
+
+
+@app.post("/admin/api/{slug}/viber/connect")
+def viber_connect(
+    slug: str, payload: ViberConnectIn,
+    principal: Principal = NeedsIntegrationsManage, db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    bank = principal.bank
+    webhook_url = f"{get_settings().app_base_url}/webhooks/viber/{bank.slug}"
+
+    # Committed BEFORE the call, and rolled forward if it fails.
+    #
+    # Viber validates a registration by immediately POSTing a `webhook` event
+    # to the URL, and that arrives as a separate HTTP request on its own
+    # database connection. An uncommitted flush is invisible to it, so the
+    # ping would read a null token, fail the signature check with a 403, and
+    # Viber would reject the registration — a connect that can never succeed.
+    #
+    # The cost is a window where the column holds a token whose webhook is not
+    # registered. That is harmless: the column is only ever read to verify an
+    # inbound signature, so an unregistered token accepts nothing and sends
+    # nothing. The reverse order is what breaks.
+    previous = bank.viber_auth_token
+    bank.viber_auth_token = payload.auth_token
+    db.commit()
+    try:
+        response = viber.set_webhook(payload.auth_token, webhook_url)
+    except Exception as exc:  # noqa: BLE001
+        # Put back whatever was there, so a failed paste does not silently
+        # disconnect a channel that was working a moment ago.
+        bank.viber_auth_token = previous
+        db.commit()
+        raise HTTPException(status_code=400, detail=f"Viber rejected the token: {exc}") from exc
+
+    _audit(db, bank, "viber_connected", "bank", bank.id, {"webhook_url": webhook_url},
+           actor=principal.audit_actor)
+    db.commit()
+    return {"webhook_url": webhook_url, "viber_response": response}
 
 
 class TelegramConnectIn(BaseModel):
@@ -2294,11 +2439,13 @@ def integration_settings(
             "has_secret": bool(bank.handoff_webhook_secret),
         },
         "telegram": {"connected": bool(bank.telegram_bot_token)},
+        "viber": {"connected": bool(bank.viber_auth_token)},
         # Every channel, with what each actually requires. Served rather than
         # written into the page so the answer to "can you do WhatsApp" is one
         # list, kept next to the code that would implement it.
         "channels": channels.catalogue(
-            telegram_connected=bool(bank.telegram_bot_token)
+            telegram_connected=bool(bank.telegram_bot_token),
+            viber_connected=bool(bank.viber_auth_token),
         ),
         # The snippet to paste on the bank's own site. It was never shown
         # anywhere, so the one channel that is live by default had no
@@ -2727,7 +2874,8 @@ def analytics(
         ).all()
     }
     catalogue = channels.catalogue(
-        telegram_connected=bool(bank.telegram_bot_token)
+        telegram_connected=bool(bank.telegram_bot_token),
+        viber_connected=bool(bank.viber_auth_token),
     )
     channel_rows = [
         {
