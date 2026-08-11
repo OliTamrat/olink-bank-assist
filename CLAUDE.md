@@ -1093,6 +1093,12 @@ lender (smaller, faster procurement, hungrier).
   the moment a session expired, which is the message that most needs showing.
   Everything auto-dismisses (10s for a failure, 6s otherwise) and `setStatus("")`
   still clears, which is the contract `go()` relies on.
+- **Run `pytest`, not `python -m pytest`, before claiming green.** CI runs the
+  bare command and the two do not agree on sys.path: `python -m` puts the CWD
+  on it, so `import_module("scripts.…")` resolves locally and raises
+  `ModuleNotFoundError` in CI. A local gate that is weaker than CI's is not a
+  gate. Load a script under test by file path with
+  `importlib.util.spec_from_file_location` rather than by module name.
 - **Schema changes need an Alembic migration** (never edit a committed one).
   Migrations live in `migrations/versions/` (`0001`–`0007`);
   `init_db()`/create_all is for tests and throwaway dev DBs only. CI asserts

@@ -48,6 +48,24 @@ def _run(slug: str, *flags: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _load_importer() -> Any:
+    """Load scripts/faq_import.py by path.
+
+    Not `import_module("scripts.faq_import")`: bare `pytest` (what CI runs)
+    does not put the repo root on sys.path, while `python -m pytest` does. The
+    module name resolves locally and not in CI, which is a difference worth
+    never relying on again.
+    """
+    import importlib.util
+
+    path = ROOT / "scripts" / "faq_import.py"
+    spec = importlib.util.spec_from_file_location("faq_import_under_test", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_it_exists_at_all() -> None:
     """The export's docstring promised this file for weeks."""
     assert (ROOT / "scripts" / "faq_import.py").exists()
@@ -66,15 +84,13 @@ def test_it_refuses_an_unknown_bank(
     """In-process rather than through a subprocess: this one needs the test
     engine, and a slug that does not exist has to be named as such rather
     than fall through to an empty import."""
-    import importlib
-
     sheet = ROOT / "review" / "faq-no-such-bank-anywhere.tsv"
     _sheet(tmp_path, [])
     sheet.write_text(
         (ROOT / "review" / "faq-demo.tsv").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    module = importlib.import_module("scripts.faq_import")
+    module = _load_importer()
     try:
         code = module.main(["faq_import.py", "no-such-bank-anywhere"])
     finally:
