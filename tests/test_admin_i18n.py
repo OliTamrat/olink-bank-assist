@@ -225,3 +225,34 @@ def test_every_key_the_panel_asks_for_actually_exists() -> None:
     asked = set(re.findall(r'\bA\(\s*"([a-z0-9_]+)"\s*[,)]', html))
     missing = sorted(asked - set(table))
     assert not missing, f"admin.html asks for keys the table does not have: {missing}"
+
+
+def test_no_key_is_translated_and_then_never_used() -> None:
+    """The direction nothing was checking.
+
+    `test_every_key_the_panel_asks_for_actually_exists` covers asked → exists,
+    and caught a typo. Nothing covered exists → asked, and that is how the
+    teller console ended up with twenty-seven strings translated into five
+    languages and wired to nothing: the table was complete, the review sheet
+    showed full coverage, and the console still said "Connecting…" and
+    "Session taken" in English mid-call.
+
+    A key nobody reads is worse than a missing one. It costs a reviewer real
+    time, and it makes the coverage number a lie.
+    """
+    import re
+
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    table = json.loads(ADMIN_JSON.read_text(encoding="utf-8"))["en"]
+    # Any quoted appearance counts — keys reach A() indirectly too, through
+    # `A(p.key)`, a ternary, or a lookup table.
+    quoted = set(re.findall(r'"([a-z0-9_]+)"', html))
+    prefixes = set(re.findall(r'\bA\(\s*"([a-z0-9_]+_)"\s*\+', html))
+    orphans = sorted(
+        k for k in table
+        if k not in quoted and not any(k.startswith(p) for p in prefixes)
+    )
+    assert not orphans, (
+        f"translated into five languages and never rendered: {orphans}. "
+        "Either wire them up or delete them."
+    )
