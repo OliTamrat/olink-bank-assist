@@ -30,6 +30,13 @@ dependencies = [
     # JWT signing and a crypto dependency anyway — this is the smaller,
     # standard primitive, not a vendor SDK.
     "google-auth>=2.30",
+    # Starlette needs this for `request.form()`, and the SMS webhook needs
+    # that: aggregators split roughly evenly between form-encoded and JSON
+    # callbacks, and which one a vendor uses is not ours to choose. Without
+    # it the form half 500s at runtime — an assertion inside Starlette, not
+    # an import error, so it surfaces on the first real inbound SMS rather
+    # than at startup.
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

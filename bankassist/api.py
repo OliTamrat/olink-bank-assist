@@ -22,7 +22,7 @@ from fastapi import (
     Response,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -38,10 +38,12 @@ from . import (
     ingest,
     livekit,
     llm,
+    meta,
     passwords,
     permissions,
     presence,
     roles,
+    sms,
     telegram,
     teller,
     verification,
@@ -707,6 +709,77 @@ async def telegram_webhook(
     return {"ok": True}
 
 
+# --------------------------------------------------------- channel plumbing
+
+
+def _connected_channels(bank: Bank) -> dict[str, bool]:
+    """Which channels this tenant holds credentials for.
+
+    One definition, because the Settings screen and the analytics breakdown
+    both ask, and answering differently in two places is how a channel gets
+    reported live on one page and available on the other.
+
+    A channel counts as connected only when it has everything it needs to
+    SEND. WhatsApp needs a phone number id as well as a token, and Meta's app
+    secret alone lets a delivery in without letting a reply out — which is not
+    "live" to a customer waiting for an answer.
+    """
+    return {
+        "telegram_connected": bool(bank.telegram_bot_token),
+        "viber_connected": bool(bank.viber_auth_token),
+        "whatsapp_connected": bool(
+            bank.whatsapp_access_token and bank.whatsapp_phone_number_id
+        ),
+        "messenger_connected": bool(bank.messenger_page_token),
+        "instagram_connected": bool(bank.instagram_access_token),
+        "sms_connected": bool(bank.sms_send_url),
+    }
+
+
+def _channel_reply(
+    db: Session,
+    bank: Bank,
+    channel: str,
+    external_id: str,
+    text: str,
+    send: Callable[[str], object],
+) -> None:
+    """One inbound message on any non-web channel, answered.
+
+    Every messaging channel repeats the same four steps — find or open this
+    person's conversation, lead with the disclaimer if it is new, run the
+    agent, send the reply — and only the transport differs. With five channels
+    that is four chances to drop the disclaimer on the newest adapter and
+    nowhere for a test to notice.
+
+    `send` takes the finished text and does whatever the channel needs.
+
+    The disclaimer is tied to the conversation row being NEW, not to any
+    channel's "chat opened" event, because those events are unreliable across
+    channels: Viber only fires one on a fresh chat, WhatsApp has none at all,
+    and a returning customer would silently get an unlabelled bot.
+    """
+    conversation = db.execute(
+        select(Conversation).where(
+            Conversation.bank_id == bank.id,
+            Conversation.channel == channel,
+            Conversation.external_user_id == external_id,
+        )
+    ).scalar_one_or_none()
+
+    if conversation is None:
+        conversation = Conversation(
+            bank_id=bank.id, channel=channel, external_user_id=external_id
+        )
+        db.add(conversation)
+        db.flush()
+        if bank.disclaimer:
+            send(bank.disclaimer)
+
+    result = handle_message(db, bank, conversation, text)
+    send(result.reply)
+
+
 # ------------------------------------------------------------------- viber
 
 
@@ -776,35 +849,11 @@ async def viber_webhook(
         return {"ok": True}
 
     external_id = str(external_id)
-    conversation = db.execute(
-        select(Conversation).where(
-            Conversation.bank_id == bank.id,
-            Conversation.channel == "viber",
-            Conversation.external_user_id == external_id,
-        )
-    ).scalar_one_or_none()
-    started = conversation is None
-    if conversation is None:
-        conversation = Conversation(
-            bank_id=bank.id, channel="viber", external_user_id=external_id
-        )
-        db.add(conversation)
-        db.flush()
-
-    # A customer can reach this without ever firing `conversation_started` —
-    # Viber only sends that event when the chat is opened fresh, and a returning
-    # customer messaging an old thread skips it. So the disclaimer is tied to
-    # the conversation row being new, not to the event type.
-    if started and bank.disclaimer and bank.viber_auth_token:
-        viber.send_message(
-            bank.viber_auth_token, external_id, bank.disclaimer, bank.display_name
-        )
-
-    result = handle_message(db, bank, conversation, text)
-    if bank.viber_auth_token:
-        viber.send_message(
-            bank.viber_auth_token, external_id, result.reply, bank.display_name
-        )
+    token = bank.viber_auth_token or ""
+    _channel_reply(
+        db, bank, "viber", external_id, text,
+        lambda body: viber.send_message(token, external_id, body, bank.display_name),
+    )
     return {"ok": True}
 
 
@@ -848,6 +897,221 @@ def viber_connect(
            actor=principal.audit_actor)
     db.commit()
     return {"webhook_url": webhook_url, "viber_response": response}
+
+
+# -------------------------------------------------------------------- meta
+
+
+@app.get("/webhooks/meta/{slug}")
+def meta_verify(
+    slug: str, request: Request, db: Session = Depends(get_db)
+) -> Response:
+    """Meta's subscription handshake.
+
+    Answers with the challenge as **bare text**, not JSON: Meta compares the
+    body byte-for-byte, and a quoted JSON string does not match. Getting this
+    wrong means the callback can never be registered, with no partial state
+    to debug from.
+    """
+    bank = _get_bank(db, slug)
+    params = request.query_params
+    challenge = meta.verify_handshake(
+        mode=params.get("hub.mode", ""),
+        token=params.get("hub.verify_token", ""),
+        challenge=params.get("hub.challenge", ""),
+        expected_token=bank.meta_verify_token or "",
+    )
+    if challenge is None:
+        raise HTTPException(status_code=403, detail="Bad verify token")
+    return PlainTextResponse(challenge)
+
+
+@app.post("/webhooks/meta/{slug}")
+async def meta_webhook(
+    slug: str, request: Request, db: Session = Depends(get_db)
+) -> dict[str, bool]:
+    """One route for WhatsApp, Messenger and Instagram.
+
+    Not a shortcut — it is how Meta works. Three products of one app deliver
+    to one callback URL, signed with one app secret, and the `object` field
+    says which product a delivery belongs to.
+    """
+    bank = _get_bank(db, slug)
+    raw = await request.body()
+    if not meta.valid_signature(
+        bank.meta_app_secret or "",
+        raw,
+        request.headers.get("X-Hub-Signature-256", ""),
+    ):
+        raise HTTPException(status_code=403, detail="Bad webhook signature")
+
+    try:
+        payload = json.loads(raw or b"{}")
+    except ValueError:
+        logger.warning("meta sent a signed body that is not JSON")
+        return {"ok": True}
+
+    channel, messages = meta.inbound(payload)
+    if channel is None:
+        return {"ok": True}
+
+    # A channel with no send credential is not connected, whatever the app is
+    # subscribed to. Answering would run the agent and then drop the reply on
+    # the floor — the customer waits, and nothing says why.
+    sender = _meta_sender(bank, channel)
+    if sender is None:
+        logger.warning("meta delivery for unconfigured channel %s", channel)
+        return {"ok": True}
+
+    # Meta batches: one delivery can carry several messages, and may repeat
+    # them on retry. Each is answered in its own conversation lookup.
+    for external_id, text in messages:
+        _channel_reply(db, bank, channel, external_id, text, _bind(sender, external_id))
+    return {"ok": True}
+
+
+def _bind(send: Callable[[str, str], object], to: str) -> Callable[[str], object]:
+    """Fix the recipient, leaving a one-argument send for `_channel_reply`.
+
+    A named function rather than a lambda with a default argument, because
+    Meta batches several messages into one delivery: a lambda closing over the
+    loop variable would send every reply in the batch to whoever happened to
+    be last.
+    """
+    return lambda body: send(to, body)
+
+
+def _meta_sender(bank: Bank, channel: str) -> Callable[[str, str], object] | None:
+    """The send call for a Meta channel, or None if it is not configured."""
+    if channel == meta.WHATSAPP:
+        if not (bank.whatsapp_access_token and bank.whatsapp_phone_number_id):
+            return None
+        token, number = bank.whatsapp_access_token, bank.whatsapp_phone_number_id
+        return lambda to, text: meta.send_whatsapp(token, number, to, text)
+    if channel == meta.MESSENGER:
+        if not bank.messenger_page_token:
+            return None
+        page = bank.messenger_page_token
+        return lambda to, text: meta.send_messaging(page, to, text, channel=channel)
+    if channel == meta.INSTAGRAM:
+        if not bank.instagram_access_token:
+            return None
+        ig = bank.instagram_access_token
+        return lambda to, text: meta.send_messaging(ig, to, text, channel=channel)
+    return None
+
+
+class MetaConnectIn(BaseModel):
+    """Credentials for a Meta app. Every send-side field is optional so a bank
+    can switch on whichever products its review actually cleared."""
+
+    app_secret: str = Field(min_length=10)
+    whatsapp_phone_number_id: str | None = None
+    whatsapp_access_token: str | None = None
+    messenger_page_token: str | None = None
+    instagram_access_token: str | None = None
+
+
+@app.post("/admin/api/{slug}/meta/connect")
+def meta_connect(
+    slug: str, payload: MetaConnectIn,
+    principal: Principal = NeedsIntegrationsManage, db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Store Meta credentials and mint the verify token.
+
+    No outbound call: unlike Telegram and Viber, Meta's callback is registered
+    from *its* dashboard, not by us. So this hands back the URL and the token
+    to paste there — which is also why the verify token is generated here
+    rather than typed, so it cannot be a guessable one somebody chose.
+    """
+    bank = principal.bank
+    bank.meta_app_secret = payload.app_secret
+    if not bank.meta_verify_token:
+        bank.meta_verify_token = new_token()
+    for field in (
+        "whatsapp_phone_number_id", "whatsapp_access_token",
+        "messenger_page_token", "instagram_access_token",
+    ):
+        value = getattr(payload, field)
+        if value:
+            setattr(bank, field, value)
+
+    callback_url = f"{get_settings().app_base_url}/webhooks/meta/{bank.slug}"
+    _audit(db, bank, "meta_connected", "bank", bank.id, {"callback_url": callback_url},
+           actor=principal.audit_actor)
+    db.commit()
+    return {"callback_url": callback_url, "verify_token": bank.meta_verify_token}
+
+
+# --------------------------------------------------------------------- sms
+
+
+@app.post("/webhooks/sms/{slug}")
+async def sms_webhook(
+    slug: str, request: Request, db: Session = Depends(get_db)
+) -> dict[str, bool]:
+    """An inbound SMS from the bank's aggregator.
+
+    Authenticated with a shared secret rather than a signature: aggregators
+    do not sign bodies the way Meta and Viber do, and inventing a scheme they
+    will not implement would make the channel unusable. Compared with
+    `compare_digest`, and fails closed when unset.
+    """
+    bank = _get_bank(db, slug)
+    secret = bank.sms_inbound_secret or ""
+    presented = request.headers.get("X-SMS-Secret", "")
+    if not secret or not presented or not hmac.compare_digest(secret, presented):
+        raise HTTPException(status_code=403, detail="Bad SMS secret")
+
+    # Aggregators split roughly evenly between form posts and JSON.
+    content_type = request.headers.get("content-type", "")
+    if "json" in content_type:
+        try:
+            fields = json.loads(await request.body() or b"{}")
+        except ValueError:
+            return {"ok": True}
+    else:
+        fields = dict(await request.form())
+
+    number, text = sms.parse_inbound(fields)
+    if not number or not text:
+        return {"ok": True}
+
+    send_url = bank.sms_send_url or ""
+    auth = bank.sms_auth_header or ""
+    sender_id = bank.sms_sender_id or bank.display_name
+    _channel_reply(
+        db, bank, "sms", number, text,
+        lambda body: sms.send_message(
+            send_url=send_url, auth_header=auth, to=number,
+            text=body, sender_id=sender_id,
+        ),
+    )
+    return {"ok": True}
+
+
+class SmsConnectIn(BaseModel):
+    send_url: str = Field(min_length=8)
+    auth_header: str | None = None
+    sender_id: str | None = None
+
+
+@app.post("/admin/api/{slug}/sms/connect")
+def sms_connect(
+    slug: str, payload: SmsConnectIn,
+    principal: Principal = NeedsIntegrationsManage, db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    bank = principal.bank
+    bank.sms_send_url = payload.send_url
+    bank.sms_auth_header = payload.auth_header
+    bank.sms_sender_id = payload.sender_id
+    if not bank.sms_inbound_secret:
+        bank.sms_inbound_secret = new_token()
+    callback_url = f"{get_settings().app_base_url}/webhooks/sms/{bank.slug}"
+    _audit(db, bank, "sms_connected", "bank", bank.id, {"callback_url": callback_url},
+           actor=principal.audit_actor)
+    db.commit()
+    return {"callback_url": callback_url, "inbound_secret": bank.sms_inbound_secret}
 
 
 class TelegramConnectIn(BaseModel):
@@ -2440,13 +2704,31 @@ def integration_settings(
         },
         "telegram": {"connected": bool(bank.telegram_bot_token)},
         "viber": {"connected": bool(bank.viber_auth_token)},
+        # Meta's callback is registered from Meta's dashboard, not by us, so
+        # the panel has to show the operator what to paste there. The verify
+        # token is not a secret in the signing sense — it only proves the
+        # endpoint is ours during the handshake — but it is still per-tenant
+        # and generated, never chosen.
+        "meta": {
+            "connected": bool(bank.meta_app_secret),
+            "callback_url": f"{get_settings().app_base_url}/webhooks/meta/{bank.slug}",
+            "verify_token": bank.meta_verify_token,
+            "whatsapp": bool(
+                bank.whatsapp_access_token and bank.whatsapp_phone_number_id
+            ),
+            "messenger": bool(bank.messenger_page_token),
+            "instagram": bool(bank.instagram_access_token),
+        },
+        "sms": {
+            "connected": bool(bank.sms_send_url),
+            "callback_url": f"{get_settings().app_base_url}/webhooks/sms/{bank.slug}",
+            "has_secret": bool(bank.sms_inbound_secret),
+            "sender_id": bank.sms_sender_id,
+        },
         # Every channel, with what each actually requires. Served rather than
         # written into the page so the answer to "can you do WhatsApp" is one
         # list, kept next to the code that would implement it.
-        "channels": channels.catalogue(
-            telegram_connected=bool(bank.telegram_bot_token),
-            viber_connected=bool(bank.viber_auth_token),
-        ),
+        "channels": channels.catalogue(**_connected_channels(bank)),
         # The snippet to paste on the bank's own site. It was never shown
         # anywhere, so the one channel that is live by default had no
         # instructions attached to it.
@@ -2873,10 +3155,7 @@ def analytics(
             .group_by(Conversation.channel)
         ).all()
     }
-    catalogue = channels.catalogue(
-        telegram_connected=bool(bank.telegram_bot_token),
-        viber_connected=bool(bank.viber_auth_token),
-    )
+    catalogue = channels.catalogue(**_connected_channels(bank))
     channel_rows = [
         {
             "channel": entry["key"],
