@@ -159,17 +159,17 @@ Two properties that must not be relaxed:
 
 ### Translating them
 
-The 160 CBE answers live in the production database in English only. They are
-the last thing a customer can reach in English after asking in Amharic, and
-they are the one translation that is a second piece of *bank-approved copy*
-rather than a convenience — a curated answer is served verbatim, with no model
-call and no gate after it.
+The 160 **Dashen** answers live in the production database in English only.
+They are the last thing a customer can reach in English after asking in
+Amharic, and they are the one translation that is a second piece of
+*bank-approved copy* rather than a convenience — a curated answer is served
+verbatim, with no model call and no gate after it.
 
 ```bash
-python scripts/faq_export.py cbe          # -> review/faq-cbe.tsv
+python scripts/faq_export.py dashen          # -> review/faq-dashen.tsv
 # fill in the four language columns
-python scripts/faq_import.py cbe          # dry run: prints every change
-python scripts/faq_import.py cbe --write  # applies it, as DRAFTS
+python scripts/faq_import.py dashen          # dry run: prints every change
+python scripts/faq_import.py dashen --write  # applies it, as DRAFTS
 ```
 
 Both halves need the production database. The importer **writes drafts only**,
@@ -405,8 +405,8 @@ alone. **318 strings across three tables, no gaps:**
   permission identifiers, per-tenant database content, and anything a customer
   typed. Ge'ez writes the Fayda name as ፋይዳ — transliteration, not
   translation.
-- **The 160 curated CBE answers are English-only.** That is the one remaining
-  gap; see below.
+- **The 160 curated Dashen answers are English-only.** That is the one
+  remaining gap; see below.
 
 ## Demo data disclaimer
 

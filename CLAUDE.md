@@ -351,9 +351,9 @@ and their descriptions), and anything a customer actually typed. Ge'ez-script
 languages write the Fayda name as ፋይዳ, which is transliteration rather than
 translation; `test_the_fayda_name_is_never_translated` pins that it survives.
 
-**Still English, and tracked:** the 160 curated CBE answers exist in English
-only. That is the one remaining gap and it is content, not plumbing — see
-"Curated answers" below for how it gets closed.
+**Still English, and tracked:** the 160 curated **Dashen** answers exist in
+English only. That is the one remaining gap and it is content, not plumbing —
+see "Curated answers" below for how it gets closed.
 
 ## Shipped 2026-08-10/11 — one long session, seven changes
 
@@ -830,11 +830,21 @@ Two properties that must not be relaxed:
   exactly this reason, and a test proves `respond()` does not serve the
   excluded intents.
 
-### The 160 CBE answers are English-only — the one open language gap
+### The 160 Dashen answers are English-only — the one open language gap
 
 Imported and published 2026-08-10. They live in the **production database**,
 not in this repo, and they are the last part of the product a customer can
 reach in English when they asked in Amharic.
+
+**The tenant is `dashen`, not `cbe`.** This section said CBE until 2026-08-11
+and the commands below named the wrong slug, which sends anyone following
+them to a tenant that does not hold these answers. The provenance is not
+ambiguous — `bankassist/faq.py` reports both the 160 pairs it returns and the
+~137 table questions it misses against "the real Dashen FAQ", and
+`scripts/faq_export.py` had `dashen` in its own usage all along while
+`faq_import.py` said `cbe`. Two scripts for one loop disagreeing is what a
+copied slug looks like. When in doubt the parser docstrings are the record,
+because they were written against the actual document.
 
 **Why this one is different from every other translation done so far.** The
 assistant's replies, the widget and the staff panel are string tables in the
@@ -847,13 +857,15 @@ anywhere else in the product.
 
 **The loop, and who can run which half:**
 
-1. `python scripts/faq_export.py cbe` → `review/faq-cbe.tsv`, one row per
-   question and per answer, five language columns. **Needs the production
-   database**, so it runs wherever that reaches — not from a sandbox.
+1. `python scripts/faq_export.py dashen` → `review/faq-dashen.tsv`, one row
+   per question and per answer, five language columns. **Needs the production
+   database**, so it runs wherever that reaches — not from a sandbox. The
+   Download button on the Curated Answers page produces the same file from
+   the panel, for the signed-in tenant, and needs no connection string.
 2. The four language columns get filled in. Drafting them is ordinary work;
    the sheet is the same shape as `review/strings.tsv` and the same reviewer
    reads both.
-3. `python scripts/faq_import.py cbe --write` reads it back. **Dry run by
+3. `python scripts/faq_import.py dashen --write` reads it back. **Dry run by
    default** — it prints what would change and touches nothing until
    `--write`, because this writes the words a customer reads with no gate
    after it.

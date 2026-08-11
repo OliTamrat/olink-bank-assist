@@ -22,6 +22,7 @@ customer something untrue in a language nobody on the team reads.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -231,3 +232,30 @@ def _clean_sheet() -> Any:
     sheet = ROOT / "review" / "faq-demo.tsv"
     if sheet.exists():
         sheet.unlink()
+
+
+def test_both_halves_of_the_loop_document_the_same_tenant() -> None:
+    """The export and import usage examples must name one slug.
+
+    They did not. `faq_export.py` said `dashen` — correct, the curated
+    answers came from Dashen's FAQ — while `faq_import.py` and both project
+    docs said `cbe`, sending anyone who followed them to a tenant that does
+    not hold those answers. Nothing failed loudly: the slug is an argument,
+    so the wrong one just exports an empty sheet.
+
+    Two files documenting one loop are the cheapest place to catch that, so
+    this compares them directly rather than pinning a hard-coded name — the
+    pilot tenant can change, the two halves disagreeing is always a bug.
+    """
+    scripts = ROOT / "scripts"
+    slugs = {}
+    for name in ("faq_export.py", "faq_import.py"):
+        head = (scripts / name).read_text(encoding="utf-8").split('"""')[1]
+        found = re.findall(rf"python scripts/{name}\s+([a-z0-9-]+)", head)
+        assert found, f"{name} docstring shows no runnable example"
+        assert len(set(found)) == 1, f"{name} names several tenants: {set(found)}"
+        slugs[name] = found[0]
+
+    assert len(set(slugs.values())) == 1, (
+        f"the two halves of the curated-answer loop name different tenants: {slugs}"
+    )

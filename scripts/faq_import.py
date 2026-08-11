@@ -1,7 +1,7 @@
 """Read a corrected curated-answer sheet back into the database.
 
-    python scripts/faq_import.py cbe             # show what would change
-    python scripts/faq_import.py cbe --write     # apply it
+    python scripts/faq_import.py dashen          # show what would change
+    python scripts/faq_import.py dashen --write  # apply it
 
 The other half of `faq_export.py`, which has referred to this file since the
 day it was written. Without it the loop had no return leg: a bank's answers
