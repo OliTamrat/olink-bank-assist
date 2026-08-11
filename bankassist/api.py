@@ -1123,11 +1123,47 @@ def telegram_connect(
     slug: str, payload: TelegramConnectIn,
     principal: Principal = NeedsIntegrationsManage, db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    """Store the bot token and register our webhook with Telegram.
+
+    `telegram.set_webhook()` calls `raise_for_status()`, so a rejection
+    (wrong token, malformed webhook URL) raised an uncaught
+    `httpx.HTTPStatusError` here — FastAPI's default handler turned that
+    into a bare 500 with no message, which is what an operator pasting a
+    typo'd token actually saw in production. `viber_connect`, two functions
+    above this one, already gets this right: catch, roll back the token so
+    a failed paste doesn't silently disconnect a channel that was working,
+    and surface Telegram's own `description` field — "Bad Request: wrong
+    bot token" tells an operator what to fix; a 500 does not.
+    """
+    import httpx
+
     bank = principal.bank
+    previous_token = bank.telegram_bot_token
+    previous_secret = bank.telegram_webhook_secret
     bank.telegram_bot_token = payload.bot_token
     bank.telegram_webhook_secret = new_token()
     webhook_url = f"{get_settings().app_base_url}/webhooks/telegram/{bank.slug}"
-    response = telegram.set_webhook(payload.bot_token, webhook_url, bank.telegram_webhook_secret)
+    try:
+        response = telegram.set_webhook(
+            payload.bot_token, webhook_url, bank.telegram_webhook_secret
+        )
+    except httpx.HTTPStatusError as exc:
+        bank.telegram_bot_token = previous_token
+        bank.telegram_webhook_secret = previous_secret
+        db.commit()
+        try:
+            reason = exc.response.json().get("description", str(exc))
+        except Exception:  # noqa: BLE001 — the JSON parse itself, not the request
+            reason = str(exc)
+        raise HTTPException(
+            status_code=400, detail=f"Telegram rejected the token: {reason}"
+        ) from exc
+    except httpx.HTTPError as exc:
+        bank.telegram_bot_token = previous_token
+        bank.telegram_webhook_secret = previous_secret
+        db.commit()
+        raise HTTPException(status_code=502, detail=f"Could not reach Telegram: {exc}") from exc
+
     _audit(db, bank, "telegram_connected", "bank", bank.id, {"webhook_url": webhook_url},
            actor=principal.audit_actor)
     db.commit()
