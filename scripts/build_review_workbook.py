@@ -85,19 +85,29 @@ def style_header(ws: Worksheet, ncols: int) -> None:
 
 
 def pin_modified(path: Path) -> None:
-    """Freeze the build timestamp inside the saved file.
+    """Freeze every clock reading inside the saved file.
 
-    This is a tracked binary, and openpyxl writes the current time into
-    docProps/core.xml on save — so rebuilding after changing nothing produced
-    a different file, and the workbook showed as modified in every diff
-    whether or not a single string had moved. Setting `properties.modified`
-    before saving does not hold: openpyxl overwrites it as it writes.
+    This is a tracked binary, so a rebuild that changes no string must
+    produce no diff — otherwise the workbook shows as modified in every
+    review and a real translation change is indistinguishable from a
+    rebuild.
 
-    So the one entry is rewritten afterwards. Every other member is copied
-    with its original ZipInfo, which keeps the rest byte-identical — openpyxl
-    already uses a fixed date for the archive entries themselves.
+    Two clocks leak in, and pinning only the first is not enough:
+
+    1. openpyxl writes the current time into `docProps/core.xml` on save.
+       Setting `properties.modified` beforehand does not hold — openpyxl
+       overwrites it as it writes — so that entry is rewritten here.
+    2. Every zip member carries its own mtime in the archive headers,
+       taken from the wall clock at save. Nothing a reviewer opens shows
+       it, but it is four bytes per entry and it made the file differ on
+       every build regardless of content.
+
+    Both are pinned to EPOCH, so the bytes are a function of the strings
+    that went in and nothing else. `tests/test_review_workbook.py` holds
+    that against the committed file.
     """
     fixed = EPOCH.strftime("%Y-%m-%dT%H:%M:%SZ")
+    stamp = EPOCH.timetuple()[:6]
     with zipfile.ZipFile(path) as src:
         members = [(info, src.read(info.filename)) for info in src.infolist()]
 
@@ -110,6 +120,7 @@ def pin_modified(path: Path) -> None:
                     rb"\g<1>" + fixed.encode() + rb"\g<2>",
                     data,
                 )
+            info.date_time = stamp
             out.writestr(info, data)
     tmp.replace(path)
 

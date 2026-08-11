@@ -37,6 +37,12 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
     "mypy>=1.10",
+    # Builds review/Olink_Bank_Assist_language_review.xlsx, the workbook the
+    # translators actually work in. Declared so CI can rebuild it and assert
+    # the committed binary still matches the strings it claims to carry — an
+    # undeclared import makes that test skip silently, which is worse than
+    # not having written it.
+    "openpyxl>=3.1",
 ]
 
 [tool.setuptools]
