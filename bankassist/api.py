@@ -1750,6 +1750,11 @@ def _faq_row(row: Faq) -> dict[str, Any]:
         "served": row.served,
         "approved_at": iso(row.approved_at),
         "updated_at": iso(row.updated_at),
+        # Which answer this one was translated FROM. The panel groups a
+        # question and its four translations by this; without it the download
+        # would emit five unrelated rows per question, which is the exact
+        # mistake the TSV exporter was written to fix.
+        "source_faq_id": row.source_faq_id,
     }
 
 
