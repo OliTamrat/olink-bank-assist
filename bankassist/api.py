@@ -3262,8 +3262,12 @@ def analytics(
     # question, so an intent filter ranked a customer's name and phone number
     # as a top topic — wrong as analytics, and personal data surfacing in the
     # one report most likely to be exported and shown around.
+    # outcome joins the same row: the Most Asked panel shows what happened to
+    # each topic inline (answered / couldn't answer / handed to a person)
+    # rather than only a question and a count, so a bank doesn't have to leave
+    # the panel to learn whether its top question is actually being answered.
     question_rows = db.execute(
-        select(Message.text)
+        select(Message.text, Message.outcome)
         .where(
             Message.bank_id == bank.id,
             Message.role == "user",
@@ -3272,18 +3276,21 @@ def analytics(
         .where(*_window(Message.created_at))
         .order_by(Message.created_at.desc())
         .limit(2000)
-    ).scalars().all()
+    ).all()
 
     topics: dict[str, dict[str, Any]] = {}
-    for text in question_rows:
+    for text, outcome in question_rows:
         # Scrubbed before the signature is computed, so a volunteered number
         # can reach neither the grouping key nor the example.
         question = redact_contact((text or "").strip())
         if not question:
             continue
         key = content_signature(question) or question.lower()
-        topic = topics.setdefault(key, {"signature": key, "count": 0, "example": question})
+        topic = topics.setdefault(
+            key, {"signature": key, "count": 0, "example": question, "outcomes": {}}
+        )
         topic["count"] += 1
+        topic["outcomes"][outcome] = topic["outcomes"].get(outcome, 0) + 1
     top_topics = sorted(topics.values(), key=lambda t: (-int(t["count"]), str(t["signature"])))
 
     # --- the handoff queue, as work rather than history ---------------

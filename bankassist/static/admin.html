@@ -738,6 +738,19 @@ main { padding: 20px 24px 40px; }
 .topic { display: grid; grid-template-columns: 44px 1fr; gap: 12px;
   align-items: baseline; margin: 8px 0; font-size: 13px; color: var(--body); }
 .topic .n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Same meaning as .bar .fill.bad/.warn, applied to a row instead of a track —
+   the outcome breakdown inside a topic's detail card has no bar to colour. */
+.topic.bad .n { color: var(--bad); }
+.topic.warn .n { color: var(--warn); }
+/* Deliberately not .panel — this sits INSIDE the Most Asked panel, and a
+   card-in-a-card doubles the border/background/shadow for no visual reason.
+   A left accent is enough to read as "this is the expanded row above". */
+.topicdetail { border-left: 2px solid var(--brand); padding: 4px 0 4px 12px;
+  margin: 10px 0 4px; }
+.topicdetail h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); margin-bottom: 10px; }
+.topicdetail .qtext { font-style: italic; color: var(--body); margin: 4px 0 10px; }
+.topicdetail .btn { margin-top: 8px; }
 
 /* ---------------------------------------------------------------- tables */
 table { width: 100%; border-collapse: collapse; }
@@ -2144,17 +2157,31 @@ function donut(rows, opts) {
   var total = rows.reduce(function (t, r) { return t + r.count; }, 0);
   var live = rows.filter(function (r) { return r.count; });
 
+  // Two ways a slice can be clickable, kept independent on purpose. `drill`
+  // navigates to another page (Languages, Channels); `topicIdx` — added for
+  // Most Asked — expands a detail panel in place instead, because leaving
+  // the page just to read one question back defeats the point of putting it
+  // on the dashboard at all. Callers only ever set one or the other, so
+  // there's nothing to arbitrate between them.
+  function clickAttr(row) {
+    if (row.drill) return ' data-drill="' + row.drill + '"';
+    if (row.topicIdx != null) return ' data-topic-idx="' + row.topicIdx + '"';
+    return "";
+  }
+  function isClickable(row) { return !!(row.drill || row.topicIdx != null); }
+
   function coverage() {
     return '<div class="legend">' + rows.map(function (row) {
-      return "<" + (row.drill ? "button" : "div") + ' class="row' +
-        (row.drill ? " clickable" : "") + (row.count ? "" : " zero") + '"' +
-        (row.drill ? ' data-drill="' + row.drill + '" type="button"' : "") + ">" +
+      var clickable = isClickable(row);
+      return "<" + (clickable ? "button" : "div") + ' class="row' +
+        (clickable ? " clickable" : "") + (row.count ? "" : " zero") + '"' +
+        clickAttr(row) + (clickable ? ' type="button"' : "") + ">" +
         '<span class="sw" style="background:' +
         (row.count ? seriesColor(row.slot) : "var(--line)") +
         '"></span><span class="lbl">' + esc(row.label) + "</span>" +
         '<span class="val">' + row.count +
         (total ? " · " + Math.round((row.count / total) * 100) + "%" : "") + "</span>" +
-        "</" + (row.drill ? "button" : "div") + ">";
+        "</" + (clickable ? "button" : "div") + ">";
     }).join("") + "</div>";
   }
 
@@ -2203,7 +2230,7 @@ function donut(rows, opts) {
       x2.toFixed(2) + " " + y2.toFixed(2) + '" fill="none" stroke="' +
       seriesColor(row.slot) +
       '" stroke-width="' + thick + '" stroke-linecap="butt"' +
-      (row.drill ? ' class="clickable" data-drill="' + row.drill + '"' : "") +
+      (isClickable(row) ? ' class="clickable"' + clickAttr(row) : "") +
       "><title>" + esc(row.label + ": " + row.count) + "</title></path>";
   }).join("");
 
@@ -2215,6 +2242,91 @@ function donut(rows, opts) {
     '<text class="holesub" x="' + cx + '" y="' + (cy + 15) + '" text-anchor="middle">' +
     esc((opts.unit || "TOTAL").toUpperCase()) + "</text></svg>" +
     coverage() + "</div>";
+}
+
+/* Most Asked, as a donut instead of a list that grows with every new
+ * distinct question. `top_topics` arrives sorted already (server caps it at
+ * MAX_TOP_TOPICS = 15) — this only decides how many get their own wedge.
+ * Six is the ceiling: past that a slice reads as a sliver, not a fact.
+ * Everything past six folds into one "N other questions" wedge rather than
+ * being dropped, because a bank asking "did we miss anything" deserves an
+ * honest count, not a top-6 list that quietly discards the tail.
+ *
+ * Returns {rows, detail} — `rows` go straight into donut(); `detail` is
+ * stashed on state and read back by index when a wedge or legend row is
+ * clicked, since donut() only knows how to draw a slice, not what a slice
+ * means.
+ */
+var TOPIC_DONUT_MAX = 6;
+function topicDonutData(topics) {
+  var head = topics.slice(0, TOPIC_DONUT_MAX);
+  var rest = topics.slice(TOPIC_DONUT_MAX);
+  var detail = head.map(function (t) {
+    return { example: t.example, count: t.count, outcomes: t.outcomes || {} };
+  });
+  var rows = head.map(function (t, i) {
+    return { label: t.example, count: t.count, slot: (i % 8) + 1, topicIdx: i };
+  });
+  if (rest.length) {
+    var restCount = rest.reduce(function (s, t) { return s + t.count; }, 0);
+    rows.push({
+      label: A("n_other_questions", null, { n: rest.length }),
+      count: restCount, slot: (head.length % 8) + 1, topicIdx: head.length
+    });
+    detail.push({ isOther: true, items: rest });
+  }
+  return { rows: rows, detail: detail };
+}
+
+/* The detail card for one wedge — the question, what happened to it, and
+ * (only when it actually has a miss and the viewer can act on it) a way to
+ * follow up, so the panel that started with "what are people asking" ends
+ * with "here is exactly what to do about it" instead of a dead end. */
+function topicDetailCard(item) {
+  if (item.isOther) {
+    return '<div class="topicdetail">' +
+      '<h3>' + esc(A("n_other_questions", null, { n: item.items.length })) + "</h3>" +
+      item.items.map(function (t) {
+        return '<div class="topic"><span class="n">' + t.count + "</span><span>" +
+          esc(t.example) + "</span></div>";
+      }).join("") + "</div>";
+  }
+  var outcomes = item.outcomes || {};
+  var rows = Object.keys(outcomes).map(function (outcome) {
+    var cls = outcome === "unanswered" ? "bad"
+      : (["human_request", "complaint", "account_blocked"].indexOf(outcome) > -1 ? "warn" : "");
+    return '<div class="topic' + (cls ? " " + cls : "") + '"><span class="n">' +
+      outcomes[outcome] + "</span><span>" +
+      esc(A("outcome_" + outcome, OUTCOME_LABEL[outcome] || outcome)) + "</span></div>";
+  }).join("");
+  var canFollowUp = outcomes.unanswered && can("gaps.read");
+  return '<div class="topicdetail">' +
+    '<h3>' + esc(A("what_happened_when_asked")) + "</h3>" +
+    '<div class="qtext">“' + esc(item.example) + '”</div>' +
+    rows +
+    (canFollowUp
+      ? '<button class="btn ghost sm" data-drill="gaps">' + esc(A("view_in_content_gaps")) + "</button>"
+      : "") + "</div>";
+}
+
+function wireTopicDetail() {
+  var openIdx = null;
+  Array.prototype.forEach.call(document.querySelectorAll("[data-topic-idx]"), function (el) {
+    function toggle() {
+      var idx = parseInt(el.getAttribute("data-topic-idx"), 10);
+      var box = $("topic-detail");
+      if (!box) return;
+      if (openIdx === idx) { box.innerHTML = ""; openIdx = null; return; }
+      box.innerHTML = topicDetailCard(state.topicDetail[idx]);
+      openIdx = idx;
+      wireDrills();
+      box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+    el.onclick = toggle;
+    el.onkeydown = function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+    };
+  });
 }
 
 /* The channel panel: the catalogue, with traffic folded in.
@@ -2338,6 +2450,9 @@ function loadDashboard() {
     var langTotal = a.languages.reduce(function (s, r) { return s + r.count; }, 0);
     var qRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) > -1; });
     var otherRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) < 0; });
+    var topicData = topicDonutData(a.top_topics);
+    var topicRows = topicData.rows;
+    state.topicDetail = topicData.detail;
 
     // Brand in the heading so the page is recognisable across a table; the
     // registered name beneath it so the document is exact when read closely.
@@ -2458,15 +2573,13 @@ function loadDashboard() {
       (a.unclassified_turns ? '<div class="note">' +
         esc(A("unclassified_note", null, { n: num(a.unclassified_turns) })) + "</div>" : "") +
       "</div>" +
-      '<div class="panel"><h3>' + esc(A("most_asked")) + "</h3>" + (a.top_topics.length
-        ? a.top_topics.map(function (t) {
-            var d = can("gaps.read");
-            return '<div class="topic' + (d ? " drill" : "") + '"' +
-              (d ? ' data-drill="gaps" role="button" tabindex="0"' : "") + ">" +
-              '<span class="n">' + t.count + "</span><span>" +
-              esc(t.example) + "</span></div>";
-          }).join("")
-        : '<div class="empty">' + esc(A("nothing_asked_yet")) + "</div>") +
+      '<div class="panel"><h3>' + esc(A("most_asked")) + "</h3>" +
+      donut(topicRows, {
+        unit: A("unit_questions", "questions"),
+        label: A("most_asked"),
+        empty: A("nothing_asked_yet")
+      }) +
+      '<div id="topic-detail"></div>' +
       '<div class="note">' + esc(A("grouped_by_wording")) + "</div></div>" +
       "</div>";
 
@@ -2511,6 +2624,7 @@ function loadDashboard() {
     $("do-print").onclick = function () { window.print(); };
     wireChartTip(a.daily);
     wireDrills();
+    wireTopicDetail();
     loadActivity();
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
