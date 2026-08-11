@@ -16,6 +16,14 @@
 **Read `README.md` for the service itself.** This file is how the product
 actually behaves, the rules that must not regress, and the roadmap.
 
+**Durable knowledge lives in `docs/` (OKM Phase 1 — see `docs/README.md`):**
+runbooks, per-integration failure modes, and `docs/decisions/` — the ADRs
+recording *why* each load-bearing choice was made, with PR references. Before
+re-deriving or re-litigating a design choice, check the ADR index. When a
+session makes a real decision, it ends by appending an ADR — that is how the
+reasoning in PR bodies and conversations stops evaporating. Checkable doc
+claims are enforced by `tests/test_docs_truth.py` (ADR-0013).
+
 ## What this project is
 
 **Olink Bank Assist** — a white-label AI banking assistant for Ethiopian banks
