@@ -4,7 +4,8 @@
 
 Deliberately the same shape and the same workflow as `i18n_export.py`, so a
 reviewer learns one process rather than two. Edit the language columns, leave
-the first three alone, then `faq_import.py --write` reads it back.
+the first three alone, then `faq_import.py <slug> --write` reads it back —
+as drafts, always, whatever the status column says.
 
 **Why this exists rather than "ask the bank to translate it".** A hundred and
 sixty answers in four more languages is six hundred and forty pieces of
