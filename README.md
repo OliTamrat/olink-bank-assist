@@ -157,6 +157,29 @@ Two properties that must not be relaxed:
 - **The lookup sits after every guardrail.** Putting it first is the obvious
   optimisation and would let a bank publish an answer to "what is my balance".
 
+### Translating them
+
+The 160 CBE answers live in the production database in English only. They are
+the last thing a customer can reach in English after asking in Amharic, and
+they are the one translation that is a second piece of *bank-approved copy*
+rather than a convenience — a curated answer is served verbatim, with no model
+call and no gate after it.
+
+```bash
+python scripts/faq_export.py cbe          # -> review/faq-cbe.tsv
+# fill in the four language columns
+python scripts/faq_import.py cbe          # dry run: prints every change
+python scripts/faq_import.py cbe --write  # applies it, as DRAFTS
+```
+
+Both halves need the production database. The importer **writes drafts only**,
+whatever the sheet says — approving is a separate act in the admin panel,
+because a translation going straight to the live path in a language nobody on
+the team reads is exactly what the review step exists to prevent.
+
+`POST /faq/translate` does the same job in bulk with Gemini. It is an
+accelerator, not a prerequisite: the sheet loop needs no model at all.
+
 ## Importing a bank's published pages
 
 `ingest.py`. Paste a URL **or the page text**, see exactly what would be
@@ -345,21 +368,45 @@ olink-bank-assist/
     seed*.py          Demo Bank Ethiopia (15 docs) + CBE / Dashen / Awash prospect tenants
     evals.py          Golden-question eval runner
     static/           widget.html (embeddable chat + call), admin.html (the whole console)
-  migrations/         Alembic environment + versions (0001 baseline .. 0022 head)
+  migrations/         Alembic environment + versions (0001 baseline .. 0023 head)
   docs/               video-teller.md, per-person-logins.md
-  tests/              1,107 tests: tenancy, guardrails, retrieval, teller lifecycle,
+  tests/              1,274 tests: tenancy, guardrails, retrieval, teller lifecycle,
                       verification, departments, FAQ, ingest, i18n, permissions, evals
   .github/workflows/  CI: ruff + mypy strict + pytest + evals + migration round-trip + Docker
 ```
 
 ## Language notes
 
+Five languages, and that means the whole product rather than the replies
+alone. **318 strings across three tables, no gaps:**
+
+| Table | Strings | Covers |
+|---|---|---|
+| `strings.json` | 20 | what the assistant says |
+| `ui_strings.json` | 49 | the widget's buttons and labels |
+| `admin_strings.json` | 249 | the staff panel, teller console included |
+
 - Ethiopic script is detected as Amharic, with a Tigrinya orthographic tell
   (the ኣ series) to separate the two; Oromo/Somali use keyword lists. Users can
   also pin a language in the widget.
-- EN and AM strings are reviewed; **OM, TI, SO strings are first drafts and
-  must go through linguist review** before any bank pilot. `i18n.py` carries
-  `_NOTES` for translators.
+- **The classifier reads all five too.** Amharic and Tigrinya share a script
+  and almost no spellings — ሂሳብ is the Amharic account, ሕሳብ the Tigrinya one —
+  so the Amharic rules matched no Tigrinya sentence at all until August 2026.
+  A customer writing in Tigrinya could report theft and file no complaint.
+  `review/phrasebook.tsv` is the regression suite for this and
+  `scripts/check_phrasebook.py` runs it: **76/76**.
+- EN and AM strings are reviewed; **OM, TI, SO are first drafts and must go
+  through linguist review** before any bank pilot. That now includes the
+  classifier phrasings, so the review is load-bearing rather than cosmetic.
+  Hand a reviewer `review/Olink_Bank_Assist_language_review.xlsx` — four
+  sheets, generated from the live tables by
+  `scripts/build_review_workbook.py`.
+- **Not translated, deliberately:** proper nouns (Fayda, Telegram, WhatsApp),
+  permission identifiers, per-tenant database content, and anything a customer
+  typed. Ge'ez writes the Fayda name as ፋይዳ — transliteration, not
+  translation.
+- **The 160 curated CBE answers are English-only.** That is the one remaining
+  gap; see below.
 
 ## Demo data disclaimer
 
@@ -378,10 +425,12 @@ with a pull date.
 Short version — the full roadmap is in `CLAUDE.md`:
 
 - **Phase 2, in progress:** first paying pilot. Bulk import is the onboarding
-  path; analytics and the handoff console have shipped; CSV/print export and
-  embedding retrieval behind the same `retrieve()` interface are open. Hosting
-  must move in-country (Ethio Telecom ECS) **before** real customer chat logs
-  exist — chat content is personal data under Proclamation 1321/2024 Art. 22.
+  path; analytics, the handoff console, the live teller and full five-language
+  coverage have shipped. Open: embedding retrieval behind the same
+  `retrieve()` interface, LLM intent refinement above the rules floor, and the
+  linguist review. Hosting must move in-country (Ethio Telecom ECS) **before**
+  real customer chat logs exist — chat content is personal data under
+  Proclamation 1321/2024 Art. 22.
 - **Phase 3:** authenticated account servicing — OTP session, read-only first,
   via the bank's middleware team. INSA certification.
 - **Phase 4:** WhatsApp Business and USSD/IVR for feature phones; the financial

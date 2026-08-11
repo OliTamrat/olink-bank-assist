@@ -307,29 +307,80 @@ and Afaan Oromo while every competitor's support is English-first. A product
 that is bilingual in its replies and English in its buttons has given that
 advantage away for the sake of whatever shortcut was taken that afternoon.
 
-### Where this is currently broken — audited 2026-08-10
+### Where this stands — audited 2026-08-11
 
-`bankassist/strings.json` is complete: 20 assistant strings × 5 languages,
-no gaps. **The widget's own interface is not.** It has no i18n plumbing at
-all — every label is a hard-coded English literal in `static/widget.html`,
-including the entire live-teller flow:
+**All three string tables are complete: 318 strings × 5 languages, no gaps,
+nothing silently left in English.**
 
-> Speak to a {bank} teller · Available now — audio or video · Connect ·
-> Straight away · Once they have checked your ID · Not on this call, ever ·
-> Audio · Video · Not now · Join the queue · Waiting for a teller · Leave the
-> queue · Hold your Fayda ID up to the camera · Connecting… · Reconnecting… ·
-> Messages · Official {bank} information · Searching official information…
+| Table | Strings | Covers |
+|---|---|---|
+| `strings.json` | 20 | what the assistant says to a customer |
+| `ui_strings.json` | 49 | the widget's own buttons and labels |
+| `admin_strings.json` | 249 | the staff panel, teller console included |
 
-That is the worst place in the product for it. An Amharic speaker holds an
-entire conversation in Amharic, reaches the moment they need a human, and the
-interface switches to English exactly when they are least able to absorb it.
-The admin panel is also English-only, which matters less — bank staff are a
-different audience from customers — but it is the same debt.
+The widget and the admin panel both got their string tables in August 2026.
+The teller console was the last surface and is done — queue, duty panel,
+call room, identity checklist and the boundary text a teller must never have
+to read in a second language.
 
-**Closing this means giving the widget a string table served per language, the
-same way the assistant already works.** It is a real piece of work, not a
-find-and-replace, and it is the next thing to build. Do not add another
-customer-facing English literal to `widget.html` in the meantime.
+**Three failures worth remembering, because all three looked finished from
+the inside:**
+
+1. **A complete table is not a translated product.** Twenty-seven admin keys
+   sat translated into five languages and wired to nothing for a fortnight.
+   The table said done and the review sheet showed full coverage, because
+   both measure the TABLE and neither measures the CALL SITES.
+   `test_no_key_is_translated_and_then_never_used` now checks the direction
+   nothing was checking.
+2. **A sentence built from fragments is not translatable.**
+   `"All " + n + " " + unit + " " + verb + " " + label` only reads correctly
+   in a language that happens to use the English order, and three of the five
+   here do not. Templates with `{n}` and `{label}` in them, always — `A()` and
+   `T()` both interpolate.
+3. **A label table must never be more cacheable than the page that reads it.**
+   `/admin/strings` had no cache headers while `/admin` was `no-store`, so a
+   fresh page met a stale table: keys from the previous release rendered
+   translated and newer ones did not. It reads exactly like a translation
+   somebody abandoned halfway, and it was reported that way.
+
+**What is deliberately NOT translated**, so the gaps are decisions on the
+record rather than oversights: proper nouns (Fayda — Ethiopia's digital ID —
+along with Telegram, WhatsApp and the other channel names), permission
+identifiers like `documents.write`, per-tenant database content (role names
+and their descriptions), and anything a customer actually typed. Ge'ez-script
+languages write the Fayda name as ፋይዳ, which is transliteration rather than
+translation; `test_the_fayda_name_is_never_translated` pins that it survives.
+
+**Still English, and tracked:** the 160 curated CBE answers exist in English
+only. That is the one remaining gap and it is content, not plumbing — see
+"Curated answers" below for how it gets closed.
+
+## Shipped 2026-08-10/11 — one long session, seven changes
+
+Recorded because five of the seven were found by *using* the product rather
+than by reading it, and that is the transferable part.
+
+| PR | What | Why it mattered |
+|---|---|---|
+| #101 | Confirmations as a toast card | "160 imported" and a failed save rendered identically, in the one strip of the page nobody watches |
+| #102 | Dashboard, Settings, Team in five languages | The last English-only pages; 58 → 198 keys |
+| #103 | Rebuilt the linguist workbook + its builder | The file described 18 strings; the product had 328. Its build script had been thrown away |
+| #104 | Timestamps on every conversation and message | Stored since migration 0001, on the wire everywhere, rendered nowhere |
+| #105 | Tigrinya and Somali reach the guardrails | 21 of 30 phrasebook rows failed and every one was ti or so |
+| #106 | Label tables are `no-store` | A fresh page against a cached table reads as a half-finished translation — and it was reported as one |
+| #107 | The teller console wired to its own strings | 27 keys translated into five languages and connected to nothing |
+
+**The pattern worth keeping.** Three of those were the same failure wearing
+different clothes: *the thing measuring the work was measuring something
+adjacent to it.* A complete string table with dead call sites. A review sheet
+at "100%" that had never contained the 198 strings staff read. A static
+checker passing on a file that would not parse. Each looked finished from the
+inside, and each was caught by driving the real thing.
+
+Two mistakes of mine are in that list rather than quietly fixed: I broke the
+whole panel with an unterminated string literal (`node --check` now guards
+it), and I shipped a "reproducible" workbook one commit before it actually
+was. Both were caught by re-running rather than by re-reading.
 
 ## Safety doctrine (NEVER regress)
 
@@ -367,9 +418,9 @@ customer-facing English literal to `widget.html` in the meantime.
 ## Current state
 
 **Live** at `https://bankassist-430565798339.us-east1.run.app`, deployed from
-`main` by GitHub Actions on every CI-green push. **1,107 tests**, mypy
+`main` by GitHub Actions on every CI-green push. **1,289 tests**, mypy
 `--strict` clean, ruff clean, 20 golden-question evals, schema at migration
-**0022**.
+**0023**.
 
 Four tenants seeded in the production database:
 
@@ -779,6 +830,39 @@ Two properties that must not be relaxed:
   exactly this reason, and a test proves `respond()` does not serve the
   excluded intents.
 
+### The 160 CBE answers are English-only — the one open language gap
+
+Imported and published 2026-08-10. They live in the **production database**,
+not in this repo, and they are the last part of the product a customer can
+reach in English when they asked in Amharic.
+
+**Why this one is different from every other translation done so far.** The
+assistant's replies, the widget and the staff panel are string tables in the
+repo: draft all five, ship, review later. A curated answer is the bank's own
+wording served **verbatim with no model call** — that is the entire point of
+the feature — so a translation of one is not a convenience, it is a second
+piece of bank-approved copy. It still gets drafted rather than waited for,
+per the multilingual rule, but the reviewer's sign-off matters more here than
+anywhere else in the product.
+
+**The loop, and who can run which half:**
+
+1. `python scripts/faq_export.py cbe` → `review/faq-cbe.tsv`, one row per
+   question and per answer, five language columns. **Needs the production
+   database**, so it runs wherever that reaches — not from a sandbox.
+2. The four language columns get filled in. Drafting them is ordinary work;
+   the sheet is the same shape as `review/strings.tsv` and the same reviewer
+   reads both.
+3. `python scripts/faq_import.py cbe --write` reads it back. **Dry run by
+   default** — it prints what would change and touches nothing until
+   `--write`, because this writes the words a customer reads with no gate
+   after it.
+
+`POST /faq/translate` (Gemini) exists and does the same job in bulk, but it
+is not the only route and should not be treated as a prerequisite: the
+sheet-and-review loop needs no model at all and produces the reviewable
+artefact either way.
+
 ## Importing a bank's published pages
 
 `ingest.py`. Paste a URL or the page text, **see what would be imported**,
@@ -849,12 +933,20 @@ a product decision wearing a performance change.
 
 ### Phase 1 — Demo bot ✅ complete and live
 Remaining polish, not blockers:
-- [ ] **Rotate the four admin tokens** — they were exposed in CI logs.
-      `python -m bankassist.show_token <slug> --rotate`.
+- [x] **Rotate the four admin tokens** — done 2026-08-10 after CI-log
+      exposure. `python -m bankassist.show_token <slug> --rotate` if it is
+      ever needed again.
 - [ ] **Split the runtime service account** — `bankassist-runtime` with only
       `secretmanager.secretAccessor`, replacing `bankassist-deployer` as the
       Cloud Run runtime identity.
-- [ ] Linguist review of OM/TI/SO strings (founder-owned, see above).
+- [ ] **Linguist review of OM/TI/SO** — the one open language item, and it
+      now covers more than wording. `review/Olink_Bank_Assist_language_review.xlsx`
+      carries four sheets: the assistant's replies, the phrasebook, the
+      widget's buttons and 249 staff-panel strings. **Sheet 2 matters most.**
+      Every language defect found in a live demo so far was a sentence the
+      assistant failed to UNDERSTAND, not a reply worded badly — and the
+      Tigrinya and Somali classifier rules are drafted from my own phrasings,
+      so that sheet is now load-bearing rather than cosmetic.
 - [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`.
 
 ### Phase 2 — First pilot (one bank or MFI)
@@ -974,6 +1066,27 @@ lender (smaller, faster procurement, hungrier).
   through. It also asserts no stylesheet reaches for a `var(--x)` nothing
   defines: CSS treats that as `unset`, so `var(--text)` on a page whose token
   is `--ink` inherits, usually looks right, and hides for months.
+- **The same file runs `node --check` on both pages, and that is not
+  redundant.** Everything else in it is regex over source text, which reads a
+  BROKEN file exactly as happily as a working one. Wiring the teller console
+  swallowed the opening quote of a literal and left its closing quote behind:
+  one syntax error, the whole panel down — sign-in included — and every other
+  check still green. `node` is on PATH here and `--check` parses without
+  executing, so it needs none of the browser globals these files use.
+- **Measure the call sites, not the table.** Three separate failures in one
+  night were the same shape: the thing measuring the work was measuring
+  something adjacent to it. A complete string table with 27 keys wired to
+  nothing. A review sheet at "100%" that had never included the 198 strings
+  staff read. A static checker passing on a file that would not parse. Each
+  looked finished from the inside. When a coverage number says done, ask what
+  it counted.
+- **A stale label table is not a cache nicety.** `/admin/strings` and
+  `/banks/{slug}/public` are `no-store` because the pages that read them are.
+  Without it a fresh page meets an old table and only the keys from the
+  previous release render translated — which reads as a half-finished
+  translation and was reported as one. The second endpoint also carries
+  `teller_available`, so a cached `false` hides the teller button from
+  customers after a bank switches it on.
 - **Confirmations are toasts, not text in the furniture.** `setStatus(text,
   kind)` in `admin.html` — `"ok"`, `"error"`, or omitted for neutral. The host
   is a direct child of `<body>`, deliberately: inside the shell it vanished at
