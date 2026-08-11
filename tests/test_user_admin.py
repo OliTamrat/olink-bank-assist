@@ -374,26 +374,48 @@ def test_the_embed_snippet_points_at_a_script_that_exists(
     assert f'data-bank="{demo_bank.slug}"' in snippet
 
 
-def test_the_channel_list_does_not_promise_what_is_not_built(
+def test_the_channel_list_does_not_promise_what_is_not_connected(
     client: TestClient, demo_bank: Any
 ) -> None:
-    """WhatsApp is not built, and the page must not imply otherwise.
+    """A platform logo on a settings page is a promise made on the bank's
+    behalf to someone deciding whether to buy.
 
-    "Coming soon" beside a platform logo is a promise made on the bank's
-    behalf to someone deciding whether to buy. Every entry states its status
-    and what it would require, and the requirements are what make the claim
-    checkable rather than reassuring.
+    This guard used to say "not built", and every channel being built now is
+    exactly when it would be tempting to delete it. The risk did not go away,
+    it moved: the lie available today is not "coming soon" beside something
+    unwritten, it is a channel reading **live** when no credential has been
+    pasted — an operator then waits for messages that can never arrive.
+
+    So the invariant is now: nothing claims LIVE without a credential, and
+    anything short of LIVE says what it would take.
     """
     from bankassist import channels
 
     admin = _signed_in(client, demo_bank, "boss@bank.et", "admin")
     rows = {c["key"]: c for c in admin.get("/admin/api/demo/integrations").json()["channels"]}
 
+    # The widget is live by construction — it needs no credential at all.
     assert rows["web"]["status"] == channels.LIVE
-    assert rows["telegram"]["status"] == channels.AVAILABLE  # no token set yet
-    for key in ("whatsapp", "messenger", "instagram", "viber", "sms"):
-        assert rows[key]["status"] == channels.PLANNED, key
-        assert rows[key]["needs"], f"{key} claims to be planned but lists no prerequisite"
+
+    # This tenant has connected nothing, so nothing else may claim to be live.
+    for key, row in rows.items():
+        if key == "web":
+            continue
+        assert row["status"] != channels.LIVE, (
+            f"{key} reports live with no credential stored — an operator would "
+            "wait for messages that cannot arrive"
+        )
+        assert row["needs"], f"{key} is not live but lists no prerequisite"
+
+    # Self-serve and business-gated are different waits, and a bank planning
+    # its rollout is entitled to know which is which. Telegram and Viber issue
+    # a token in minutes; the rest need someone else's approval first.
+    assert len(rows["telegram"]["needs"]) == 1
+    assert len(rows["viber"]["needs"]) == 1
+    assert len(rows["whatsapp"]["needs"]) >= 3, (
+        "WhatsApp's prerequisites are the business verification, the number, "
+        "and Meta's review — collapsing them understates the wait"
+    )
 
 
 def test_connecting_telegram_moves_it_to_live(

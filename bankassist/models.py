@@ -98,6 +98,25 @@ class Bank(Base):
     teller_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     telegram_bot_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     telegram_webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # No matching viber_webhook_secret: Viber signs the body with this same
+    # token rather than echoing a secret we chose, so there is no second
+    # credential to store. See migration 0024.
+    viber_auth_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Meta: WhatsApp, Messenger and Instagram are three products of ONE app,
+    # delivered to one callback and signed with one app secret. Shared here for
+    # that reason — see migration 0025.
+    meta_app_secret: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    meta_verify_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    whatsapp_phone_number_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    whatsapp_access_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    messenger_page_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    instagram_access_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # SMS has no single vendor: these describe whichever aggregator the bank
+    # has an agreement with. See bankassist/sms.py.
+    sms_inbound_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sms_send_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sms_auth_header: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    sms_sender_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Where to POST a handoff so it lands in the bank's own contact-centre tool
     # rather than only in our console. Null = off, and that has to stay the
     # default: the payload carries a customer's question and their phone
@@ -207,7 +226,8 @@ class Conversation(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     bank_id: Mapped[str] = mapped_column(String(36), index=True)
-    channel: Mapped[str] = mapped_column(String(16), default="web")  # web | telegram
+    # web | telegram | viber | whatsapp | messenger | instagram | sms
+    channel: Mapped[str] = mapped_column(String(16), default="web")
     external_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     language: Mapped[str | None] = mapped_column(String(8), nullable=True)
     # A name the customer volunteered ("I'm Oli"), used to address them for

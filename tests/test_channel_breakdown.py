@@ -71,7 +71,10 @@ def test_an_unused_channel_reports_zero_rather_than_being_dropped(
 ) -> None:
     rows = {row["channel"]: row for row in _analytics(client, demo_bank)["channels"]}
     assert rows["whatsapp"]["count"] == 0
-    assert rows["whatsapp"]["status"] == channels.PLANNED
+    # Built, but this tenant has pasted no credentials — "available", not
+    # "live". Zero traffic on a connected channel and zero on an unconnected
+    # one look identical in a count; the status is what separates them.
+    assert rows["whatsapp"]["status"] == channels.AVAILABLE
     # The name is what a person reads; the key is what the code joins on.
     assert rows["whatsapp"]["name"] == "WhatsApp"
 
