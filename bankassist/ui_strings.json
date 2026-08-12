@@ -47,6 +47,9 @@
     "label_contact_saved": "Contact saved",
     "label_knowledge_gap": "Knowledge gap",
     "label_general": "General guidance",
+    "label_routed_to_person": "Routed to a person",
+    "n_sources": "{n} sources",
+    "one_source": "{n} source",
     "today": "Today",
     "yesterday": "Yesterday"
   },
@@ -98,6 +101,9 @@
     "label_contact_saved": "አድራሻ ተቀምጧል",
     "label_knowledge_gap": "የመረጃ ክፍተት",
     "label_general": "አጠቃላይ መመሪያ",
+    "label_routed_to_person": "ወደ ሰው ተላልፏል",
+    "n_sources": "{n} ምንጮች",
+    "one_source": "{n} ምንጭ",
     "today": "ዛሬ",
     "yesterday": "ትናንት"
   },
@@ -149,6 +155,9 @@
     "label_contact_saved": "Qunnamtiin olkaa'ameera",
     "label_knowledge_gap": "Qaawwa odeeffannoo",
     "label_general": "Qajeelfama waliigalaa",
+    "label_routed_to_person": "Gara namaatti dabarfameera",
+    "n_sources": "Maddoota {n}",
+    "one_source": "Madda {n}",
     "today": "Har'a",
     "yesterday": "Kaleessa"
   },
@@ -200,6 +209,9 @@
     "label_contact_saved": "መራኸቢ ተዓቂቡ",
     "label_knowledge_gap": "ጋግ ሓበሬታ",
     "label_general": "ሓፈሻዊ መምርሒ",
+    "label_routed_to_person": "ናብ ሰብ ተመሓላሊፉ",
+    "n_sources": "{n} ምንጭታት",
+    "one_source": "{n} ምንጪ",
     "today": "ሎሚ",
     "yesterday": "ትማሊ"
   },
@@ -251,6 +263,9 @@
     "label_contact_saved": "Xiriirka waa la keydiyay",
     "label_knowledge_gap": "Farqiga macluumaadka",
     "label_general": "Hagitaan guud",
+    "label_routed_to_person": "Loo gudbiyay qof",
+    "n_sources": "{n} ilo",
+    "one_source": "{n} il",
     "today": "Maanta",
     "yesterday": "Shalay"
   },
@@ -302,6 +317,9 @@
     "label_contact_saved": "Mawasiliano yamehifadhiwa",
     "label_knowledge_gap": "Pengo la maarifa",
     "label_general": "Mwongozo wa jumla",
+    "label_routed_to_person": "Imeelekezwa kwa mtu",
+    "n_sources": "Vyanzo {n}",
+    "one_source": "Chanzo {n}",
     "today": "Leo",
     "yesterday": "Jana"
   }
