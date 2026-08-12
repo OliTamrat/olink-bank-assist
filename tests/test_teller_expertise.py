@@ -243,6 +243,20 @@ def test_the_queue_tells_each_teller_what_they_cover(
     assert rows[0]["covers"] is True
 
 
+def test_the_team_list_says_who_can_actually_serve(
+    client: TestClient, db_session: Any, demo_bank: Any
+) -> None:
+    """The Desk Teams view counts only people routing can offer work to —
+    by permission, not role name, so a renamed teller role keeps working."""
+    _teller_client(client, db_session, demo_bank, "serves@bank.et")
+    users = client.get(
+        "/admin/api/demo/users",
+        headers={"X-Admin-Token": demo_bank.admin_token},
+    ).json()
+    by_email = {u["email"]: u for u in users}
+    assert by_email["serves@bank.et"]["can_serve"] is True
+
+
 def test_the_admin_desk_labels_mirror_the_server() -> None:
     """admin.html carries a DESK_LABEL map for payloads that send only desk
     codes. It must be exactly departments.LABELS or the Team page and the

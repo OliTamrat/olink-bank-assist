@@ -1488,6 +1488,11 @@ def list_users(
             # manager notices nobody has declared the fraud desk.
             "teller_languages": u.teller_languages,
             "teller_departments": u.teller_departments,
+            # Whether this person can take live calls at all, so the Desk
+            # Teams view counts only people routing can actually offer work
+            # to. By permission, not role name — a bank that renames its
+            # teller role keeps a correct roster.
+            "can_serve": roles.user_has(db, u, permissions.Perm.TELLER_SERVE),
             # So the UI can disable its own row's button rather than offering an
             # action that is always refused.
             "is_you": principal.user is not None and principal.user.id == u.id,
