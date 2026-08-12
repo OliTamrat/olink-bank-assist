@@ -5,12 +5,12 @@ tap away.**
 
 A white-label AI banking assistant for Ethiopian banks and microfinance
 institutions. Customers ask about accounts, transfers, loans, fees and saving
-in **Amharic, Afaan Oromo, Tigrinya, Somali, Swahili or English**, over the channel
-they already have on the phone they already own — a **web chat widget**,
-**Telegram**, **Viber**, **WhatsApp**, **Facebook Messenger**, **Instagram
-Direct** or **SMS**. When the assistant cannot answer, or must not, the customer
-is handed to **a real bank teller on a live call inside the same conversation**,
-with the whole transcript already in front of them.
+in **Amharic, Afaan Oromo, Tigrinya, Somali, Swahili or English**, over the
+channel they already have on the phone they already own — a **web chat
+widget**, **Telegram**, **Viber**, **WhatsApp**, **Facebook Messenger**,
+**Instagram Direct** or **SMS**. When the assistant cannot answer, or must
+not, the customer is handed to **a real bank teller on a live call inside the
+same conversation**, with the whole transcript already in front of them.
 
 It is built on one hard constraint, and every other design decision follows
 from it: **the assistant never moves money and never sees an account.** Core
@@ -36,11 +36,40 @@ Live at `https://bankassist-430565798339.us-east1.run.app`, deployed from
 `main` by GitHub Actions on every CI-green push. The full product plan,
 architecture doctrine and roadmap live in `CLAUDE.md`.
 
+## Why this wins in Ethiopia
+
+1. **Data residency is law, not a preference.** Personal Data Protection
+   Proclamation No. 1321/2024, Art. 22 requires personal data collected in
+   Ethiopia to stay on servers located in Ethiopia — a compliance bar most
+   foreign SaaS chatbot vendors cannot clear. Olink already has the Ethio
+   Telecom ECS deployment path priced and an INSA-certification track record
+   (Onekof P1–P6, certified 2026-07-03) to lean on.
+2. **Telegram-first.** Ethiopian banks already run Telegram presences, so a
+   bot here means zero install friction on the cheap Android phones most
+   customers already carry — not a new app to convince anyone to download.
+3. **The native-language gap is the moat, not a feature checkbox.** Tens of
+   millions of new digital banking users (telebirr alone: 50M+) think in
+   Amharic and Afaan Oromo while every competitor's support stays
+   English-first. Getting this right took real work, not a translation API:
+   the account-security guardrail alone went through five rounds of
+   native-phrasing testing per language to find the difference between an
+   ordinary transfer and a social-engineering attempt — the same words, in
+   the opposite order.
+4. **Channel-to-human continuity is real, but it is not the whole story.**
+   [Glia](https://www.glia.com) already sells exactly that mechanic — a
+   conversation surviving a handoff from AI to a live human — at scale, to
+   700+ US banks and credit unions. What Glia does not have is Telegram as a
+   first channel, native-language guardrail depth for Ethiopian languages, an
+   in-country data-residency posture, or a price and deployment speed a
+   single bank or MFI can say yes to without an enterprise procurement cycle.
+   That combination — not the handoff mechanic alone — is the whitespace.
+
 ## Documentation
 
 `docs/` is this product's OKM (Olink Knowledge Management) tree —
 `overview.md`, `architecture.md`, `runbooks/`, `integrations/`, and
-`decisions/` (ADRs recording *why* each load-bearing choice was made).
+`decisions/` (19 ADRs recording *why* each load-bearing choice was made, from
+"the assistant never moves money" to this week's language-expansion order).
 Checkable claims there are graded against the actual code by
 `tests/test_docs_truth.py` in CI, not just written down. It's also the
 knowledge base behind **Ask OKM**, an internal tenant of this same product
@@ -144,6 +173,37 @@ acronym at the moment they want help trades their vocabulary for ours.
 - Ending the call propagates to both sides. The customer sees the teller's
   first name; the teller sees the customer's.
 
+## The operator console
+
+Everything a bank's own staff use lives in one panel (`static/admin.html`) —
+no separate tool, no second login. What's in it, beyond the sections below
+with their own deep dives:
+
+- **Overview** — is the assistant actually working: conversations, deflection
+  rate (customers resolved without a person), languages spoken, channel mix.
+  A rate with no denominator is reported as `null`, never `0` — "0%
+  deflection" on a fresh tenant would be a lie told by a division.
+- **Content Gaps** — what to write next: every unanswered question grouped by
+  wording and ranked by frequency, split from questions the assistant *could*
+  answer from general banking knowledge but the bank hasn't written its own
+  version of yet. This is the thing a plain FAQ bot cannot give a bank at
+  all — a real, ranked list of what its customers ask and nobody can answer.
+- **Global search** — one box across conversations, escalations, the
+  knowledge base and curated answers, with results opening straight into the
+  same transcript and editor views the rest of the panel already uses.
+- **Live queue + teller performance** — the real-time call queue a teller
+  works from, plus calls-per-teller and average-wait analytics for whoever
+  manages the floor.
+- **Team & roles** — twelve fine-grained permissions (`permissions.py`),
+  assignable per person per bank — see "Who can do what" below.
+- **Channels** — connect Telegram, Viber, WhatsApp/Messenger/Instagram or SMS
+  by pasting a credential; see "Connecting a channel" below.
+- **Audit log** — every admin mutation and handoff action, actor and
+  timestamp, never the chat content itself.
+
+Built in **six languages from the first line of interface chrome**, not
+retrofitted — see "Language notes" below.
+
 ## Escalation desks
 
 `departments.py` routes every handoff to one of eight desks — fraud, cards,
@@ -182,7 +242,7 @@ verbatim, with no model call and no gate after it.
 
 ```bash
 python scripts/faq_export.py dashen          # -> review/faq-dashen.tsv
-# fill in the four language columns
+# fill in the language columns
 python scripts/faq_import.py dashen          # dry run: prints every change
 python scripts/faq_import.py dashen --write  # applies it, as DRAFTS
 ```
@@ -225,11 +285,11 @@ imported, tick, commit. Two steps always.
   private address still gets through.
 
 **A bank's public website is a brochure, not a knowledge base.** Checked
-against CBE's live site (2026-08-10): product pages carry a two-sentence
-definition and a grid of cards that link onward, with the real substance —
-eligibility, benefits, target customers, the service list — folded into
-collapsed accordions. That is a page built to route a visitor to a button, not
-to answer a question. Import earns its keep on the pages that *do* have prose,
+against CBE's live site: product pages carry a two-sentence definition and a
+grid of cards that link onward, with the real substance — eligibility,
+benefits, target customers, the service list — folded into collapsed
+accordions. That is a page built to route a visitor to a button, not to
+answer a question. Import earns its keep on the pages that *do* have prose,
 but the corpus for a real pilot comes from what a bank already gives its own
 staff: call-centre scripts, product manuals, branch circulars, training
 material. **Ask for those in the pilot conversation; do not plan onboarding
@@ -285,7 +345,7 @@ by code and must never fail in either mode.
 ## Database migrations
 
 Production schema is managed by **Alembic** — `0001_initial.py` is the
-baseline, head is **0022**. `BANKASSIST_DATABASE_URL` is the single source of
+baseline, head is **0025**. `BANKASSIST_DATABASE_URL` is the single source of
 truth for the URL (`migrations/env.py` reads it; `alembic.ini` has none).
 
 ```bash
@@ -353,7 +413,7 @@ still gated on a business account — lives in `docs/integrations/`.
 
 | Channel | Connect | Waits on |
 |---|---|---|
-| Telegram | `POST /admin/api/{slug}/telegram/connect` with a @BotFather token | nothing — minutes |
+| Telegram | `POST /admin/api/{slug}/telegram/connect` with a @BotFather token | nothing — minutes. Live for CBE and Dashen |
 | Viber | `POST /admin/api/{slug}/viber/connect` with a partners.viber.com token | nothing — minutes |
 | WhatsApp / Messenger / Instagram | `POST /admin/api/{slug}/meta/connect`, then paste the returned callback URL + verify token into Meta's dashboard | Meta business verification and review |
 | SMS | `POST /admin/api/{slug}/sms/connect` with the aggregator's send URL | an aggregator agreement (Ethio Telecom) |
@@ -367,7 +427,8 @@ products — they are one app with one signature scheme.
 ```
 olink-bank-assist/
   bankassist/
-    api.py            FastAPI app: chat, widget/admin pages, Telegram webhook, admin + teller API
+    api.py            FastAPI app: chat, widget/admin pages, channel webhooks, admin + teller API,
+                       global search
     agent.py          Orchestration: classify -> guardrails -> curated -> retrieve -> answer
     classifier.py     Language detection, rules-based intent, the account-procedure split
     retrieval.py      Dependency-free BM25 over per-bank knowledge chunks
@@ -388,7 +449,7 @@ olink-bank-assist/
     sms.py            Aggregator contract: generous inbound parsing, numbered billed segments
     channels.py       The honest channel catalogue for Settings — live, and what each costs
     handoff_webhook.py Deliver escalations into a bank's existing contact-centre tool
-    i18n.py           Assistant strings in en/am/om/ti/so, with translator notes
+    i18n.py           Assistant strings in en/am/om/ti/so/sw, with translator notes
     models.py         Bank, Document, Chunk, Conversation, Message, Handoff, Faq,
                       User, Role, RolePermission, TellerSession, AuditLog
     seed*.py          Demo Bank Ethiopia (15 docs) + CBE / Dashen / Awash prospect tenants
@@ -396,44 +457,64 @@ olink-bank-assist/
     static/           widget.html (embeddable chat + call), admin.html (the whole console)
   migrations/         Alembic environment + versions (0001 baseline .. 0025 head)
   docs/               The knowledge base: overview, architecture, runbooks/,
-                      integrations/, decisions/ (ADRs) — see docs/README.md
-  tests/              1,350+ tests: tenancy, guardrails, retrieval, teller lifecycle,
+                      integrations/, decisions/ (19 ADRs) — see docs/README.md
+  tests/              1,450+ tests: tenancy, guardrails, retrieval, teller lifecycle,
                       verification, departments, FAQ, channels, i18n, permissions, evals
-  .github/workflows/  CI: ruff + mypy strict + pytest + evals + migration round-trip + Docker
+  .github/workflows/  CI: ruff + mypy strict + pytest + evals + migration round-trip + Docker;
+                      deploy on green push to main; manual branch pruning
 ```
 
 ## Language notes
 
-Five languages, and that means the whole product rather than the replies
-alone. **318 strings across three tables, no gaps:**
+Six languages, and that means the whole product rather than the replies
+alone. **341 strings across three tables, no gaps:**
 
 | Table | Strings | Covers |
 |---|---|---|
 | `strings.json` | 20 | what the assistant says |
-| `ui_strings.json` | 49 | the widget's buttons and labels |
-| `admin_strings.json` | 249 | the staff panel, teller console included |
+| `ui_strings.json` | 52 | the widget's buttons and labels |
+| `admin_strings.json` | 269 | the staff panel, teller console included |
 
 - Ethiopic script is detected as Amharic, with a Tigrinya orthographic tell
-  (the ኣ series) to separate the two; Oromo/Somali use keyword lists. Users can
-  also pin a language in the widget.
-- **The classifier reads all five too.** Amharic and Tigrinya share a script
-  and almost no spellings — ሂሳብ is the Amharic account, ሕሳብ the Tigrinya one —
-  so the Amharic rules matched no Tigrinya sentence at all until August 2026.
-  A customer writing in Tigrinya could report theft and file no complaint.
-  `review/phrasebook.tsv` is the regression suite for this and
-  `scripts/check_phrasebook.py` runs it: **76/76**.
-- EN and AM strings are reviewed; **OM, TI, SO are first drafts and must go
-  through linguist review** before any bank pilot. That now includes the
-  classifier phrasings, so the review is load-bearing rather than cosmetic.
-  Hand a reviewer `review/Olink_Bank_Assist_language_review.xlsx` — four
-  sheets, generated from the live tables by
-  `scripts/build_review_workbook.py`.
+  (the ኣ series) to separate the two. Afaan Oromo, Somali and Swahili — the
+  three Latin-script local languages — are separated by an elimination rule
+  over positive-signal word sets, not a fixed keyword vote; adding Swahili
+  turned this from a two-way tie-break into a genuine three-way one
+  (`classifier.detect_language`). Users can also pin a language in the
+  widget.
+- **The classifier reads all six too, not just the replies.** Amharic and
+  Tigrinya share a script and almost no spellings — ሂሳብ is the Amharic
+  account, ሕሳብ the Tigrinya one — so the Amharic rules matched no Tigrinya
+  sentence at all until the guardrail was extended. A customer writing in
+  Tigrinya could report theft and file no complaint. `review/phrasebook.tsv`
+  is the regression suite for this (89 rows across all six languages) and
+  `scripts/check_phrasebook.py` runs it against the live classifier.
+- **EN and AM strings are reviewed; OM, TI, SO and SW are first drafts** and
+  must go through linguist review before any bank pilot. That includes the
+  classifier phrasings, not just the wording customers read — the review is
+  load-bearing rather than cosmetic. Hand a reviewer
+  `review/Olink_Bank_Assist_language_review.xlsx` — four sheets, generated
+  from the live tables by `scripts/build_review_workbook.py`.
+- **Swahili shipped as the sixth language, first-pass like Somali** (ADR-0018)
+  — East Africa's own language, ~200M speakers across Kenya, Tanzania, Uganda
+  and Rwanda. Discovery was measurably faster than the four Ethiopian
+  languages needed (Swahili already has substantial representation in
+  mainstream AI/NLP tooling), but it still needed real testing: the
+  account-guardrail's "forgot PIN" rule had a genuine over-refusal bug — the
+  Swahili conditional infix ("if I forget") collided with the forgot-verb
+  stem — found and fixed by running the adversarial case, not by reading the
+  regex.
+- **Next language work stays regional.** The Hausa/Yoruba/Igbo (Nigeria)
+  bundle is parked, not cancelled — near-term expansion is evaluated against
+  East Africa's reach first, the region Swahili already anchors, before a
+  second regional jump to West Africa (ADR-0019). `docs/market-position.md`
+  has the full reasoning, including the real cost of that trade-off.
 - **Not translated, deliberately:** proper nouns (Fayda, Telegram, WhatsApp),
   permission identifiers, per-tenant database content, and anything a customer
   typed. Ge'ez writes the Fayda name as ፋይዳ — transliteration, not
   translation.
 - **The 160 curated Dashen answers are English-only.** That is the one
-  remaining gap; see below.
+  remaining gap; see "Curated answers" above.
 
 ## Demo data disclaimer
 
@@ -452,12 +533,16 @@ with a pull date.
 Short version — the full roadmap is in `CLAUDE.md`:
 
 - **Phase 2, in progress:** first paying pilot. Bulk import is the onboarding
-  path; analytics, the handoff console, the live teller and full five-language
-  coverage have shipped. Open: embedding retrieval behind the same
-  `retrieve()` interface, LLM intent refinement above the rules floor, and the
-  linguist review. Hosting must move in-country (Ethio Telecom ECS) **before**
-  real customer chat logs exist — chat content is personal data under
-  Proclamation 1321/2024 Art. 22.
+  path; analytics, Content Gaps, global search, the handoff console, the live
+  teller and six-language coverage have all shipped. Open: embedding
+  retrieval behind the same `retrieve()` interface, LLM intent refinement
+  above the rules floor, the OM/TI/SO/SW linguist review, and splitting the
+  Cloud Run runtime service account down to least privilege. Hosting must
+  move in-country (Ethio Telecom ECS) **before** real customer chat logs
+  exist — chat content is personal data under Proclamation 1321/2024 Art. 22.
+- **Language expansion:** Swahili shipped 2026-08-12 as the sixth language.
+  Next work stays inside East Africa before any West Africa jump — the
+  Nigeria bundle (Hausa/Yoruba/Igbo) is parked, not cancelled (ADR-0019).
 - **Phase 3:** authenticated account servicing — OTP session, read-only first,
   via the bank's middleware team. INSA certification.
 - **Phase 4:** WhatsApp Business and USSD/IVR for feature phones; the financial
