@@ -3543,6 +3543,213 @@ def analytics(
     }
 
 
+def _seconds_between(start: datetime, end: datetime) -> int:
+    """Whole seconds from start to end, whichever database the rows came from.
+
+    SQLite hands back naive datetimes and Postgres aware ones; `_utc` is the
+    same normalisation `TellerSession.waited_seconds` already applies.
+    """
+    return max(0, int((_utc(end) - _utc(start)).total_seconds()))
+
+
+def _avg_seconds(values: list[int]) -> int | None:
+    """Rounded mean, or null. An average of nothing is not 0s — reporting it
+    as one would make an untouched desk look instantly-served."""
+    return round(sum(values) / len(values)) if values else None
+
+
+@app.get("/admin/api/{slug}/analytics/operations")
+def analytics_operations(
+    days: int = DEFAULT_ANALYTICS_DAYS,
+    principal: Principal = NeedsAnalyticsRead,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The operation behind the assistant: desks, resolution, staffing, load.
+
+    Overview answers *is the assistant working*; Content Gaps answers *what
+    should we write next*. This is the third question a bank asks — *is the
+    operation keeping up* — and it belongs to whoever manages the floor:
+    which desks the work lands on and how fast it leaves, whether customers
+    who ask for a person actually reach one, when the load arrives, and how
+    many people are on the air to meet it.
+
+    Counts and durations only — no customer text, no contact details, no
+    per-person identity. That is what lets this sit behind `analytics.read`
+    (the same gate as Overview) rather than a heavier one: a manager can read
+    it without being able to read what any customer typed. The one per-person
+    report (calls per teller) stays on `/teller-performance` with its own
+    scoping rules; this endpoint deliberately does not duplicate it.
+
+    Same reporting rules as Overview: any average whose denominator is zero
+    is null, never 0.
+    """
+    bank = principal.bank
+    days = max(0, min(days, 365))
+    since = datetime.now(UTC) - timedelta(days=days) if days else None
+
+    def _window(column: Any) -> list[Any]:
+        return [column >= since] if since is not None else []
+
+    # ---- escalation desks: what is open now, and what moved in the window.
+    #
+    # "Open" is deliberately NOT windowed — a row filed five weeks ago and
+    # still open is precisely the row a manager most needs to see, and a
+    # 30-day window that hid it would report a clean desk over a stale queue.
+    open_counts: dict[str, int] = dict(
+        db.execute(
+            select(Handoff.department, func.count())
+            .where(
+                Handoff.bank_id == bank.id,
+                Handoff.needs_person.is_(True),
+                Handoff.status == "open",
+            )
+            .group_by(Handoff.department)
+        ).tuples().all()
+    )
+    urgent_counts: dict[str, int] = dict(
+        db.execute(
+            select(Handoff.department, func.count())
+            .where(
+                Handoff.bank_id == bank.id,
+                Handoff.needs_person.is_(True),
+                Handoff.status == "open",
+                Handoff.priority == departments.URGENT,
+            )
+            .group_by(Handoff.department)
+        ).tuples().all()
+    )
+    filed_counts: dict[str, int] = dict(
+        db.execute(
+            select(Handoff.department, func.count())
+            .where(Handoff.bank_id == bank.id, Handoff.needs_person.is_(True))
+            .where(*_window(Handoff.created_at))
+            .group_by(Handoff.department)
+        ).tuples().all()
+    )
+    # Resolved rows are fetched whole because the number that matters about
+    # them is a difference of two of their own timestamps. Windowed on
+    # resolved_at, not created_at: this measures the work the team did in the
+    # window, whenever the row was filed.
+    resolved_rows = db.execute(
+        select(Handoff)
+        .where(
+            Handoff.bank_id == bank.id,
+            Handoff.needs_person.is_(True),
+            Handoff.resolved_at.is_not(None),
+        )
+        .where(*_window(Handoff.resolved_at))
+    ).scalars().all()
+    resolution_by_desk: dict[str, list[int]] = {}
+    for h in resolved_rows:
+        assert h.resolved_at is not None  # filtered by the where clause above
+        resolution_by_desk.setdefault(h.department, []).append(
+            _seconds_between(h.created_at, h.resolved_at)
+        )
+    all_resolutions = [s for secs in resolution_by_desk.values() for s in secs]
+
+    desks = [
+        {
+            "department": desk,
+            "label": departments.label(desk),
+            "open": int(open_counts.get(desk, 0)),
+            "urgent": int(urgent_counts.get(desk, 0)),
+            "filed": int(filed_counts.get(desk, 0)),
+            "resolved": len(resolution_by_desk.get(desk, [])),
+            "avg_resolution_seconds": _avg_seconds(
+                resolution_by_desk.get(desk, [])
+            ),
+        }
+        # Fixed order, zero-filled — the same rule as /handoffs/desks: a list
+        # that only shows the busy desks reorders itself through the day.
+        for desk in departments.DEPARTMENTS
+    ]
+
+    # ---- live calls: did the people who asked for a person reach one.
+    sessions = db.execute(
+        select(TellerSession)
+        .where(TellerSession.bank_id == bank.id)
+        .where(*_window(TellerSession.requested_at))
+    ).scalars().all()
+    claimed = [s for s in sessions if s.teller_user_id is not None]
+    # Ended without ever being claimed: the customer gave up waiting. This is
+    # the queue-staffing signal teller-performance deliberately excludes.
+    abandoned = sum(
+        1 for s in sessions
+        if s.teller_user_id is None and s.ended_at is not None
+    )
+    waits = [
+        _seconds_between(s.requested_at, s.claimed_at)
+        for s in claimed
+        if s.claimed_at is not None
+    ]
+    handles = [
+        _seconds_between(s.claimed_at, s.ended_at)
+        for s in claimed
+        if s.claimed_at is not None and s.ended_at is not None
+    ]
+
+    # ---- staffing: how many people can meet the load, and how many are on
+    # the air right now. Same definition of "front-line" as
+    # /teller-performance: holds teller.serve without users.manage, so an
+    # admin who technically can join a call does not pad the roster.
+    cutoff = datetime.now(UTC) - presence.TELLER_PRESENCE_WINDOW
+    front_line = 0
+    on_duty_now = 0
+    for u in db.execute(
+        select(User).where(User.bank_id == bank.id, User.disabled_at.is_(None))
+    ).scalars():
+        if not roles.user_has(db, u, permissions.Perm.TELLER_SERVE):
+            continue
+        if roles.user_has(db, u, permissions.Perm.USERS_MANAGE):
+            continue
+        front_line += 1
+        if u.teller_seen_at is not None and _utc(u.teller_seen_at) >= cutoff:
+            on_duty_now += 1
+
+    # ---- when the load arrives. Buckets are (UTC weekday, UTC hour, count)
+    # over customers' own messages; the page shifts them to the operator's
+    # clock, which is the bank's clock. The server stays timezone-free — a
+    # bank record carries no timezone, and guessing one here would bake a
+    # wrong guess into every chart.
+    busy: Counter[tuple[int, int]] = Counter()
+    for (created,) in db.execute(
+        select(Message.created_at)
+        .where(Message.bank_id == bank.id, Message.role == "user")
+        .where(*_window(Message.created_at))
+    ).all():
+        stamp = _utc(created)
+        busy[(stamp.weekday(), stamp.hour)] += 1
+
+    return {
+        "bank_name": bank.display_name,
+        "window_days": days,
+        "since": iso(since),
+        "escalations": {
+            "open": sum(open_counts.values()),
+            "urgent_open": sum(urgent_counts.values()),
+            "filed": sum(filed_counts.values()),
+            "resolved": len(all_resolutions),
+            "avg_resolution_seconds": _avg_seconds(all_resolutions),
+            "desks": desks,
+        },
+        "live": {
+            "requested": len(sessions),
+            "claimed": len(claimed),
+            "abandoned": abandoned,
+            "avg_wait_seconds": _avg_seconds(waits),
+            "avg_handle_seconds": _avg_seconds(handles),
+        },
+        "staffing": {
+            "front_line": front_line,
+            "on_duty_now": on_duty_now,
+        },
+        "busy": [
+            [dow, hour, count]
+            for (dow, hour), count in sorted(busy.items())
+        ],
+    }
+
+
 class HandoffCloseIn(BaseModel):
     resolution: str | None = Field(default=None, max_length=2000)
 
