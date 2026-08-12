@@ -1481,6 +1481,13 @@ def list_users(
             "is_active": u.is_active,
             "last_login_at": iso(u.last_login_at),
             "created_at": iso(u.created_at),
+            # What each person has declared about themselves — languages and
+            # desks. Visible to a manager, editable only by the person (see
+            # set_teller_languages / set_teller_expertise): the Team page
+            # shows the coverage the roster actually has, which is how a
+            # manager notices nobody has declared the fraud desk.
+            "teller_languages": u.teller_languages,
+            "teller_departments": u.teller_departments,
             # So the UI can disable its own row's button rather than offering an
             # action that is always refused.
             "is_you": principal.user is not None and principal.user.id == u.id,
@@ -3824,6 +3831,14 @@ def _session_admin(db: Session, session: TellerSession) -> dict[str, Any]:
             "conversation_id": session.conversation_id,
             "handoff_id": session.handoff_id,
             "teller_user_id": session.teller_user_id,
+            # What the call is about, for the queue card and for expertise
+            # routing. Null on sessions predating migration 0026.
+            "department": session.department,
+            "department_label": (
+                departments.label(session.department)
+                if session.department
+                else None
+            ),
             "verified_method": session.verified_method,
             "verified_ref": session.verified_ref,
             "waited_seconds": session.waited_seconds,
@@ -3881,10 +3896,32 @@ def request_teller_session(
     if existing is not None:
         return _session_public_queued(db, bank, existing)
 
+    # What this call is about, from the customer's own recent words — the
+    # same rules every escalation goes through (departments.classify), run at
+    # the moment they ask for a person. This is what expertise routing reads:
+    # a cards question is offered first to a teller who works cards. A
+    # customer who tapped Connect before typing anything lands on GENERAL,
+    # the desk that exists so nothing is orphaned.
+    recent = db.execute(
+        select(Message.text)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.role == "user",
+        )
+        .order_by(Message.created_at.desc())
+        .limit(3)
+    ).scalars().all()
+    department = (
+        departments.classify(" \n".join(reversed(recent)))
+        if recent
+        else departments.GENERAL
+    )
+
     session = TellerSession(
         bank_id=bank.id,
         conversation_id=conversation.id,
         media="video" if payload.media == "video" else "audio",
+        department=department,
         # Straight to queued. Verification happens on the call with the teller
         # — see verification.py — so there is no automated check to wait for.
         # The `verifying` state stays in the machine for the Fayda OIDC path,
@@ -4308,6 +4345,54 @@ def set_teller_languages(
     return {"languages": chosen}
 
 
+class TellerExpertiseIn(BaseModel):
+    departments: list[str] = Field(default_factory=list)
+
+
+@app.put("/admin/api/{slug}/teller/expertise")
+def set_teller_expertise(
+    payload: TellerExpertiseIn,
+    principal: Principal = NeedsTellerServe,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Which desks this teller actually knows. Their own.
+
+    `teller.serve` and self-only, mirroring languages and for the same
+    reason: what you can competently handle on a live call is a fact about
+    you, and the person who knows it is you. A manager who thinks the
+    declarations are wrong has a conversation to have, not a box to tick —
+    routing a fraud call to somebody a manager once labelled "fraud" produces
+    a call where the customer is no better served, with a record saying they
+    should have been.
+
+    An empty list clears it, which reads as "not declared" and routes
+    everything to them — the same as a teller who never filled it in.
+    """
+    if principal.user is None:
+        raise HTTPException(
+            status_code=403, detail="Sign in as a person to set your expertise"
+        )
+    unknown = [d for d in payload.departments if d not in departments.DEPARTMENTS]
+    if unknown:
+        # Refused rather than quietly dropped. An ignored desk would leave a
+        # teller believing they are routed work they will never be offered.
+        raise HTTPException(
+            status_code=422, detail=f"Unknown desk: {', '.join(unknown)}"
+        )
+    # De-duplicated and in the canonical desk order, so two tellers who
+    # picked the same set store the same value.
+    chosen = [
+        d for d in departments.DEPARTMENTS if d in set(payload.departments)
+    ]
+    principal.user.teller_departments = chosen or None
+    _audit(
+        db, principal.bank, "teller_expertise_updated", "user",
+        principal.user.id, {"departments": chosen}, actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"departments": chosen}
+
+
 class TellerSettingsIn(BaseModel):
     enabled: bool
 
@@ -4338,14 +4423,23 @@ def get_teller_settings(
         "on_duty": (
             principal.user is not None and presence.on_duty(principal.user)
         ),
-        # This teller's own declared languages, so the page can show them
-        # without a second request. Null for the break-glass token, which is
-        # nobody in particular.
+        # This teller's own declared languages and desks, so the page can
+        # show them without a second request. Null for the break-glass token,
+        # which is nobody in particular.
         "languages": (
             principal.user.teller_languages if principal.user is not None else None
         ),
         "all_languages": [
             {"code": c, "name": LANGUAGE_NAMES[c]} for c in SUPPORTED_LANGUAGES
+        ],
+        "departments": (
+            principal.user.teller_departments
+            if principal.user is not None
+            else None
+        ),
+        "all_departments": [
+            {"department": d, "label": departments.label(d)}
+            for d in departments.DEPARTMENTS
         ],
     }
 
@@ -4404,19 +4498,29 @@ def teller_queue(
     ).scalars().all()
     out = [_session_admin(db, s) for s in rows]
 
-    # Language routing, computed per teller rather than stored on the queue:
-    # the same queue is a different order for an Amharic speaker than for an
-    # Afaan Oromoo one, so there is no single correct order to persist.
+    # Language and expertise routing, computed per teller rather than stored
+    # on the queue: the same queue is a different order for an Amharic
+    # speaker than for an Afaan Oromoo one, and again for a cards teller than
+    # a lending one, so there is no single correct order to persist.
     #
     # Only the waiting ones are reordered. An active session belongs to
     # whoever is already on it, and shuffling somebody else's live call around
     # the list is noise.
     mine = principal.user.teller_languages if principal.user is not None else None
+    my_desks = (
+        principal.user.teller_departments if principal.user is not None else None
+    )
     for row in out:
         row["speaks"] = teller.speaks(mine, row["language"])
+        row["covers"] = teller.covers(my_desks, row["department"])
     waiting = [i for i, r in enumerate(out) if r["state"] == teller.QUEUED]
     order = teller.queue_order(
-        [(out[i]["language"], out[i]["waited_seconds"]) for i in waiting], mine
+        [
+            (out[i]["language"], out[i]["department"], out[i]["waited_seconds"])
+            for i in waiting
+        ],
+        mine,
+        my_desks,
     )
     return (
         [out[waiting[j]] for j in order]

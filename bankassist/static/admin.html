@@ -4049,6 +4049,16 @@ var LANG_NAME = {
   en: "English", am: "አማርኛ", om: "Afaan Oromoo", ti: "ትግርኛ", so: "Soomaali",
   sw: "Kiswahili"
 };
+// Desk display names, mirroring departments.LABELS on the server — pinned
+// against it by a test so the two cannot drift. Used where a desk code
+// arrives without its label (the /users payload).
+var DESK_LABEL = {
+  fraud: "Fraud & security", cards: "Cards & ATM", accounts: "Accounts",
+  lending: "Loans & credit", payments: "Transfers & payments",
+  digital: "Digital banking", international: "International & forex",
+  general: "General enquiries"
+};
+function deskLabel(d) { return DESK_LABEL[d] || d; }
 
 function loadDocs() {
   api("/documents").then(function (docs) {
@@ -4411,15 +4421,32 @@ function loadTeam() {
 
     h += '<div class="panel"><table><thead><tr>' +
       "<th>" + esc(A("person")) + "</th><th>" + esc(A("role")) + "</th><th>" +
-      esc(A("status")) + "</th><th>" + esc(A("last_signed_in")) + "</th>" +
+      esc(A("status")) + "</th><th>" + esc(A("coverage")) + "</th><th>" +
+      esc(A("last_signed_in")) + "</th>" +
       '<th style="text-align:right">' + esc(A("actions")) + "</th></tr></thead><tbody>" +
       users.map(function (u) {
+        // What each person has declared about themselves — visible to a
+        // manager, set only by the person (a fact about you is yours to
+        // state). An empty declaration reads "everything", because that is
+        // exactly how routing treats it.
+        var langs = (u.teller_languages || []).map(function (c) {
+          return LANG_NAME[c] || c;
+        }).join(", ");
+        var desks = (u.teller_departments || []).map(function (d) {
+          return deskLabel(d);
+        }).join(", ");
+        var coverage = (langs || desks)
+          ? (langs ? esc(langs) : "") +
+            (langs && desks ? '<div class="meta">' + esc(desks) + "</div>"
+                            : (desks ? esc(desks) : ""))
+          : '<span class="meta">' + esc(A("coverage_everything")) + "</span>";
         return "<tr><td class='title'>" + esc(u.display_name || u.email) +
           (u.display_name ? '<div class="meta">' + esc(u.email) + "</div>" : "") +
           (u.is_you ? '<div class="meta">' + esc(A("thats_you")) + "</div>" : "") + "</td>" +
           '<td><span class="pill">' + esc(u.role) + "</span></td>" +
           '<td><span class="pill ' + (u.is_active ? "on" : "off") + '">' +
             esc(A(u.is_active ? "active" : "disabled")) + "</span></td>" +
+          '<td class="meta">' + coverage + "</td>" +
           '<td class="meta">' + (u.last_login_at
             ? esc(new Date(u.last_login_at).toLocaleString(adminLang || "en")) : esc(A("never"))) + "</td>" +
           '<td><div class="rowacts">' + (u.is_you
@@ -4892,6 +4919,22 @@ function renderTellerQueue(rows) {
         '<div class="note">' +
         esc(A(mine.length ? "languages_picked_note" : "languages_none_note")) + "</div>";
     }
+    // Which desks this teller knows — the same self-declared shape as
+    // languages, for the same reason. Declaring narrows what is offered
+    // first; it never hides work.
+    if (canServe && tellerSettings.all_departments) {
+      var myDesks = tellerSettings.departments || [];
+      h += '<div class="meta" style="margin-top:14px">' +
+        esc(A("my_desks")) + "</div>" +
+        '<div class="tools" style="margin-top:8px" id="desk-pills">' +
+        tellerSettings.all_departments.map(function (d) {
+          var picked = myDesks.indexOf(d.department) !== -1;
+          return '<button class="btn sm' + (picked ? "" : " ghost") +
+            '" data-desk="' + esc(d.department) + '">' + esc(d.label) + "</button>";
+        }).join("") + "</div>" +
+        '<div class="note">' +
+        esc(A(myDesks.length ? "desks_picked_note" : "desks_none_note")) + "</div>";
+    }
     h += "</div>";
   }
 
@@ -4905,11 +4948,14 @@ function renderTellerQueue(rows) {
             // Only flagged when it does NOT match, and only once the teller
             // has declared something. A green tick on every matching row is
             // noise; the row worth a second look is the one you may not be
-            // able to talk to.
+            // able to talk to — or the desk you have said is not yours.
             (r.speaks === false
               ? ' <span class="pill">' + esc(A("not_your_language")) + "</span>" : "") +
+            (r.covers === false
+              ? ' <span class="pill">' + esc(A("not_your_desk")) + "</span>" : "") +
             '<div class="meta">' + esc(A(r.media === "video" ? "media_video" : "media_audio")) +
             " · " + esc(A(r.scope === "verified" ? "identified" : "not_yet_identified")) +
+            (r.department_label ? " · " + esc(r.department_label) : "") +
             "</div></span>" +
             '<span class="n">' + esc(waitedSeconds(r.waited_seconds)) + "</span>" +
             (canServe
@@ -4921,12 +4967,16 @@ function renderTellerQueue(rows) {
       : '<div class="empty">' + esc(A("no_one_waiting")) + "</div>") +
     (waiting.length
       // The note has to match what the list is actually doing. With languages
-      // declared it is no longer plain oldest-first, and leaving that claim up
-      // would have a teller reading the order as a bug.
-      ? '<div class="note">' + (
-          esc((tellerSettings && (tellerSettings.languages || []).length)
-            ? A("languages_first_note") : A("oldest_first"))
-        ) + "</div>"
+      // or desks declared it is no longer plain oldest-first, and leaving
+      // that claim up would have a teller reading the order as a bug.
+      ? '<div class="note">' + (function () {
+          var hasLangs = tellerSettings && (tellerSettings.languages || []).length;
+          var hasDesks = tellerSettings && (tellerSettings.departments || []).length;
+          if (hasLangs && hasDesks) return esc(A("routing_first_note"));
+          if (hasLangs) return esc(A("languages_first_note"));
+          if (hasDesks) return esc(A("desks_first_note"));
+          return esc(A("oldest_first"));
+        })() + "</div>"
       : "") +
     "</div>" +
     '<div class="panel"><h3>' + esc(A("in_progress")) + "</h3>" +
@@ -4997,6 +5047,25 @@ function renderTellerQueue(rows) {
         // Redraw from the server's answer, not the optimistic local copy —
         // it normalises order and drops duplicates, and a list that disagrees
         // with what routing uses is worse than no list.
+        loadTellerQueue();
+      }).catch(function (e) { b.disabled = false; setStatus(e.message, "error"); });
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-desk]"), function (b) {
+    b.onclick = function () {
+      var desk = b.getAttribute("data-desk");
+      var mine = (tellerSettings.departments || []).slice();
+      var at = mine.indexOf(desk);
+      if (at === -1) { mine.push(desk); } else { mine.splice(at, 1); }
+      b.disabled = true;
+      api("/teller/expertise", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ departments: mine })
+      }).then(function (res) {
+        tellerSettings.departments = res.departments;
+        setStatus(A("desks_updated"), "ok");
+        // Same rule as languages: redraw from the server's answer, which
+        // normalises order — the list must agree with what routing uses.
         loadTellerQueue();
       }).catch(function (e) { b.disabled = false; setStatus(e.message, "error"); });
     };
