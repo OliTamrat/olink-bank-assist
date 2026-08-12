@@ -854,12 +854,6 @@ td.title { color: var(--ink); font-weight: 550; }
 .pill.sev-watch { background: var(--warn-bg); color: var(--warn); }
 .pill.sev-good { background: var(--ok-bg); color: var(--ok); }
 .pill.sev-info { background: var(--surface-2); color: var(--muted); }
-.findings { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-.finding {
-  display: flex; align-items: baseline; gap: 10px; font-size: 13.5px;
-  color: var(--body);
-}
-.finding .pill { flex: none; }
 /* The AI Insights page. The hero carries the model's one-sentence headline
    in the same brand-tinted banner language as the dashboard's welcome; the
    action cards are the "what do I do" row and sit above the assessment so
@@ -892,6 +886,45 @@ td.title { color: var(--ink); font-weight: 550; }
 .brief-body {
   font-size: 13.5px; line-height: 1.55; color: var(--body); max-width: 70ch;
 }
+/* While the model writes: shimmer where the words will land, and a live
+   sentence saying so. The page around it is already real content. */
+.skel {
+  position: relative; overflow: hidden; background: var(--surface-2);
+  border-radius: 7px;
+}
+.skel::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent,
+    color-mix(in srgb, var(--ink) 7%, transparent), transparent);
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .skel::after { animation: none; } }
+.skel-line { height: 17px; margin: 7px 0; width: 100%; }
+.skel-pill { height: 20px; width: 64px; border-radius: 99px; }
+.brief-writing {
+  margin-top: 10px; font-size: 12.5px; color: var(--muted);
+  display: flex; align-items: center; gap: 8px;
+}
+.brief-writing::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--brand); animation: livePulse 1.4s ease-in-out infinite;
+}
+/* The signals grid — the machine's own readout, always on the page. */
+.signalgrid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px; margin-top: 4px;
+}
+.signalcard {
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  background: var(--surface-2); display: flex; flex-direction: column;
+  gap: 8px; align-items: flex-start;
+}
+.signalcard.s-act { border-left: 3px solid var(--bad); }
+.signalcard.s-watch { border-left: 3px solid var(--warn); }
+.signalcard.s-good { border-left: 3px solid var(--ok); }
+.signalcard.s-info { border-left: 3px solid var(--line); }
+.signalcard p { font-size: 13px; line-height: 1.5; color: var(--body); }
 .pill.next { background: color-mix(in srgb, var(--brand) 16%, transparent);
   color: var(--brand); }
 
@@ -3164,15 +3197,48 @@ function insightText(f) {
   return A("insight_" + f.key, null, vars);
 }
 
-function renderBrief(data) {
+/* The machine signals, as a card grid — shown ALWAYS, beside the brief and
+ * beneath the skeleton alike. They render in under a second with no model,
+ * which is what makes the two-phase load below honest: the page is never a
+ * black hole with a sentence in it, because the signals are already up
+ * while the model writes. */
+function renderSignals(findings) {
+  return '<div class="panel"><h3>' + esc(A("signals")) + "</h3>" +
+    '<div class="signalgrid">' + findings.map(function (f) {
+      return '<div class="signalcard s-' + esc(f.severity) + '">' +
+        '<span class="pill sev-' + esc(f.severity) + '">' +
+        esc(A("sev_" + f.severity)) + "</span>" +
+        "<p>" + esc(insightText(f)) + "</p></div>";
+    }).join("") + "</div></div>";
+}
+
+function briefHeader(windowDays) {
+  return '<div class="brief-kicker">' + esc(A("ai_insights")) + " · " +
+    esc(windowDays
+      ? A("last_n_days_lower", null, { n: windowDays })
+      : A("all_time_lower")) + "</div>";
+}
+
+/* The brief itself while the model is writing it: a shimmering hero and
+ * action-card silhouettes, with a live sentence saying what is happening —
+ * not a blank page. Everything below it (the signals) is already real. */
+function briefSkeleton(windowDays) {
+  return '<div class="brief-hero">' + briefHeader(windowDays) +
+    '<div class="skel skel-line" style="width:72%"></div>' +
+    '<div class="skel skel-line" style="width:46%"></div>' +
+    '<div class="brief-writing">' + esc(A("insights_generating")) + "</div></div>" +
+    '<div class="actiongrid">' +
+    '<div class="actioncard"><div class="skel skel-pill"></div><div class="skel skel-line"></div></div>' +
+    '<div class="actioncard"><div class="skel skel-pill"></div><div class="skel skel-line"></div></div>' +
+    '<div class="actioncard"><div class="skel skel-pill"></div><div class="skel skel-line"></div></div>' +
+    "</div>";
+}
+
+function renderBriefBody(data) {
   var h = "";
   if (data.brief) {
     var b = data.brief;
-    h += '<div class="brief-hero"><div class="brief-kicker">' +
-      esc(A("ai_insights")) + " · " +
-      esc(data.window_days
-        ? A("last_n_days_lower", null, { n: data.window_days })
-        : A("all_time_lower")) + "</div>" +
+    h += '<div class="brief-hero">' + briefHeader(data.window_days) +
       "<h2>" + esc(b.headline) + "</h2></div>";
     if (b.actions && b.actions.length) {
       h += '<div class="actiongrid">' + b.actions.map(function (a2) {
@@ -3188,24 +3254,16 @@ function renderBrief(data) {
         '<p class="brief-body">' + esc(s.body) + "</p></div>";
     }).join("") + "</div>";
   } else {
-    // The deterministic floor. Only claim "no model" when that is actually
-    // why — a configured backend that failed this one call gets the
-    // findings alone, without a note blaming configuration.
-    h += '<div class="panel"><h3>' + esc(A("ai_insights")) + "</h3>" +
-      '<div class="findings">' + data.findings.map(function (f) {
-        return '<div class="finding"><span class="pill sev-' + esc(f.severity) + '">' +
-          esc(A("sev_" + f.severity)) + "</span><span>" + esc(insightText(f)) +
-          "</span></div>";
-      }).join("") + "</div>" +
+    // No brief. The signals below carry the page; only claim "no model"
+    // when that is actually why — a configured backend that failed this one
+    // call gets no note blaming configuration.
+    h += '<div class="brief-hero">' + briefHeader(data.window_days) +
+      "<h2>" + esc(A("insights_signals_only")) + "</h2>" +
       (data.backend === "extractive-fallback"
-        ? '<div class="note">' + esc(A("insights_no_model")) + "</div>"
+        ? '<div class="brief-writing">' + esc(A("insights_no_model")) + "</div>"
         : "") +
       "</div>";
   }
-  h += '<div class="tools" style="margin-top:14px">' +
-    '<button class="btn ghost sm" id="gen-insights">' +
-    esc(A("generate_insights")) + "</button>" +
-    '<span class="note" style="margin-top:0">' + esc(A("insights_note")) + "</span></div>";
   return h;
 }
 
@@ -3214,15 +3272,22 @@ function loadInsights() {
   var cached = state.insightsCache && state.insightsCache.key === key
     ? state.insightsCache.data : null;
 
-  function paint(data) {
-    if (state.page !== "insights") return;
-    var h = '<div class="tools"><div class="seg">' +
+  function chrome() {
+    return '<div class="tools"><div class="seg">' +
       [[7, "days_7"], [30, "days_30"], [90, "days_90"], [0, "days_all"]].map(function (d) {
         return '<button data-days="' + d[0] + '" class="' + (state.days === d[0] ? "on" : "") + '">' +
           esc(A(d[1])) + "</button>";
       }).join("") + "</div></div>";
-    h += renderBrief(data);
-    $("main").innerHTML = h;
+  }
+
+  function footer() {
+    return '<div class="tools" style="margin-top:14px">' +
+      '<button class="btn ghost sm" id="gen-insights">' +
+      esc(A("generate_insights")) + "</button>" +
+      '<span class="note" style="margin-top:0">' + esc(A("insights_note")) + "</span></div>";
+  }
+
+  function wireChrome() {
     Array.prototype.forEach.call(document.querySelectorAll("[data-days]"), function (b) {
       b.onclick = function () {
         state.days = parseInt(b.getAttribute("data-days"), 10);
@@ -3238,13 +3303,33 @@ function loadInsights() {
     }
   }
 
+  function paint(data) {
+    if (state.page !== "insights") return;
+    $("main").innerHTML = chrome() + renderBriefBody(data) +
+      renderSignals(data.findings) + footer();
+    wireChrome();
+  }
+
   if (cached) { paint(cached); return; }
-  $("main").innerHTML = '<div class="empty">' + esc(A("insights_generating")) + "</div>";
+
+  /* Two phases, and the first is fast. The signals need no model, so the
+   * page fills with real content in well under a second; only the brief's
+   * own slot shimmers while the model writes. The old single-phase version
+   * blanked the whole page behind one small sentence for the length of a
+   * model call, which read as a hang — reported as one, too. */
   api("/analytics/insights?days=" + state.days +
-      "&language=" + encodeURIComponent(adminLang) + "&brief=1")
-    .then(function (data) {
-      state.insightsCache = { key: key, data: data };
-      paint(data);
+      "&language=" + encodeURIComponent(adminLang))
+    .then(function (quick) {
+      if (state.page !== "insights") return null;
+      $("main").innerHTML = chrome() + briefSkeleton(quick.window_days) +
+        renderSignals(quick.findings) + footer();
+      wireChrome();
+      return api("/analytics/insights?days=" + state.days +
+          "&language=" + encodeURIComponent(adminLang) + "&brief=1")
+        .then(function (data) {
+          state.insightsCache = { key: key, data: data };
+          paint(data);
+        });
     })
     .catch(function (err) { setStatus(err.message, "error"); });
 }
