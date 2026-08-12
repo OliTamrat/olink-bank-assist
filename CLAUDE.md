@@ -990,7 +990,10 @@ Remaining polish, not blockers:
       Tigrinya, Somali and (as of 2026-08-12, ADR-0018) Swahili classifier
       rules are all drafted from my own phrasings, so that sheet is now
       load-bearing rather than cosmetic.
-- [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`.
+- [x] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect` —
+      done for `cbe` and `dashen` (confirmed 2026-08-12). This item had sat
+      unchecked in this list well after the fact — a stale checklist looks
+      identical to an open task until someone who actually knows corrects it.
 - [ ] **Run "Ask OKM" for the first time** — `bankassist/seed_okm.py`
       (ADR-0015, PR #115) has never touched a real database.
       `docs/runbooks/ask-okm-refresh.md` has the two-command loop: sync
