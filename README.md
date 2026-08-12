@@ -602,13 +602,13 @@ olink-bank-assist/
 ## Language notes
 
 Six languages, and that means the whole product rather than the replies
-alone. **368 strings across three tables, no gaps:**
+alone. **369 strings across three tables, no gaps:**
 
 | Table | Strings | Covers |
 |---|---|---|
 | `strings.json` | 20 | what the assistant says |
 | `ui_strings.json` | 52 | the widget's buttons and labels |
-| `admin_strings.json` | 296 | the staff panel, teller console included |
+| `admin_strings.json` | 297 | the staff panel, teller console included |
 
 - Ethiopic script is detected as Amharic, with a Tigrinya orthographic tell
   (the ኣ series) to separate the two. Afaan Oromo, Somali and Swahili — the

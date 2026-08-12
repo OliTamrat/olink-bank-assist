@@ -677,33 +677,11 @@ main { padding: 20px 24px 40px; }
    card looks sized rather than merely tall. */
 .barwrap { flex: 1; display: flex; flex-direction: column; justify-content: center; }
 .topicwrap { flex: 1; }
-.chartwrap { flex: 1; display: flex; flex-direction: column; justify-content: center; }
-
 @media (max-width: 1100px) {
   .row-main, .row-half { grid-template-columns: 1fr; }
 }
 @media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } .shell { grid-template-columns: 1fr; }
   .side { position: static; height: auto; } }
-
-/* ---------------------------------------------------------------- chart */
-.chart { width: 100%; display: block; }
-.chart .line { fill: none; stroke: var(--brand); stroke-width: 2; }
-.chart .area { fill: url(#brandfade); }
-.chart .gl { stroke: var(--line); stroke-width: 1; }
-.chart text { font-size: 10px; fill: var(--faint); }
-.chart .dot { fill: var(--brand); }
-.chart .hit { fill: transparent; }
-.chartwrap { position: relative; }
-/* Hover readout, as in the reference. Real values off the same series the
-   line is drawn from — there is no second source to disagree with. */
-.tip {
-  position: absolute; pointer-events: none; opacity: 0; transition: opacity .12s;
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px;
-  padding: 7px 10px; font-size: 12px; color: var(--ink); box-shadow: var(--shadow);
-  white-space: nowrap; transform: translate(-50%, -120%); z-index: 3;
-}
-.tip .d { color: var(--muted); font-size: 11px; }
-.tip.on { opacity: 1; }
 
 /* --------------------------------------------------------------- donut */
 .donutwrap { display: flex; gap: 18px; align-items: center; flex: 1; flex-wrap: wrap; }
@@ -905,6 +883,15 @@ td.title { color: var(--ink); font-weight: 550; }
   font-size: 10px; color: var(--faint); text-align: center; margin-top: 4px;
   height: 12px; font-variant-numeric: tabular-nums;
 }
+/* The Dashboard's per-day variant of the same chart: taller (it is the main
+   trend, not a side panel) and its sparse date labels are allowed to spill
+   over neighbouring slivers of column — with 90 bars each column is a few
+   pixels wide and a clipped label reads as a wrong date, not a short one. */
+.hours.days { flex: 1; height: auto; min-height: 230px; }
+.hours.days .hlab { overflow: visible; white-space: nowrap; }
+.statline.drill { cursor: pointer; }
+.statline.drill:hover span { color: var(--brand); }
+.statline b.warm { color: var(--warn); }
 .note { font-size: 12px; color: var(--faint); margin-top: 12px; }
 .meta { font-size: 12px; color: var(--muted); }
 .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
@@ -993,7 +980,7 @@ td.title { color: var(--ink); font-weight: 550; }
   }
   body { background: #fff; }
   .hello { background: #fff !important; }
-  .preview, .tip { display: none !important; }
+  .preview { display: none !important; }
   .side, .topbar, .noprint, .tools { display: none !important; }
   .shell { display: block; }
   .printonly { display: block; }
@@ -2603,51 +2590,37 @@ function channelPanel(rows, opts) {
   }).join("") + "</div>";
 }
 
-/* A real series from the analytics endpoint, with empty days present as zero.
-   Drawn as inline SVG: no chart library, no CDN, and it prints. */
-function sparkArea(daily) {
-  if (!daily || daily.length < 2) return '<div class="empty">Not enough days yet to draw a trend.</div>';
-  var w = 640, h = 224, padL = 34, padB = 22, padT = 10;
-  var max = Math.max.apply(null, daily.map(function (d) { return d.conversations; }));
-  var top = Math.max(max, 1);
-  var iw = w - padL - 8, ih = h - padB - padT;
-  var pts = daily.map(function (d, i) {
-    var x = padL + (daily.length === 1 ? iw / 2 : (i / (daily.length - 1)) * iw);
-    var y = padT + ih - (d.conversations / top) * ih;
-    return [x, y];
-  });
-  var line = pts.map(function (p, i) { return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); }).join(" ");
-  var area = line + " L" + pts[pts.length - 1][0].toFixed(1) + " " + (padT + ih) +
-             " L" + pts[0][0].toFixed(1) + " " + (padT + ih) + " Z";
-  var ticks = [0, 0.5, 1].map(function (f) {
-    var y = padT + ih - f * ih;
-    return '<line class="gl" x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (w - 8) + '" y2="' + y.toFixed(1) + '"/>' +
-      '<text x="' + (padL - 6) + '" y="' + (y + 3).toFixed(1) + '" text-anchor="end">' + Math.round(f * top) + "</text>";
-  }).join("");
-  function dayLabel(iso) { return iso.slice(5).replace("-", "/"); }
-  // The first and last labels are anchored to the ends of the plot, not
-  // centred on their points. Centred, half of each sits outside the viewBox
-  // and is clipped — the final label rendered as "08/0", which reads as a
-  // date rather than as a truncation, so it is the kind of wrong that gets
-  // believed. Only visible by looking at it; no assertion would have caught it.
-  var idx = [0, Math.floor(daily.length / 2), daily.length - 1]
-    .filter(function (v, i, a) { return a.indexOf(v) === i; });
-  var labels = idx.map(function (i) {
-    var anchor = i === 0 ? "start" : (i === daily.length - 1 ? "end" : "middle");
-    return '<text x="' + pts[i][0].toFixed(1) + '" y="' + (h - 6) + '" text-anchor="' + anchor + '">' +
-      dayLabel(daily[i].date) + "</text>";
-  }).join("");
-  // No preserveAspectRatio="none". Stretching the viewBox to fill the panel
-  // also stretches the glyphs and the stroke, which looks like a rendering
-  // fault rather than a design. Scaling uniformly costs a few pixels of side
-  // margin at unusual widths and keeps the type honest.
-  return '<div class="chartwrap"><svg class="chart" viewBox="0 0 ' + w + " " + h +
-    '" role="img" aria-label="Conversations per day">' +
-    '<defs><linearGradient id="brandfade" x1="0" x2="0" y1="0" y2="1">' +
-    '<stop offset="0%" stop-color="var(--brand)" stop-opacity="0.22"/>' +
-    '<stop offset="100%" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>' +
-    ticks + '<path class="area" d="' + area + '"/><path class="line" d="' + line + '"/>' +
-    labels + "</svg></div>";
+/* Conversations per day, in the same visual language as the Performance
+   page's Busiest hours — rounded vertical bars, real divs with real heights.
+   Bars beat the old area line here for three reasons: every point is a whole
+   day a manager can point at, a zero day stays visibly zero instead of
+   hiding under a stroke, and one chart grammar across Dashboard and
+   Performance means a reader learns it once. Replaced an inline-SVG area
+   chart and the ~40 lines of pointer-mapping its hover tooltip needed —
+   native titles on each bar carry the same readout. */
+function dayBars(daily) {
+  if (!daily || !daily.length) {
+    return '<div class="empty">' + esc(A("no_days_yet")) + "</div>";
+  }
+  var max = 0;
+  daily.forEach(function (d) { if (d.conversations > max) max = d.conversations; });
+  // ~6 date labels whatever the window; the last day always gets one, so the
+  // step-labelled neighbour just before it yields rather than crowding.
+  var step = Math.max(1, Math.ceil(daily.length / 6));
+  return '<div class="hours days">' + daily.map(function (d, i) {
+    var last = i === daily.length - 1;
+    var labelled = last || (i % step === 0 && i < daily.length - step / 2);
+    return '<div class="hcol" title="' + esc(d.date) + " · " +
+      esc(A(d.conversations === 1 ? "one_conversation" : "n_conversations",
+        null, { n: d.conversations })) + '">' +
+      '<div class="hb" style="height:' +
+      (max && d.conversations
+        ? Math.max(4, Math.round(d.conversations / max * 100)) : 0) +
+      '%"></div>' +
+      '<div class="hlab">' +
+      (labelled ? esc(d.date.slice(5).replace("-", "/")) : "") +
+      "</div></div>";
+  }).join("") + "</div>";
 }
 
 function loadDashboard() {
@@ -2735,19 +2708,20 @@ function loadDashboard() {
        weight: queue + channels together come out within a few pixels of the
        chart, so nothing stretches into empty space. */
     h += '<div class="row row-main">' +
-      '<div class="panel"><h3>' + esc(A("conversations_per_day")) + "</h3>" + sparkArea(a.daily) + "</div>" +
+      '<div class="panel"><h3>' + esc(A("conversations_per_day")) + "</h3>" + dayBars(a.daily) + "</div>" +
       '<div class="stack">' +
       '<div class="panel"><h3>' + esc(A("escalation_queue")) + "</h3>" +
-      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
+      /* Two plain readable numbers, the Performance page's statline card
+         grammar — the old share bars drew open as a fraction of open+closed,
+         a ratio nobody asks for ("60% of ever" is not a queue depth). Open
+         wears the warning colour when anyone is actually waiting. */
+      '<div class="statline' + (can("handoffs.read") ? " drill" : "") + '"' +
         (can("handoffs.read") ? ' data-drill="handoffs:open" role="button" tabindex="0"' : "") +
-        '><span>' + esc(A("open_label")) + '</span><span class="track"><span class="fill warn" style="width:' +
-        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.open / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
-        '%"></span></span><span class="n">' + a.handoffs.open + "</span></div>" +
-      '<div class="bar' + (can("handoffs.read") ? " drill" : "") + '"' +
+        "><span>" + esc(A("open_label")) + '</span><b' +
+        (a.handoffs.open ? ' class="warm"' : "") + ">" + num(a.handoffs.open) + "</b></div>" +
+      '<div class="statline' + (can("handoffs.read") ? " drill" : "") + '"' +
         (can("handoffs.read") ? ' data-drill="handoffs:closed" role="button" tabindex="0"' : "") +
-        '><span>' + esc(A("closed_label")) + '</span><span class="track"><span class="fill" style="width:' +
-        (a.handoffs.open + a.handoffs.closed ? (a.handoffs.closed / (a.handoffs.open + a.handoffs.closed) * 100) : 0).toFixed(1) +
-        '%"></span></span><span class="n">' + a.handoffs.closed + "</span></div>" +
+        "><span>" + esc(A("closed_label")) + "</span><b>" + num(a.handoffs.closed) + "</b></div>" +
       (a.handoffs.open
         ? '<div class="note">' + esc(A("n_reachable", null, { n: num(a.handoffs.open_reachable) })) +
           (a.handoffs.open_unreachable
@@ -2832,7 +2806,6 @@ function loadDashboard() {
     });
     $("dl-csv").onclick = exportAnalytics;
     $("do-print").onclick = function () { window.print(); };
-    wireChartTip(a.daily);
     wireDrills();
     wireDetailPanel("most-asked-panel", "topic-detail", function () { return state.topicDetail; }, topicDetailCard);
     wireDetailPanel("languages-panel", "lang-detail", function () { return state.languageDetail; }, languageDetailCard);
@@ -2858,36 +2831,6 @@ var REASON_LABEL = {
 function greeting() {
   var h = new Date().getHours();
   return h < 12 ? A("good_morning") : (h < 17 ? A("good_afternoon") : A("good_evening"));
-}
-
-/* Hover readout on the trend line. The chart is drawn in viewBox units and
-   scaled by CSS, so the pointer's page position has to be mapped back through
-   the rendered box rather than assumed to match — otherwise the tooltip
-   tracks correctly only at one window width. */
-function wireChartTip(daily) {
-  var svg = document.querySelector(".chart");
-  if (!svg || !daily || daily.length < 2) return;
-  var wrap = svg.parentNode;   // the .chartwrap the chart renders inside
-  var tip = document.createElement("div");
-  tip.className = "tip";
-  wrap.style.position = "relative";
-  wrap.appendChild(tip);
-
-  svg.addEventListener("mousemove", function (ev) {
-    var box = svg.getBoundingClientRect();
-    var frac = (ev.clientX - box.left) / box.width;
-    var i = Math.round(frac * (daily.length - 1));
-    if (i < 0) i = 0;
-    if (i > daily.length - 1) i = daily.length - 1;
-    var d = daily[i];
-    tip.innerHTML = '<div class="d">' + esc(new Date(d.date + "T00:00:00").toDateString()) +
-      "</div><strong>" + esc(A(d.conversations === 1 ? "one_conversation" : "n_conversations",
-        null, { n: d.conversations })) + "</strong>";
-    tip.style.left = ((i / (daily.length - 1)) * box.width) + "px";
-    tip.style.top = (box.height * 0.5) + "px";
-    tip.classList.add("on");
-  });
-  svg.addEventListener("mouseleave", function () { tip.classList.remove("on"); });
 }
 
 var ACTION_LABEL = {
