@@ -1998,7 +1998,16 @@
 
   // A call in progress must not survive the tab closing without LiveKit being
   // told — otherwise the teller sits looking at a participant who is gone.
+  // Disconnecting the room is the media layer only; the server has to be
+  // told too, the same way an explicit hang-up already tells it (see
+  // endCall's `mine` branch above) — otherwise the row stays ACTIVE exactly
+  // as it did before that fix, just reached by closing the tab instead of
+  // clicking the button. keepalive keeps the request alive past unload.
   window.addEventListener("pagehide", function () {
+    if (session) {
+      fetch(api + "/chat/" + encodeURIComponent(slug) + "/teller-session/" +
+            session.id, { method: "DELETE", keepalive: true }).catch(function () {});
+    }
     if (room) { try { room.disconnect(); } catch (e) {} }
   });
 
