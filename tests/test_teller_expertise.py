@@ -184,6 +184,141 @@ def test_the_break_glass_token_cannot_declare_expertise(
     assert resp.status_code == 403
 
 
+# -------------------------------------------------- manager assignment
+
+
+def _admin_client(
+    client: TestClient, db_session: Any, bank: Any, email: str
+) -> TestClient:
+    role = db_session.execute(
+        select(Role).where(
+            Role.bank_id == bank.id, Role.name == permissions.ADMIN
+        )
+    ).scalar_one()
+    user = User(
+        bank_id=bank.id, email=email, display_name=email, role_id=role.id
+    )
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(
+        UserCredential(
+            user_id=user.id, kind="password",
+            secret_hash=passwords.hash_password("CorrectHorse9!x"),
+        )
+    )
+    db_session.commit()
+    session_client = TestClient(client.app)
+    resp = session_client.post(
+        f"/admin/api/{bank.slug}/login",
+        json={"email": email, "password": "CorrectHorse9!x"},
+    )
+    assert resp.status_code == 200, resp.text
+    return session_client
+
+
+def _user_id(db_session: Any, email: str) -> str:
+    user = db_session.execute(
+        select(User).where(User.email == email)
+    ).scalar_one()
+    return str(user.id)
+
+
+def test_a_manager_assigns_a_team_members_desks(
+    client: TestClient, db_session: Any, demo_bank: Any
+) -> None:
+    _teller_client(client, db_session, demo_bank, "assignee@bank.et")
+    manager = _admin_client(client, db_session, demo_bank, "mgr@bank.et")
+    uid = _user_id(db_session, "assignee@bank.et")
+    resp = manager.put(
+        f"/admin/api/demo/users/{uid}/expertise",
+        json={"departments": [LENDING, FRAUD, FRAUD]},
+    )
+    assert resp.status_code == 200
+    # Canonical desk order, de-duplicated — same rule as self-declaration.
+    assert resp.json() == {"user_id": uid, "departments": [FRAUD, LENDING]}
+
+    user = db_session.execute(
+        select(User).where(User.email == "assignee@bank.et")
+    ).scalar_one()
+    db_session.refresh(user)
+    assert user.teller_departments == [FRAUD, LENDING]
+
+
+def test_the_assignment_is_audited_under_its_own_action(
+    client: TestClient, db_session: Any, demo_bank: Any
+) -> None:
+    from bankassist.models import AuditLog
+
+    _teller_client(client, db_session, demo_bank, "audited@bank.et")
+    manager = _admin_client(client, db_session, demo_bank, "mgr2@bank.et")
+    uid = _user_id(db_session, "audited@bank.et")
+    assert manager.put(
+        f"/admin/api/demo/users/{uid}/expertise",
+        json={"departments": [CARDS]},
+    ).status_code == 200
+    row = db_session.execute(
+        select(AuditLog).where(
+            AuditLog.action == "teller_expertise_assigned",
+            AuditLog.entity_id == uid,
+        )
+    ).scalars().first()
+    assert row is not None
+    # The actor is the manager, not the person whose desks changed — a
+    # disagreement between the two must be visible, not silent.
+    assert row.actor == _user_id(db_session, "mgr2@bank.et")
+
+
+def test_a_manager_cannot_assign_desks_to_a_non_teller(
+    client: TestClient, db_session: Any, demo_bank: Any
+) -> None:
+    """A desk assigned to somebody routing can never offer work to would
+    make the roster look covered while routing as if it were not."""
+    operator_role = db_session.execute(
+        select(Role).where(
+            Role.bank_id == demo_bank.id, Role.name == permissions.OPERATOR
+        )
+    ).scalar_one()
+    user = User(
+        bank_id=demo_bank.id, email="ops@bank.et",
+        display_name="ops@bank.et", role_id=operator_role.id,
+    )
+    db_session.add(user)
+    db_session.commit()
+    resp = client.put(
+        f"/admin/api/demo/users/{user.id}/expertise",
+        headers={"X-Admin-Token": demo_bank.admin_token},
+        json={"departments": [CARDS]},
+    )
+    assert resp.status_code == 409
+
+
+def test_one_banks_manager_cannot_reach_anothers_roster(
+    client: TestClient, db_session: Any, demo_bank: Any, cbe_bank: Any
+) -> None:
+    _teller_client(client, db_session, cbe_bank, "cbe-teller@bank.et")
+    uid = _user_id(db_session, "cbe-teller@bank.et")
+    resp = client.put(
+        f"/admin/api/demo/users/{uid}/expertise",
+        headers={"X-Admin-Token": demo_bank.admin_token},
+        json={"departments": [CARDS]},
+    )
+    assert resp.status_code == 404
+
+
+def test_a_plain_teller_cannot_assign_a_colleagues_desks(
+    client: TestClient, db_session: Any, demo_bank: Any
+) -> None:
+    """users.manage is the gate — the same one the Team page sits behind."""
+    _teller_client(client, db_session, demo_bank, "colleague@bank.et")
+    me = _teller_client(client, db_session, demo_bank, "plain@bank.et")
+    uid = _user_id(db_session, "colleague@bank.et")
+    resp = me.put(
+        f"/admin/api/demo/users/{uid}/expertise",
+        json={"departments": [CARDS]},
+    )
+    assert resp.status_code == 403
+
+
 # ------------------------------------------- the session's own department
 
 

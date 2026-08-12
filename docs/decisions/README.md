@@ -31,3 +31,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0019 | Regional focus narrows to East Africa; the Nigeria bundle is parked |
 | 0020 | Teller expertise is self-declared, and routing reorders, never hides |
 | 0021 | AI insights: the model is the analyst; the rules are the offline floor |
+| 0022 | Desk assignment is a manager's tool as well as a self-declaration |

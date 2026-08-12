@@ -959,6 +959,22 @@ td.title { color: var(--ink); font-weight: 550; }
 }
 .deskcard.gap h4 .cnt { color: var(--warn); }
 .deskcard .member { font-size: 12.5px; color: var(--body); padding: 2px 0; }
+/* A manageable desk card is a button — say so on hover. */
+.deskcard.manage { cursor: pointer; transition: border-color .12s ease; }
+.deskcard.manage:hover, .deskcard.manage:focus-visible {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+  outline: none;
+}
+.assignlist {
+  display: flex; flex-direction: column; gap: 2px; max-height: 46vh;
+  overflow-y: auto; margin: 4px 0 10px;
+}
+.assignrow {
+  display: flex; align-items: center; gap: 10px; padding: 8px 9px;
+  border-radius: 8px; cursor: pointer; font-size: 13.5px; color: var(--body);
+}
+.assignrow:hover { background: var(--surface-2); }
+.assignrow input { accent-color: var(--brand); width: 15px; height: 15px; }
 .note { font-size: 12px; color: var(--faint); margin-top: 12px; }
 .meta { font-size: 12px; color: var(--muted); }
 .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
@@ -4681,6 +4697,8 @@ function loadTeam() {
   var perf = can("sessions.read") ? api("/teller-performance") : Promise.resolve(null);
   Promise.all([api("/users"), api("/roles"), perf]).then(function (res) {
     var users = res[0], rolesList = res[1], tellerPerf = res[2];
+    // The assign modal computes each person's next desk set from this list.
+    state.teamUsers = users;
     var h = '<div class="tools"><button class="btn sm" id="new-user">' + esc(A("add_person")) + "</button>" +
       '<div style="flex:1"></div><span class="meta">' +
       esc(A(users.length === 1 ? "one_account" : "n_accounts", null, { n: users.length })) +
@@ -4716,7 +4734,12 @@ function loadTeam() {
           '<td class="meta">' + coverage + "</td>" +
           '<td class="meta">' + (u.last_login_at
             ? esc(new Date(u.last_login_at).toLocaleString(adminLang || "en")) : esc(A("never"))) + "</td>" +
-          '<td><div class="rowacts">' + (u.is_you
+          '<td><div class="rowacts">' +
+          (u.can_serve && u.is_active
+            ? '<button class="btn ghost sm" data-person-desks="' + esc(u.id) + '">' +
+              esc(A("edit_desks")) + "</button>"
+            : "") +
+          (u.is_you
             ? '<span class="meta">—</span>'
             : '<button class="btn ghost sm" data-active="' + esc(u.id) + '" data-to="' +
               (u.is_active ? "0" : "1") + '">' + esc(A(u.is_active ? "disable" : "restore")) + "</button>") +
@@ -4724,14 +4747,17 @@ function loadTeam() {
       }).join("") + "</tbody></table></div>";
 
     /* Desk teams — the roster organised the way the work arrives: one card
-       per desk, listing everyone who has declared it. People declare their
-       own desks (ADR-0020); this view is what a manager reads across. An
-       empty desk wears the warning colour, because it is not a neutral fact:
-       it is a queue whose calls nobody has claimed to know. Undeclared
-       tellers are shown once, honestly — routing treats them as covering
-       everything, so hiding them would make coverage look thinner than it
-       routes. */
+       per desk, listing everyone assigned to it. Desks are set by the
+       people themselves (Live queue) AND by a manager here (ADR-0022 —
+       staffing is a manager's decision, and a coverage view a manager
+       cannot act on is a report, not a tool). A manager clicks a card to
+       manage its members. An empty desk wears the warning colour, because
+       it is not a neutral fact: it is a queue whose calls nobody has been
+       assigned to know. Undeclared tellers are shown once, honestly —
+       routing treats them as covering everything, so hiding them would
+       make coverage look thinner than it routes. */
     var servers = users.filter(function (u) { return u.can_serve && u.is_active; });
+    var manages = can("users.manage");
     if (servers.length) {
       var undeclared = servers.filter(function (u) {
         return !(u.teller_departments || []).length;
@@ -4742,7 +4768,10 @@ function loadTeam() {
           var members = servers.filter(function (u) {
             return (u.teller_departments || []).indexOf(d) !== -1;
           });
-          return '<div class="deskcard' + (members.length ? "" : " gap") + '">' +
+          return '<div class="deskcard' + (members.length ? "" : " gap") +
+            (manages ? ' manage" data-desk-card="' + esc(d) +
+              '" role="button" tabindex="0" title="' + esc(A("manage_desk_members")) + '"'
+                     : '"') + ">" +
             "<h4>" + esc(deskLabel(d)) + '<span class="cnt">' + members.length + "</span></h4>" +
             (members.length
               ? members.map(function (u) {
@@ -4803,9 +4832,121 @@ function loadTeam() {
     wire("[data-active]", "active", function (id, el) {
       setUserActive(id, el.getAttribute("data-to") === "1");
     });
+    Array.prototype.forEach.call(
+      document.querySelectorAll("[data-desk-card]"), function (card) {
+        function open_() { deskMembersModal(card.getAttribute("data-desk-card")); }
+        card.onclick = open_;
+        card.onkeydown = function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open_(); }
+        };
+      });
+    Array.prototype.forEach.call(
+      document.querySelectorAll("[data-person-desks]"), function (b) {
+        b.onclick = function () { personDesksModal(b.getAttribute("data-person-desks")); };
+      });
     wireDetailPanel("team-perf-panel", "team-perf-detail",
       function () { return state.teamPerfDetail; }, tellerDetailCard);
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+}
+
+/* ------------------------------------------------- desk assignment modals
+ *
+ * Two doors into one decision (ADR-0022): a desk card opens "who handles
+ * this desk", a person's Desks button opens "which desks does this person
+ * handle". Both save immediately per toggle through the manager endpoint,
+ * and both close back into a fresh loadTeam() so the cards, the coverage
+ * column and the gap flags all repaint from what the server actually
+ * stored — never from an optimistic local copy.
+ */
+function assignModal(title, rows, onToggle) {
+  var host = document.createElement("div");
+  host.className = "modal-overlay";
+  host.innerHTML =
+    '<div class="modal-card" role="dialog" aria-modal="true">' +
+    "<h3>" + esc(title) + "</h3>" +
+    '<div class="assignlist">' + rows.map(function (r) {
+      return '<label class="assignrow"><input type="checkbox" data-assign="' +
+        esc(r.id) + '"' + (r.checked ? " checked" : "") + ">" +
+        "<span>" + esc(r.label) + "</span></label>";
+    }).join("") + "</div>" +
+    '<div class="note">' + esc(A("assign_hint")) + "</div>" +
+    '<div class="rowacts" style="margin-top:12px;justify-content:flex-end">' +
+    '<button class="btn sm" data-assign-close>' + esc(A("close")) + "</button></div>" +
+    "</div>";
+  function shut() {
+    if (host.parentNode) host.parentNode.removeChild(host);
+    loadTeam();
+  }
+  host.onclick = function (e) { if (e.target === host) shut(); };
+  host.querySelector("[data-assign-close]").onclick = shut;
+  Array.prototype.forEach.call(
+    host.querySelectorAll("[data-assign]"), function (box) {
+      box.onchange = function () {
+        box.disabled = true;
+        onToggle(box.getAttribute("data-assign"), box.checked, function (ok) {
+          box.disabled = false;
+          if (!ok) box.checked = !box.checked; // revert what did not save
+        });
+      };
+    });
+  document.body.appendChild(host);
+}
+
+function saveUserDesks(userId, desks, done) {
+  api("/users/" + encodeURIComponent(userId) + "/expertise", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ departments: desks })
+  }).then(function (res) {
+    // Keep the working copy in step with what the server normalised, so
+    // the next toggle in the same modal computes from the stored truth.
+    var u = (state.teamUsers || []).filter(function (x) { return x.id === userId; })[0];
+    if (u) u.teller_departments = res.departments.length ? res.departments : null;
+    setStatus(A("desks_updated"), "ok");
+    done(true);
+  }).catch(function (e) { setStatus(e.message, "error"); done(false); });
+}
+
+function deskMembersModal(desk) {
+  var people = (state.teamUsers || []).filter(function (u) {
+    return u.can_serve && u.is_active;
+  });
+  if (!people.length) { setStatus(A("no_eligible_people"), "error"); return; }
+  assignModal(
+    A("assign_for_desk", null, { desk: deskLabel(desk) }),
+    people.map(function (u) {
+      return {
+        id: u.id, label: u.display_name || u.email,
+        checked: (u.teller_departments || []).indexOf(desk) !== -1
+      };
+    }),
+    function (userId, nowChecked, done) {
+      var u = people.filter(function (x) { return x.id === userId; })[0];
+      var next = (u.teller_departments || []).slice();
+      var at = next.indexOf(desk);
+      if (nowChecked && at === -1) next.push(desk);
+      if (!nowChecked && at !== -1) next.splice(at, 1);
+      saveUserDesks(userId, next, done);
+    });
+}
+
+function personDesksModal(userId) {
+  var u = (state.teamUsers || []).filter(function (x) { return x.id === userId; })[0];
+  if (!u) return;
+  assignModal(
+    A("assign_for_person", null, { name: u.display_name || u.email }),
+    Object.keys(DESK_LABEL).map(function (d) {
+      return {
+        id: d, label: deskLabel(d),
+        checked: (u.teller_departments || []).indexOf(d) !== -1
+      };
+    }),
+    function (desk, nowChecked, done) {
+      var next = (u.teller_departments || []).slice();
+      var at = next.indexOf(desk);
+      if (nowChecked && at === -1) next.push(desk);
+      if (!nowChecked && at !== -1) next.splice(at, 1);
+      saveUserDesks(userId, next, done);
+    });
 }
 
 /* Calls per teller, shaped exactly like topicDonutData(): top 6 get their own

@@ -4681,6 +4681,64 @@ def set_teller_expertise(
     return {"departments": chosen}
 
 
+@app.put("/admin/api/{slug}/users/{user_id}/expertise")
+def assign_user_expertise(
+    user_id: str,
+    payload: TellerExpertiseIn,
+    principal: Principal = NeedsUsersManage,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """A manager assigning a team member's desks.
+
+    ADR-0020 shipped expertise as self-declared only, with manager
+    assignment named as the open next step; the founder's review made the
+    call (ADR-0022): a coverage view a manager cannot act on is a report,
+    not a tool. Desk assignment is a staffing decision — who has been
+    trained on what is exactly the thing a manager runs — so `users.manage`
+    (the Team page's own gate) can now set it for anyone on the roster.
+
+    Self-service stays: a teller can still adjust their own desks from the
+    Live queue, and the audit log records who set what, so a disagreement
+    between the two is a visible conversation rather than a silent
+    overwrite. Languages remain self-only — whether you can hold a
+    conversation in Afaan Oromoo is a fact about you, not an assignment.
+
+    Same validation discipline as the self endpoint: unknown desks are
+    refused (422), never dropped; the stored order is canonical; empty
+    clears to "not declared", which routing reads as "takes everything".
+    """
+    bank = principal.bank
+    user = db.get(User, user_id)
+    if user is None or user.bank_id != bank.id:
+        raise HTTPException(status_code=404, detail="Unknown user")
+    if not user.is_active:
+        raise HTTPException(
+            status_code=409, detail="That account is disabled"
+        )
+    if not roles.user_has(db, user, permissions.Perm.TELLER_SERVE):
+        # Assigning a desk to somebody routing can never offer work to
+        # would create a roster that looks covered and routes as if it
+        # were not.
+        raise HTTPException(
+            status_code=409, detail="That person cannot take live calls"
+        )
+    unknown = [d for d in payload.departments if d not in departments.DEPARTMENTS]
+    if unknown:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown desk: {', '.join(unknown)}"
+        )
+    chosen = [
+        d for d in departments.DEPARTMENTS if d in set(payload.departments)
+    ]
+    user.teller_departments = chosen or None
+    _audit(
+        db, bank, "teller_expertise_assigned", "user", user.id,
+        {"departments": chosen}, actor=principal.audit_actor,
+    )
+    db.commit()
+    return {"user_id": user.id, "departments": chosen}
+
+
 class TellerSettingsIn(BaseModel):
     enabled: bool
 
