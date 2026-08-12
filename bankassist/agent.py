@@ -23,10 +23,12 @@ from sqlalchemy.orm import Session
 from . import classifier, departments, faq, presence
 from .i18n import t
 from .llm import (
+    NOTHING_TO_REFINE,
     LLMDeclined,
     LLMUnavailable,
     answer_from_general_knowledge,
     generate_answer,
+    refine_for_search,
     translate_for_search,
 )
 from .logging_config import log_event
@@ -42,6 +44,13 @@ MAX_FALLBACK_CHUNKS = 2
 # callback, so a second unanswered question earns a second ask — a third is
 # pestering someone who has already declined twice.
 MAX_CONTACT_ASKS = 2
+
+# How many times one conversation may be asked "did you mean one of these?".
+# One. A clarification that fails has already told us the near-miss titles
+# are not what this customer wants, so asking again with the same machinery
+# offers them nothing and costs them another turn — and the people this
+# feature exists for are the ones for whom every extra turn is expensive.
+MAX_CLARIFY_ASKS = 1
 
 # A document tagged with this category is this bank's confident, positive
 # answer to "why should I choose you over another bank?" — looked up
@@ -67,10 +76,17 @@ COMPARISON = "comparison"                # "is X better than you?"
 GREETING = "greeting"                    # hello, not a question
 CONTACT_CAPTURED = "contact_captured"    # the customer left a number
 HUMAN_REQUEST = "human_request"          # asked for a person, not for information
+CLARIFYING = "clarifying"                # asked the customer what they meant
 
 # Turns that represent a customer actually asking this bank something. The
 # denominator of every rate below, so greetings and the contact exchange can't
 # quietly inflate the numbers a bank is being sold on.
+#
+# CLARIFYING is deliberately absent, for the same reason the contact exchange
+# is: it is a step inside answering one question, not a second question. Count
+# it and a customer who is asked "did you mean one of these?" and then
+# answered appears in the denominator twice, which quietly deflates the
+# deflection rate every time the product does the RIGHT thing.
 SUBSTANTIVE = (
     ANSWERED, GENERAL_GUIDANCE, UNANSWERED, COMPLAINT, ACCOUNT_BLOCKED,
     COMPARISON, HUMAN_REQUEST, SERVICE_ISSUE,
@@ -89,16 +105,56 @@ REASON_GENERAL_KNOWLEDGE = "answered_from_general_knowledge"
 # content gap is answered by writing a document, a service issue may be an
 # outage the bank needs to know about this morning.
 REASON_SERVICE_ISSUE = "service_issue"
+# The assistant could not tell what was being asked and asked back. Filed
+# with needs_person=False — nobody is waiting — but filed, because "our
+# content did not match how this customer writes" is exactly the kind of gap
+# a bank should see, and it is invisible from anywhere else.
+REASON_UNCLEAR = "unclear_question"
 
 HANDOFF_REASONS = (
     REASON_COMPLAINT, REASON_HUMAN_REQUESTED, REASON_UNANSWERED,
-    REASON_GENERAL_KNOWLEDGE, REASON_SERVICE_ISSUE,
+    REASON_GENERAL_KNOWLEDGE, REASON_SERVICE_ISSUE, REASON_UNCLEAR,
 )
 
 # Substantive turns that did NOT need a person. account_blocked belongs here:
 # refusing to read out an account balance in chat is the assistant working
 # correctly, and it files no handoff.
 RESOLVED = (ANSWERED, GENERAL_GUIDANCE, ACCOUNT_BLOCKED, COMPARISON)
+
+
+def suggestions_for(db: Session, bank_id: str, query: str) -> list[dict[str, Any]]:
+    """Near-miss document titles, in the shape a channel renders."""
+    return [
+        {"document_id": s.document_id, "title": s.title}
+        for s in suggest_topics(db, bank_id, query)
+    ]
+
+
+def _may_clarify(db: Session, conversation: Conversation) -> bool:
+    """At most MAX_CLARIFY_ASKS clarifying questions in one conversation.
+
+    Asking "did you mean one of these?" repeatedly is an interrogation, and
+    worse, it is a loop: each repeat is prompted by the same failure as the
+    last, so nothing about it goes better. Once the budget is spent the
+    customer has done their part and it is time to fetch a person.
+
+    Counted, not ordered. An "was the previous turn a clarification?" rule
+    reads better and is wrong here: messages carry a timestamp and a UUID, so
+    two rows written inside the same turn have no reliable order between them
+    — a uuid tiebreak is arbitrary, not chronological. A count needs no
+    ordering to be correct. Same reasoning, and the same shape, as
+    MAX_CONTACT_ASKS counting from handoffs rather than tracking a flag.
+    """
+    asked = db.execute(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.role == "assistant",
+            Message.outcome == CLARIFYING,
+        )
+    ).scalar_one()
+    return int(asked) < MAX_CLARIFY_ASKS
 
 
 def _bank_aliases(bank: Bank) -> tuple[str, ...]:
@@ -607,6 +663,48 @@ def handle_message(
             except LLMDeclined:
                 answer = None
 
+        # The literacy retry. Everything above assumes the customer wrote a
+        # searchable question; many will not. Expect misspellings, fragments,
+        # and words in the wrong order — and the failure that causes is NOT
+        # the obvious one. Measured on the seeded CBE corpus, "how open
+        # acount" retrieves *Transfers to Telebirr*: the typo kills `acount`,
+        # `open` matches an unrelated document, retrieval succeeds
+        # confidently on the wrong thing, and the model then declines. The
+        # customer is escalated by a mechanism that looks like the system
+        # working.
+        #
+        # So this triggers on BOTH shapes of failure — nothing retrieved, and
+        # the model declining what was retrieved — because the second is the
+        # one the bad-typing case actually produces. Failure path only: the
+        # common case never pays for it.
+        #
+        # Only the SEARCH TEXT is rewritten, exactly as with the
+        # cross-language retry above. The answer is still generated from the
+        # documents, the informativeness gate still applies, and the model may
+        # still decline — so a bad rewrite costs a miss, never a wrong answer.
+        refined = ""
+        if answer is None:
+            try:
+                candidate = refine_for_search(text)
+            except LLMUnavailable:
+                candidate = ""
+            if (
+                candidate
+                and NOTHING_TO_REFINE not in candidate
+                and candidate.lower() != query.lower()
+            ):
+                refined = candidate
+                retried = retrieve(db, bank.id, refined)
+                if retried:
+                    try:
+                        answer = _answer_from_knowledge(
+                            bank, refined, retried, language
+                        )
+                        chunks = retried
+                        query = refined
+                    except LLMDeclined:
+                        answer = None
+
         # Nothing in this bank's content answers the question. Some questions
         # do not need bank content at all: ATM mechanics are identical on every
         # machine on earth, and an assistant that cannot explain what a PIN is
@@ -620,6 +718,15 @@ def handle_message(
                 general = answer_from_general_knowledge(query, language, bank.name)
             except (LLMDeclined, LLMUnavailable):
                 general = None
+
+        # Computed once, read by both of the branches that can want it — the
+        # clarifying question and the plain miss. Only on the paths that
+        # failed, so an answered turn never runs it.
+        near_misses = (
+            suggestions_for(db, bank.id, query)
+            if answer is None and general is None
+            else []
+        )
 
         if general is not None:
             # Labelled, and carrying no sources, because it genuinely came from
@@ -651,6 +758,58 @@ def handle_message(
                 general_knowledge=True,
                 outcome=GENERAL_GUIDANCE,
             )
+        elif answer is None and refined and near_misses and _may_clarify(db, conversation):
+            # Ask what they meant instead of fetching a teller.
+            #
+            # **`refined` is the gate, and choosing it took one wrong turn
+            # first.** Clarifying on every miss looked right and is not: a
+            # customer who writes a perfectly clear question the bank simply
+            # has no content for ("what is your SWIFT code for the Djibouti
+            # branch") gets "did you mean one of these?", which is the
+            # assistant blaming their typing for its own gap. It also changed
+            # the contract for every existing miss — 87 tests said so.
+            #
+            # `refined` is non-empty only when the rewrite pass looked at the
+            # message and returned something DIFFERENT — i.e. the model's own
+            # judgement that this was not clear — and searching that rewrite
+            # still found nothing. That is positive evidence we misunderstood,
+            # rather than an assumption that the customer typed badly. A
+            # message the model calls ALREADY_CLEAR takes the honest
+            # I-don't-know path exactly as before.
+            #
+            # The customer who most needs this is the one who cannot easily
+            # rephrase — so the offer has to be answerable by TAPPING, not by
+            # typing again. These are real document titles from this bank
+            # (suggest_topics invents nothing), the widget renders them as
+            # chips, and every other channel gets them listed in the reply
+            # text because a chip that only exists in a JSON field is
+            # invisible on Telegram.
+            #
+            # No handoff is filed with `needs_person`: nobody is waiting for a
+            # callback, and putting a question we have not understood yet into
+            # a teller's queue is how that queue fills with rows an operator
+            # cannot action. The row is still created — the bank should see
+            # that its content did not match how somebody actually writes,
+            # which is content-gap information in its own right — and if the
+            # clarification also fails, THAT turn files the real one.
+            suggestions = near_misses
+            _create_handoff(
+                db, bank, conversation, REASON_UNCLEAR, text[:2000], handoffs,
+                needs_person=False,
+            )
+            listed = "\n".join(f"• {s['title']}" for s in suggestions)
+            reply = f"{t(language, 'clarify_intro')}\n{listed}"
+            result = ChatResult(
+                reply,
+                intent,
+                language,
+                # False on purpose: `handoff_created` is what a channel uses to
+                # promise a follow-up, and this turn promises the opposite —
+                # that we are still trying to answer it ourselves.
+                handoff_created=False,
+                suggestions=suggestions,
+                outcome=CLARIFYING,
+            )
         elif answer is None:
             # A service issue that the documents could not answer is where it
             # finally becomes a person's work — but the wording has to match
@@ -675,10 +834,7 @@ def handle_message(
             # topics. These are real document titles, so this can't invent
             # a product or figure; the handoff is still filed either way,
             # so a genuine knowledge gap stays visible to the bank.
-            suggestions = [
-                {"document_id": s.document_id, "title": s.title}
-                for s in suggest_topics(db, bank.id, query)
-            ]
+            suggestions = near_misses
             if suggestions:
                 # The titles go in the reply *text*, not only in the
                 # suggestions field. The widget renders them as tappable

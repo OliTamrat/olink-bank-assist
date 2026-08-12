@@ -148,7 +148,22 @@ a message takes, not about the branch's own logic.
    `LLMDeclined`.
 8. **General knowledge**, if the answer is still missing and the tenant has
    `allow_general_knowledge` (default true). See the boundary below.
-9. **Miss** → `Handoff` row + `unknown` template + **the contact request**
+9. **Refine and retry, on failure only** (`llm.refine_for_search`,
+   ADR-0024). Rewrites a badly-typed message as a clear query in the
+   customer's own language and searches again. This fires when nothing was
+   retrieved **and** when the model declined — the second is the one bad
+   typing actually produces: "how open acount" retrieves *Transfers to
+   Telebirr* confidently, the model correctly declines, and the customer is
+   escalated by a mechanism that looks like the system working. Only the
+   search text is rewritten, so a bad rewrite costs a miss, never a wrong
+   answer.
+10. **Clarify, if the rewrite was different and still found nothing** — offer
+   the near-miss document titles as chips the customer can TAP rather than
+   fetching a teller. Gated on the rewrite having *changed* something, which
+   is the model's own verdict that the message was unclear: a clearly-written
+   question the bank has no content for must get the honest I-don't-know, not
+   a question about its own typing. One per conversation.
+11. **Miss** → `Handoff` row + `unknown` template + **the contact request**
    + **suggested topics** (`retrieval.suggest_topics`, real document titles
    only, never invented). That order is deliberate — see below.
 
@@ -332,16 +347,16 @@ advantage away for the sake of whatever shortcut was taken that afternoon.
 
 ### Where this stands — updated 2026-08-12
 
-**All three string tables are complete: 436 strings × 6 languages, no gaps,
+**All three string tables are complete: 437 strings × 6 languages, no gaps,
 nothing silently left in English.** Swahili (`sw`) is the newest column —
 first-pass drafted, not yet native-reviewed, exactly the status OM/TI/SO
 carry. See ADR-0018.
 
 | Table | Strings | Covers |
 |---|---|---|
-| `strings.json` | 21 | what the assistant says to a customer |
+| `strings.json` | 22 | what the assistant says to a customer |
 | `ui_strings.json` | 52 | the widget's own buttons and labels |
-| `admin_strings.json` | 361 | the staff panel, teller console included |
+| `admin_strings.json` | 363 | the staff panel, teller console included |
 
 The widget and the admin panel both got their string tables in August 2026.
 The teller console was the last surface and is done — queue, duty panel,
@@ -992,7 +1007,7 @@ Remaining polish, not blockers:
 - [ ] **Linguist review of OM/TI/SO/SW** — the one open language item, and it
       now covers more than wording. `review/Olink_Bank_Assist_language_review.xlsx`
       carries four sheets: the assistant's replies, the phrasebook, the
-      widget's buttons and 361 staff-panel strings. **Sheet 2 matters most.**
+      widget's buttons and 363 staff-panel strings. **Sheet 2 matters most.**
       Every language defect found in a live demo so far was a sentence the
       assistant failed to UNDERSTAND, not a reply worded badly — and the
       Tigrinya, Somali and (as of 2026-08-12, ADR-0018) Swahili classifier
