@@ -975,6 +975,9 @@ td.title { color: var(--ink); font-weight: 550; }
 }
 .assignrow:hover { background: var(--surface-2); }
 .assignrow input { accent-color: var(--brand); width: 15px; height: 15px; }
+.btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn.danger:hover { filter: brightness(1.08); }
+.confirm-msg { font-size: 13.5px; line-height: 1.55; color: var(--body); max-width: 46ch; }
 .note { font-size: 12px; color: var(--faint); margin-top: 12px; }
 .meta { font-size: 12px; color: var(--muted); }
 .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
@@ -3512,7 +3515,7 @@ function toggleHandoffDetail(id) {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ department: sel.value })
       }).then(function (r) {
-        setStatus("Moved to " + r.department_label, "ok");
+        setStatus(A("moved_to_desk", null, { desk: r.department_label }), "ok");
         loadHandoffs();
       }).catch(function (e) { setStatus(e.message, "error"); });
     };
@@ -3580,7 +3583,7 @@ function importForm() {
       if (url) body.source_url = url;
     } else if (url) {
       body.url = url;
-    } else { setStatus("An address or some page source, please.", "error"); return; }
+    } else { setStatus(A("need_url_or_source"), "error"); return; }
 
     $("imp-out").innerHTML = '<div class="meta" style="margin-top:12px">Reading…</div>';
     api("/ingest/preview", {
@@ -3629,7 +3632,7 @@ function importForm() {
         body.titles = Array.prototype.slice
           .call(document.querySelectorAll(".imp-pick:checked"))
           .map(function (c) { return c.value; });
-        if (!body.titles.length) { setStatus("Nothing ticked.", "error"); return; }
+        if (!body.titles.length) { setStatus(A("nothing_ticked"), "error"); return; }
         $("imp-commit").disabled = true;
         api("/ingest/commit", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -3889,7 +3892,7 @@ function faqImportForm() {
     var body = {
       text: $("fi-text").value, language: $("fi-lang").value
     };
-    if (!body.text.trim()) { setStatus("Paste the page first.", "error"); return; }
+    if (!body.text.trim()) { setStatus(A("paste_page_first"), "error"); return; }
     $("fi-out").innerHTML = '<div class="meta" style="margin-top:12px">Reading…</div>';
     api("/faq/import/preview", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -3928,7 +3931,7 @@ function faqImportForm() {
         body.questions = Array.prototype.slice
           .call(document.querySelectorAll(".fi-pick:checked"))
           .map(function (c) { return c.value; });
-        if (!body.questions.length) { setStatus("Nothing ticked.", "error"); return; }
+        if (!body.questions.length) { setStatus(A("nothing_ticked"), "error"); return; }
         $("fi-commit").disabled = true;
         api("/faq/import", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -3978,7 +3981,7 @@ function faqForm(row, question, language, box) {
       question: $("fq-q").value.trim(), answer: $("fq-a").value.trim(),
       language: $("fq-l").value, status: status
     };
-    if (!body.question || !body.answer) { setStatus("A question and an answer, please.", "error"); return; }
+    if (!body.question || !body.answer) { setStatus(A("need_question_answer"), "error"); return; }
     api("/faq" + (row ? "/" + row.id : ""), {
       method: row ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
@@ -3992,10 +3995,11 @@ function faqForm(row, question, language, box) {
   $("fq-pub").onclick = function () { send("published"); };
   if ($("fq-del")) {
     $("fq-del").onclick = function () {
-      if (!confirm("Delete this answer? The question goes back to the assistant.")) return;
-      api("/faq/" + row.id, { method: "DELETE" })
-        .then(function () { setStatus("Deleted", "ok"); loadFaq(); })
-        .catch(function (e) { setStatus(e.message, "error"); });
+      confirmModal(A("confirm_delete_answer"), A("delete"), function () {
+        api("/faq/" + row.id, { method: "DELETE" })
+          .then(function () { setStatus(A("deleted"), "ok"); loadFaq(); })
+          .catch(function (e) { setStatus(e.message, "error"); });
+      });
     };
   }
 }
@@ -4176,7 +4180,7 @@ function closeHandoff(id) {
   api("/handoffs/" + id + "/close", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ resolution: input && input.value ? input.value : null })
-  }).then(function () { setStatus("Escalation closed", "ok"); loadHandoffs(); refreshBadge(); })
+  }).then(function () { setStatus(A("escalation_closed"), "ok"); loadHandoffs(); refreshBadge(); })
     .catch(function (e) { setStatus(e.message, "error"); });
 }
 
@@ -4441,15 +4445,16 @@ function saveDoc(id) {
   var opts = { method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
                body: JSON.stringify(body) };
   api("/documents" + (id ? "/" + id : ""), opts)
-    .then(function () { setStatus("Saved", "ok"); loadDocs(); })
+    .then(function () { setStatus(A("saved"), "ok"); loadDocs(); })
     .catch(function (e) { setStatus(e.message, "error"); });
 }
 
 function deleteDoc(id) {
-  if (!confirm("Delete this article? The assistant will stop using it.")) return;
-  api("/documents/" + id, { method: "DELETE" })
-    .then(function () { setStatus("Deleted", "ok"); loadDocs(); })
-    .catch(function (e) { setStatus(e.message, "error"); });
+  confirmModal(A("confirm_delete_article"), A("delete"), function () {
+    api("/documents/" + id, { method: "DELETE" })
+      .then(function () { setStatus(A("deleted"), "ok"); loadDocs(); })
+      .catch(function (e) { setStatus(e.message, "error"); });
+  });
 }
 
 function bulkForm() {
@@ -4470,10 +4475,10 @@ function bulkForm() {
   $("bulk-go").onclick = function () {
     var parsed;
     try { parsed = JSON.parse($("bulk-json").value); }
-    catch (err) { setStatus("That is not valid JSON: " + err.message, "error"); return; }
+    catch (err) { setStatus(A("invalid_json", null, { error: err.message }), "error"); return; }
     api("/documents/bulk", { method: "POST", headers: { "Content-Type": "application/json" },
                              body: JSON.stringify({ documents: parsed }) })
-      .then(function (res) { setStatus("Imported " + res.created + " articles", "ok"); loadDocs(); })
+      .then(function (res) { setStatus(A("imported_n_articles", null, { n: res.created }), "ok"); loadDocs(); })
       .catch(function (e) { setStatus(e.message, "error"); });
   };
 }
@@ -5030,7 +5035,16 @@ function userForm() {
 }
 
 function setUserActive(id, active) {
-  if (!active && !confirm(A("confirm_disable_account"))) return;
+  if (!active) {
+    confirmModal(A("confirm_disable_account"), A("disable"), function () {
+      applyUserActive(id, active);
+    });
+    return;
+  }
+  applyUserActive(id, active);
+}
+
+function applyUserActive(id, active) {
   api("/users/" + id + "/active", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ is_active: active }) })
     .then(function (r) {
@@ -5173,14 +5187,14 @@ function wireChannelForms(cfg) {
     // execCommand rather than the clipboard API: this panel is served over
     // plain http in local development, where navigator.clipboard does not
     // exist, and a copy button that silently does nothing is worse than none.
-    try { document.execCommand("copy"); setStatus("Embed code copied", "ok"); }
-    catch (e) { setStatus("Select the text and copy it manually.", "error"); }
+    try { document.execCommand("copy"); setStatus(A("embed_copied"), "ok"); }
+    catch (e) { setStatus(A("copy_manually"), "error"); }
   };
   var save = $("tg-save");
   if (save) save.onclick = function () {
     api("/telegram/connect", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bot_token: $("tg-token").value.trim() }) })
-      .then(function () { setStatus("Telegram connected", "ok"); loadChannels(); })
+      .then(function () { setStatus(A("telegram_connected"), "ok"); loadChannels(); })
       .catch(function (e) { setStatus(e.message, "error"); });
   };
 }
@@ -6059,6 +6073,35 @@ function hangUpCall() {
  * prompt in the whole admin panel, so there is nothing else to share it with.
  * `done` receives the typed text, or null if cancelled — same contract
  * prompt() had, so the caller above needed no other change. */
+/* A themed confirmation, replacing the browser's native confirm() — the
+ * same cleanup the call room got when prompt() went (see below), finished
+ * across the rest of the panel. Native chrome broke two rules at once: it
+ * ignored the design system, and it spoke whatever language the browser
+ * spoke rather than the one the panel is set to. Cancel takes focus, not
+ * OK — for a destructive question, Enter must not be the destroy key. */
+function confirmModal(message, confirmLabel, onYes) {
+  var host = document.createElement("div");
+  host.className = "modal-overlay";
+  host.innerHTML =
+    '<div class="modal-card" role="dialog" aria-modal="true">' +
+    '<p class="confirm-msg">' + esc(message) + "</p>" +
+    '<div class="rowacts" style="margin-top:14px;justify-content:flex-end;gap:8px">' +
+    '<button class="btn ghost sm" data-c-cancel>' + esc(A("cancel")) + "</button>" +
+    '<button class="btn sm danger" data-c-ok>' + esc(confirmLabel) + "</button>" +
+    "</div></div>";
+  function shut() {
+    document.removeEventListener("keydown", onKey);
+    if (host.parentNode) host.parentNode.removeChild(host);
+  }
+  function onKey(e) { if (e.key === "Escape") shut(); }
+  document.addEventListener("keydown", onKey);
+  host.onclick = function (e) { if (e.target === host) shut(); };
+  host.querySelector("[data-c-cancel]").onclick = shut;
+  host.querySelector("[data-c-ok]").onclick = function () { shut(); onYes(); };
+  document.body.appendChild(host);
+  host.querySelector("[data-c-cancel]").focus();
+}
+
 function showEndCallModal(done) {
   var host = document.createElement("div");
   host.className = "modal-overlay";
