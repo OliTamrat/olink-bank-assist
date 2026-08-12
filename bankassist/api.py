@@ -24,7 +24,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import (
@@ -1785,6 +1785,7 @@ def delete_document(
 def list_conversations(
     language: str | None = None,
     channel: str | None = None,
+    pin: str | None = None,
     principal: Principal = NeedsConversationsRead,
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -1793,6 +1794,13 @@ def list_conversations(
     The filters exist so the dashboard's language and channel rows can be
     clicked through to the conversations they count. A figure you cannot open
     is a figure you have to take on trust.
+
+    `pin` exists for global search: a match can be older than the 100 most
+    recent conversations, and the list this feeds already has its own
+    expand-in-place transcript view — reusing it beats building a second one.
+    A pinned row is fetched on its own and prepended, never counted against
+    the cap, so search never silently pushes a real recent conversation out
+    to make room for the one someone searched for.
     """
     bank = principal.bank
     where = [Conversation.bank_id == bank.id]
@@ -1804,6 +1812,10 @@ def list_conversations(
         select(Conversation).where(*where)
         .order_by(Conversation.created_at.desc()).limit(100)
     ).scalars().all()
+    if pin and not any(c.id == pin for c in convos):
+        pinned = db.get(Conversation, pin)
+        if pinned is not None and pinned.bank_id == bank.id:
+            convos = [pinned, *convos]
     ids = [c.id for c in convos]
 
     # What each conversation was ABOUT, how long it ran, and whether it ended
@@ -1886,6 +1898,7 @@ def list_messages(
 def list_handoffs(
     status: str = "open",
     department: str = "all",
+    pin: str | None = None,
     principal: Principal = NeedsHandoffsRead,
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -1895,6 +1908,10 @@ def list_handoffs(
     three days for a callback outranks one who asked five minutes ago, and the
     old default buried them at the bottom of 200 rows. Closed handoffs keep
     newest-first, because that view is history rather than a queue.
+
+    `pin` exists for global search — see `list_conversations` for why: a
+    matched row can be outside the 200-row cap or the current status filter,
+    and is fetched and prepended on its own rather than counted against it.
     """
     bank = principal.bank
     if status not in {"open", "closed", "all"}:
@@ -1922,6 +1939,10 @@ def list_handoffs(
     rows = db.execute(
         query.order_by(urgency, order).limit(200)
     ).scalars().all()
+    if pin and not any(h.id == pin for h in rows):
+        pinned = db.get(Handoff, pin)
+        if pinned is not None and pinned.bank_id == bank.id and pinned.needs_person:
+            rows = [pinned, *rows]
     return [
         {
             "id": h.id, "reason": h.reason, "detail": h.detail, "status": h.status,
@@ -2230,6 +2251,161 @@ def list_faq(
         query.order_by(Faq.served.desc(), Faq.updated_at.desc())
     ).scalars().all()
     return [_faq_row(r) for r in rows]
+
+
+# One box, four categories. `documents.read` is the floor because every
+# builtin role holds it and Knowledge Base + Curated Answers need nothing
+# more; Conversations and Escalations are re-checked independently below, so
+# a custom role holding the floor without one of those still gets the
+# categories it's actually allowed to see rather than a 403 for the whole box.
+SEARCH_RESULTS_PER_CATEGORY = 5
+
+
+@app.get("/admin/api/{slug}/search")
+def global_search(
+    q: str,
+    principal: Principal = NeedsDocumentsRead,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Search across Conversations, Escalations, Knowledge Base and Curated
+    Answers in one box.
+
+    Results deep-link into the pages that already render this content rather
+    than a detail screen built just for search — `pin=` on
+    `list_conversations`/`list_handoffs` force-includes a match that's older
+    than the normal recent-100/recent-200 window, so a hit opens straight
+    into the existing expand-in-place transcript view.
+
+    Snippets are run through `redact_contact()`, same as the two aggregate
+    reports — a customer can volunteer a phone number mid-question, and that
+    text must not surface unredacted here either.
+    """
+    needle = q.strip()
+    if len(needle) < 2:
+        return {"conversations": [], "handoffs": [], "documents": [], "faq": []}
+    bank = principal.bank
+    low = needle.lower()
+
+    def has(permission: str) -> bool:
+        return principal.user is None or roles.user_has(db, principal.user, permission)
+
+    result: dict[str, Any] = {"conversations": [], "handoffs": [], "documents": [], "faq": []}
+
+    if has(permissions.Perm.CONVERSATIONS_READ):
+        by_field = db.execute(
+            select(Conversation)
+            .where(
+                Conversation.bank_id == bank.id,
+                or_(
+                    func.lower(Conversation.customer_name).contains(low),
+                    func.lower(Conversation.contact_phone).contains(low),
+                ),
+            )
+            .order_by(Conversation.created_at.desc())
+            .limit(SEARCH_RESULTS_PER_CATEGORY)
+        ).scalars().all()
+        by_message = db.execute(
+            select(Conversation)
+            .join(Message, Message.conversation_id == Conversation.id)
+            .where(
+                Conversation.bank_id == bank.id,
+                Message.role == "user",
+                func.lower(Message.text).contains(low),
+            )
+            .order_by(Conversation.created_at.desc())
+            .limit(SEARCH_RESULTS_PER_CATEGORY)
+        ).scalars().all()
+        # Merged in Python, not SQL DISTINCT: Postgres rejects
+        # `SELECT DISTINCT ... ORDER BY created_at` when created_at isn't in
+        # the SELECT list, and the identity map guarantees the same
+        # conversation from both queries is the same Python object.
+        merged = list(dict.fromkeys([*by_field, *by_message]))[:SEARCH_RESULTS_PER_CATEGORY]
+        snippets: dict[str, str] = {}
+        if merged:
+            ids = [c.id for c in merged]
+            for cid, text in db.execute(
+                select(Message.conversation_id, Message.text)
+                .where(Message.conversation_id.in_(ids), Message.role == "user")
+                .order_by(Message.created_at)
+            ).tuples().all():
+                # First one wins — the opening question is what the
+                # conversation was about, matching list_conversations.
+                snippets.setdefault(cid, text)
+        result["conversations"] = [
+            {
+                "id": c.id,
+                "channel": c.channel,
+                "language": c.language,
+                "created_at": iso(c.created_at),
+                "snippet": redact_contact(snippets.get(c.id, ""))[:200],
+            }
+            for c in merged
+        ]
+
+    if has(permissions.Perm.HANDOFFS_READ):
+        rows = db.execute(
+            select(Handoff)
+            .where(
+                Handoff.bank_id == bank.id,
+                Handoff.needs_person.is_(True),
+                or_(
+                    func.lower(Handoff.contact_name).contains(low),
+                    func.lower(Handoff.contact_phone).contains(low),
+                    func.lower(Handoff.detail).contains(low),
+                ),
+            )
+            .order_by(Handoff.created_at.desc())
+            .limit(SEARCH_RESULTS_PER_CATEGORY)
+        ).scalars().all()
+        result["handoffs"] = [
+            {
+                "id": h.id,
+                "conversation_id": h.conversation_id,
+                "contact_name": h.contact_name,
+                "department": h.department,
+                "department_label": departments.label(h.department),
+                "status": h.status,
+                "created_at": iso(h.created_at),
+                "snippet": redact_contact((h.detail or "").strip())[:200],
+            }
+            for h in rows
+        ]
+
+    docs = db.execute(
+        select(Document)
+        .where(
+            Document.bank_id == bank.id,
+            or_(
+                func.lower(Document.title).contains(low),
+                func.lower(Document.content).contains(low),
+            ),
+        )
+        .order_by(Document.updated_at.desc())
+        .limit(SEARCH_RESULTS_PER_CATEGORY)
+    ).scalars().all()
+    result["documents"] = [
+        {
+            "id": d.id, "title": d.title, "category": d.category,
+            "language": d.language, "updated_at": iso(d.updated_at),
+        }
+        for d in docs
+    ]
+
+    faqs = db.execute(
+        select(Faq)
+        .where(
+            Faq.bank_id == bank.id,
+            or_(
+                func.lower(Faq.question).contains(low),
+                func.lower(Faq.answer).contains(low),
+            ),
+        )
+        .order_by(Faq.served.desc())
+        .limit(SEARCH_RESULTS_PER_CATEGORY)
+    ).scalars().all()
+    result["faq"] = [_faq_row(r) for r in faqs]
+
+    return result
 
 
 @app.get("/admin/api/{slug}/faq/suggestions")
