@@ -1,10 +1,11 @@
-"""AI insights — deterministic findings first, prose second, no customer text.
+"""AI insights — the model is the analyst; the rules are the offline floor.
 
-The properties held here: every rule fires on its threshold and stays quiet
-under its denominator floor (a rate over three events is noise); the panel is
-never empty; the endpoint works with no model at all; the narrative digest
-physically excludes the one aggregate field carrying customer wording; and a
-failed model call degrades to the findings rather than an error.
+The properties held here: every fallback rule fires on its threshold and
+stays quiet under its denominator floor (a rate over three events is noise);
+the page is never empty; the endpoint works with no model at all; the brief
+digest physically excludes the one aggregate field carrying customer
+wording; and a failed or malformed model reply degrades to the findings
+rather than an error or a half-parsed page.
 """
 
 from __future__ import annotations
@@ -184,11 +185,18 @@ def test_the_endpoint_works_with_no_model_at_all(
 ) -> None:
     data = _get(client, demo_bank)
     assert data["findings"]
-    assert data["narrative"] is None
+    assert data["brief"] is None
     assert data["backend"] == "extractive-fallback"
 
 
-def test_the_narrative_digest_never_carries_customer_text(
+BRIEF_JSON = (
+    '{"headline": "A quiet week.", '
+    '"assessment": [{"title": "Volume", "body": "Steady."}], '
+    '"actions": [{"text": "Keep going.", "priority": "later"}]}'
+)
+
+
+def test_the_brief_digest_never_carries_customer_text(
     client: TestClient, demo_bank: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The customer's own words reach Overview only inside top_topics
@@ -206,18 +214,49 @@ def test_the_narrative_digest_never_carries_customer_text(
                   *, thinking_budget: int) -> str:
         captured["system"] = system
         captured["user"] = user
-        return "A quiet week."
+        return BRIEF_JSON
 
     monkeypatch.setattr(llm, "_call_model", fake_call)
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    data = _get(client, demo_bank, narrative=1, language="am")
-    assert data["narrative"] == "A quiet week."
-    assert data["narrative_language"] == "am"
+    data = _get(client, demo_bank, brief=1, language="am")
+    assert data["brief"]["headline"] == "A quiet week."
+    assert data["brief"]["actions"][0]["priority"] == "later"
+    assert data["brief_language"] == "am"
     assert "moon" not in captured["user"]
     assert "top_topics" not in captured["user"]
+    # The model sees the full aggregate picture (it is the analyst now) and
+    # the machine findings only as hints.
+    assert "machine_findings" in captured["user"]
     # The brief is asked for in the panel's language, by its own name —
     # the same native names the rest of the product uses.
     assert "አማርኛ" in captured["system"]
+
+
+def test_a_malformed_brief_degrades_rather_than_renders(
+    client: TestClient, demo_bank: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def bad_json(system: str, user: str, max_output_tokens: int,
+                 *, thinking_budget: int) -> str:
+        return "Here are my thoughts: the week was fine."
+
+    monkeypatch.setattr(llm, "_call_model", bad_json)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    data = _get(client, demo_bank, brief=1)
+    assert data["brief"] is None
+    assert data["findings"]
+
+
+def test_an_unknown_priority_is_coerced_never_crashed() -> None:
+    parsed = llm._parse_brief(
+        '{"headline": "x", "assessment": [{"title": "t", "body": "b"}], '
+        '"actions": [{"text": "do", "priority": "immediately"}]}'
+    )
+    assert parsed["actions"][0]["priority"] == "soon"
+
+
+def test_a_code_fenced_brief_still_parses() -> None:
+    parsed = llm._parse_brief("```json\n" + BRIEF_JSON + "\n```")
+    assert parsed["headline"] == "A quiet week."
 
 
 def test_a_failed_model_call_degrades_to_findings(
@@ -229,8 +268,8 @@ def test_a_failed_model_call_degrades_to_findings(
 
     monkeypatch.setattr(llm, "_call_model", broken)
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    data = _get(client, demo_bank, narrative=1)
-    assert data["narrative"] is None
+    data = _get(client, demo_bank, brief=1)
+    assert data["brief"] is None
     assert data["findings"]
 
 
@@ -238,7 +277,7 @@ def test_an_unknown_language_falls_back_to_english(
     client: TestClient, demo_bank: Any
 ) -> None:
     data = _get(client, demo_bank, language="fr")
-    assert data["narrative_language"] is None  # no narrative requested
+    assert data["brief_language"] is None  # no brief requested
     assert data["findings"]
 
 

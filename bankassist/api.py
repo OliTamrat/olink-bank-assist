@@ -3767,25 +3767,29 @@ def analytics_operations(
 def analytics_insights(
     days: int = DEFAULT_ANALYTICS_DAYS,
     language: str = "en",
-    narrative: bool = False,
+    brief: bool = False,
     principal: Principal = NeedsAnalyticsRead,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Findings a manager can act on — rules always, prose when a model is up.
+    """The AI's own read of the operation — with a deterministic fallback.
 
-    Two layers, in that order (see `insights.py` for why): deterministic
-    threshold findings over the same aggregates Overview and Performance
-    already report, then an optional model-written brief over a digest of
-    those aggregates. The digest deliberately excludes `top_topics` — the
+    The model is the analyst (see ADR-0021, amended by the founder's review):
+    it receives the full aggregate picture — Overview, Performance, language
+    outcomes, channel mix, the hourly load matrix and the machine findings
+    as hints — and composes a structured brief itself: headline, assessment
+    sections, prioritised actions. The threshold rules in `insights.py`
+    remain as the offline floor: with no model configured, or a failed or
+    malformed call, the findings render alone and the page still works —
+    extractive-mode doctrine, applied to analytics.
+
+    What never changes, either way: the digest excludes `top_topics` — the
     one aggregate field carrying (redacted) customer wording — so no
-    customer text can reach the model from here at all, which is what lets
+    customer text can reach the model from here at all. That is what lets
     this sit behind the same `analytics.read` gate as the reports it reads.
 
-    `narrative` is opt-in per request rather than default: the findings are
-    free, the model call is not, and a page poll must never quietly bill a
-    Gemini call. With no model configured (or a failed call) the response
-    carries `narrative: null` and the findings stand alone — extractive-mode
-    doctrine, applied to analytics.
+    `brief` is opt-in per request: the caller (the AI Insights page) asks
+    for it when the manager opens the page — visiting the page is the
+    consent — and never from a background poll.
     """
     if language not in SUPPORTED_LANGUAGES:
         language = "en"
@@ -3793,35 +3797,43 @@ def analytics_insights(
     ops = analytics_operations(days=days, principal=principal, db=db)
     found = insights.findings(overview, ops)
 
-    text: str | None = None
-    if narrative:
+    composed: dict[str, Any] | None = None
+    if brief:
         digest = {
             "window_days": overview["window_days"],
             "conversations": overview["conversations"],
+            "conversations_per_day": overview["daily"],
             "substantive_questions": overview["substantive_questions"],
             "deflection_rate": overview["deflection_rate"],
             "own_content_rate": overview["own_content_rate"],
             "previous_window": overview["previous"],
+            "outcomes": overview["outcomes"],
+            "languages": overview["languages"],
+            "channels": [
+                {"channel": c["channel"], "count": c["count"]}
+                for c in overview["channels"]
+            ],
             "escalations": ops["escalations"],
             "live_calls": ops["live"],
             "staffing": ops["staffing"],
-            "findings": found,
+            "busy_utc_weekday_hour_count": ops["busy"],
+            "machine_findings": found,
         }
         try:
-            text = llm.summarize_operations(
+            composed = llm.analyze_operations(
                 json.dumps(digest, ensure_ascii=False),
                 language,
                 principal.bank.display_name,
             )
         except llm.LLMUnavailable:
-            text = None
+            composed = None
 
     return {
         "window_days": overview["window_days"],
         "since": overview["since"],
+        "brief": composed,
+        "brief_language": language if composed else None,
         "findings": found,
-        "narrative": text,
-        "narrative_language": language if text else None,
         "backend": llm.active_backend(),
     }
 
