@@ -362,7 +362,9 @@
     "reason_service_issue": "Something is broken",
     "gap_reason_unanswered_question": "No answer found",
     "gap_reason_answered_from_general_knowledge": "Answered generically",
-    "gap_reason_service_issue": "Broken, no fix published"
+    "gap_reason_service_issue": "Broken, no fix published",
+    "reason_unclear_question": "Asked the customer what they meant",
+    "gap_reason_unclear_question": "Wording did not match"
   },
   "am": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -727,7 +729,9 @@
     "reason_service_issue": "የተበላሸ ነገር አለ",
     "gap_reason_unanswered_question": "መልስ አልተገኘም",
     "gap_reason_answered_from_general_knowledge": "በአጠቃላይ መልስ ተሰጥቷል",
-    "gap_reason_service_issue": "ተበላሽቷል፤ የታተመ መፍትሔ የለም"
+    "gap_reason_service_issue": "ተበላሽቷል፤ የታተመ መፍትሔ የለም",
+    "reason_unclear_question": "ደንበኛው ምን ማለቱ እንደሆነ ተጠይቋል",
+    "gap_reason_unclear_question": "አጻጻፉ አልተዛመደም"
   },
   "om": {
     "nav_dashboard": "Daashboordii",
@@ -1092,7 +1096,9 @@
     "reason_service_issue": "Wanti tokko hin hojjetu",
     "gap_reason_unanswered_question": "Deebiin hin argamne",
     "gap_reason_answered_from_general_knowledge": "Waliigalaan deebi'e",
-    "gap_reason_service_issue": "Hin hojjetu; furmaanni hin maxxanfamne"
+    "gap_reason_service_issue": "Hin hojjetu; furmaanni hin maxxanfamne",
+    "reason_unclear_question": "Maamilaan maal jechuu akka barbaade gaafatame",
+    "gap_reason_unclear_question": "Jechi walsimuu dide"
   },
   "ti": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -1457,7 +1463,9 @@
     "reason_service_issue": "ዝተበላሸወ ነገር ኣሎ",
     "gap_reason_unanswered_question": "መልሲ ኣይተረኽበን",
     "gap_reason_answered_from_general_knowledge": "ብሓፈሻ መልሲ ተዋሂቡ",
-    "gap_reason_service_issue": "ተበላሽዩ፤ ዝተሓትመ መፍትሒ የለን"
+    "gap_reason_service_issue": "ተበላሽዩ፤ ዝተሓትመ መፍትሒ የለን",
+    "reason_unclear_question": "ዓሚል እንታይ ማለቱ ከም ዝኾነ ተሓቲቱ",
+    "gap_reason_unclear_question": "ኣገላልጻ ኣይተሳነየን"
   },
   "so": {
     "nav_dashboard": "Dashboard-ka",
@@ -1822,7 +1830,9 @@
     "reason_service_issue": "Wax baa jaban",
     "gap_reason_unanswered_question": "Jawaab lama helin",
     "gap_reason_answered_from_general_knowledge": "Si guud loogaga jawaabay",
-    "gap_reason_service_issue": "Way jabantahay, xal lama daabicin"
+    "gap_reason_service_issue": "Way jabantahay, xal lama daabicin",
+    "reason_unclear_question": "Macmiilka waa la weydiiyay waxa uu ula jeedo",
+    "gap_reason_unclear_question": "Ereyadu iskuma dhicin"
   },
   "sw": {
     "nav_dashboard": "Dashibodi",
@@ -2187,6 +2197,8 @@
     "reason_service_issue": "Kitu hakifanyi kazi",
     "gap_reason_unanswered_question": "Hakuna jibu lililopatikana",
     "gap_reason_answered_from_general_knowledge": "Imejibiwa kwa ujumla",
-    "gap_reason_service_issue": "Haifanyi kazi, hakuna suluhisho lililochapishwa"
+    "gap_reason_service_issue": "Haifanyi kazi, hakuna suluhisho lililochapishwa",
+    "reason_unclear_question": "Mteja aliulizwa alimaanisha nini",
+    "gap_reason_unclear_question": "Maneno hayakulingana"
   }
 }

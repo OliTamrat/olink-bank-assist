@@ -408,6 +408,69 @@ def translate_for_search(question: str) -> str:
     )
 
 
+# A sentinel rather than an empty string, for the same reason
+# INSUFFICIENT_CONTEXT is one: "the message was already clear" and "the model
+# produced nothing" are different outcomes, and an empty reply cannot tell
+# them apart.
+NOTHING_TO_REFINE = "ALREADY_CLEAR"
+
+_REFINE_PROMPT = """You turn a bank customer's message into a search query for \
+that bank's own help documents.
+
+The customer may not write well. Expect misspellings, missing words, no \
+punctuation, words in the wrong order, and two- or three-word fragments. Many \
+customers are new to written banking and some are typing in their second \
+language. That is normal and is not a reason to give up.
+
+Your job is ONLY to work out what they are looking for and write it as a clear, \
+short query. Rules:
+
+1. Reply with the query and nothing else. No explanation, no quotes.
+2. Write the query in the SAME language the customer used.
+3. Fix spelling. Expand fragments into a full request: "how open acount" is \
+"how do I open an account".
+4. Keep it faithful. Use only what they said and the ordinary banking meaning \
+of it. NEVER add a product name, a figure, a limit or a condition they did not \
+mention — you are rewriting their question, not answering it.
+5. If the message is already a clear question, or if you genuinely cannot tell \
+what they want, reply with exactly ALREADY_CLEAR and nothing else. Guessing \
+wrongly sends them a confidently irrelevant answer, which is worse than asking \
+them what they meant."""
+
+
+def refine_for_search(message: str) -> str:
+    """Rewrite a badly-typed message as a clear search query, same language.
+
+    The literacy path. Lexical retrieval is unforgiving of how a question is
+    written, and the failure is not the one you would expect: it is rarely
+    silence. Measured against the seeded CBE corpus, "how open acount"
+    retrieves **Transfers to Telebirr** — the typo kills `acount`, leaving
+    `open`, which matches "open" in an unrelated document. Retrieval succeeds
+    confidently on the wrong thing, the model then reads it and correctly
+    declines, and the customer is escalated to a teller.
+
+    So this runs on the *failure* path — no chunks, or the model declined —
+    and never on the common case, which pays nothing for it.
+
+    Same doctrine as `translate_for_search`, and it is what makes this safe:
+    **only the search text is rewritten.** The answer is still generated from
+    whatever documents come back, the informativeness gate still decides
+    whether anything was really found, and the model may still decline. A bad
+    rewrite therefore costs a miss, never a wrong answer.
+
+    Raises LLMUnavailable with no backend configured — the caller skips the
+    retry and the clarifying question takes over, so extractive mode keeps
+    working.
+    """
+    # Thinking off, like translate_for_search: this is a rewrite, not a
+    # judgement, and it sits on the path where latency is already worst. The
+    # one judgement it makes — "can I tell what they meant?" — is a single
+    # bit answered by ALREADY_CLEAR, not something worth a thinking budget.
+    return _call_model(
+        _REFINE_PROMPT, message, max_output_tokens=256, thinking_budget=0
+    )
+
+
 _CURATED_TRANSLATE_PROMPT = """You translate a bank's own approved customer \
 answer into {language_name}, for {bank_name}, an Ethiopian bank.
 
