@@ -341,7 +341,7 @@ carry. See ADR-0018.
 |---|---|---|
 | `strings.json` | 21 | what the assistant says to a customer |
 | `ui_strings.json` | 52 | the widget's own buttons and labels |
-| `admin_strings.json` | 361 | the staff panel, teller console included |
+| `admin_strings.json` | 363 | the staff panel, teller console included |
 
 The widget and the admin panel both got their string tables in August 2026.
 The teller console was the last surface and is done — queue, duty panel,
@@ -992,7 +992,7 @@ Remaining polish, not blockers:
 - [ ] **Linguist review of OM/TI/SO/SW** — the one open language item, and it
       now covers more than wording. `review/Olink_Bank_Assist_language_review.xlsx`
       carries four sheets: the assistant's replies, the phrasebook, the
-      widget's buttons and 361 staff-panel strings. **Sheet 2 matters most.**
+      widget's buttons and 363 staff-panel strings. **Sheet 2 matters most.**
       Every language defect found in a live demo so far was a sentence the
       assistant failed to UNDERSTAND, not a reply worded badly — and the
       Tigrinya, Somali and (as of 2026-08-12, ADR-0018) Swahili classifier
