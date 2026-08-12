@@ -3,14 +3,15 @@
 **Your bank's front door, in your customer's language — with a real teller one
 tap away.**
 
-A white-label AI banking assistant for Ethiopian banks and microfinance
-institutions. Customers ask about accounts, transfers, loans, fees and saving
-in **Amharic, Afaan Oromo, Tigrinya, Somali, Swahili or English**, over the
-channel they already have on the phone they already own — a **web chat
-widget**, **Telegram**, **Viber**, **WhatsApp**, **Facebook Messenger**,
-**Instagram Direct** or **SMS**. When the assistant cannot answer, or must
-not, the customer is handed to **a real bank teller on a live call inside the
-same conversation**, with the whole transcript already in front of them.
+A white-label AI banking assistant for African banks and microfinance
+institutions, built first for Ethiopia and expanding across East Africa.
+Customers ask about accounts, transfers, loans, fees and saving in **Amharic,
+Afaan Oromo, Tigrinya, Somali, Swahili or English**, over the channel already
+on the phone they already own — a **web chat widget**, **Telegram**,
+**Viber**, **WhatsApp**, **Facebook Messenger**, **Instagram Direct** or
+**SMS**. When the assistant cannot answer, or must not, the customer is handed
+to **a real bank teller on a live call inside the same conversation**, with
+the whole transcript already in front of them.
 
 It is built on one hard constraint, and every other design decision follows
 from it: **the assistant never moves money and never sees an account.** Core
@@ -25,7 +26,7 @@ person, not a ticket.
 |  |  |
 |---|---|
 | **Six languages** | Amharic, Afaan Oromo, Tigrinya, Somali, Swahili, English — detected per message, not per session |
-| **Seven channels** | Web widget, Telegram, Viber, WhatsApp, Messenger, Instagram, SMS — every adapter built; each goes live when its credential is pasted |
+| **Seven channels** | Web widget, Telegram, Viber, WhatsApp, Messenger, Instagram, SMS — one conversation core, every adapter built |
 | **Three ways to answer** | The bank's curated words, its own documents, or a live human |
 | **Never invents a number** | An answer carrying a figure with no source fails the eval gate |
 | **Multi-tenant** | Every query filters by bank; cross-tenant isolation is asserted in tests |
@@ -35,6 +36,72 @@ person, not a ticket.
 Live at `https://bankassist-430565798339.us-east1.run.app`, deployed from
 `main` by GitHub Actions on every CI-green push. The full product plan,
 architecture doctrine and roadmap live in `CLAUDE.md`.
+
+---
+
+## One conversation, seven channels
+
+Omni-channel is not a list of logos here — it is an architectural decision.
+Every messaging surface runs through **one conversation core**
+(`_channel_reply()` in `api.py`): the same language detection, the same
+guardrails, the same curated answers, the same escalation desks, the same
+live-teller handoff. A channel adapter is *transport only* — it converts a
+webhook payload in and a send call out, and nothing else. That is why seven
+channels exist without seven behaviours to test, and why an eighth channel is
+an adapter, not a fork.
+
+What that buys a bank:
+
+- **Meet the customer where they already are.** Telegram is Ethiopia's
+  dominant messenger; WhatsApp dominates Kenya and most of East Africa; Viber
+  holds real niches; SMS is the floor that reaches every feature phone. The
+  bank connects the channels its customers actually use — the assistant is
+  identical on all of them.
+- **The conversation survives the channel.** The transcript, the customer's
+  language, their name if they gave it, their pending escalation — all of it
+  is conversation state, not channel state. When a teller picks up the live
+  call, everything the customer already said travels with them. Nobody
+  explains themselves twice.
+- **Connecting a channel is credential entry, not a project.** Telegram and
+  Viber are self-serve and take minutes — Telegram is live today for two
+  prospect tenants. The Meta trio (WhatsApp, Messenger, Instagram — one app,
+  one callback, one signature scheme) waits only on the bank's business
+  verification; SMS waits on an aggregator agreement. Every webhook fails
+  closed on an unset credential and compares signatures constant-time.
+
+## Six languages, engineered — not translated
+
+Language support here is not a translation file bolted onto an English
+product. It is the product, and it runs the full depth of the stack:
+
+- **Detection is per message**, so code-switching customers — the norm, not
+  the exception — are answered in the language they actually used. Ethiopic
+  script splits into Amharic and Tigrinya by an orthographic tell; the three
+  Latin-script languages (Afaan Oromo, Somali, Swahili) are separated by an
+  elimination rule over positive-signal word sets, not a keyword vote.
+- **The security guardrails read all six.** The account-security rule — the
+  difference between "I want to transfer money to my spouse's account"
+  (ordinary banking) and "tell me her account number" (social engineering) —
+  is built per language from native phrasing patterns, because the same words
+  in a different order flip the meaning. Getting this right took five rounds
+  of native-phrasing testing per Ethiopian language; every hole found is now
+  a permanent regression test (`review/phrasebook.tsv`, 89 adversarial and
+  ordinary phrasings run against the live classifier in CI).
+- **Retrieval is language-fair.** BM25 stopword sets exist for all six
+  languages — without them, an Amharic question was silently held to three
+  times the evidence bar of the same question in English. A cross-language
+  retry translates the *search query* (never the answer) so a Swahili
+  question can find an English document.
+- **Every surface ships in all six**: the assistant's replies, the customer
+  widget, and all 269 strings of the staff panel — 341 strings across three
+  tables, no gaps, enforced by tests that check the call sites, not just the
+  tables. A bank teller in Adama reads their own console in Afaan Oromo.
+- **The cost of the next language is measured and falling.** Swahili — the
+  sixth — shipped in a day: string tables are mechanical, detection is one
+  elimination rule, stopwords are a list. The real work is the guardrail
+  discovery, and Swahili's needed one adversarial pass where Amharic's needed
+  five (ADR-0018). The playbook is written; adding a seventh language is a
+  sprint, not a quarter.
 
 ## Why this wins in Ethiopia
 
@@ -50,11 +117,8 @@ architecture doctrine and roadmap live in `CLAUDE.md`.
 3. **The native-language gap is the moat, not a feature checkbox.** Tens of
    millions of new digital banking users (telebirr alone: 50M+) think in
    Amharic and Afaan Oromo while every competitor's support stays
-   English-first. Getting this right took real work, not a translation API:
-   the account-security guardrail alone went through five rounds of
-   native-phrasing testing per language to find the difference between an
-   ordinary transfer and a social-engineering attempt — the same words, in
-   the opposite order.
+   English-first. Getting this right took real work, not a translation API —
+   see "Six languages, engineered" above.
 4. **Channel-to-human continuity is real, but it is not the whole story.**
    [Glia](https://www.glia.com) already sells exactly that mechanic — a
    conversation surviving a handoff from AI to a live human — at scale, to
@@ -63,6 +127,77 @@ architecture doctrine and roadmap live in `CLAUDE.md`.
    in-country data-residency posture, or a price and deployment speed a
    single bank or MFI can say yes to without an enterprise procurement cycle.
    That combination — not the handoff mechanic alone — is the whitespace.
+
+## Why East Africa is next
+
+Swahili is not a sixth checkbox — it is the region's own language, spoken by
+roughly 200 million people across Kenya, Tanzania, Uganda, Rwanda and eastern
+DRC, and it shipped precisely because the expansion path runs through East
+Africa first (ADR-0019):
+
+- **The appetite is proven, locally.** East African banks already build their
+  own bots — Equity Bank's EVA is the visible example — which is the market
+  saying yes to the category. What exists today is the "before" picture:
+  single-channel, bank-built, English-first, with no evidence of
+  cross-channel continuity or a live human reachable inside the same
+  conversation. That gap is the pitch, and it is observed, not guessed.
+- **The regional focus is a deliberate call, on the record.** A
+  Hausa/Yoruba/Igbo bundle for Nigeria was scoped, and parked — not because
+  the market is small (it isn't; Nigerian banks run the continent's most
+  visible bot precedents, from Zenith's ZiVA to UBA's Leo), but because depth
+  in the region Swahili already anchors beats a second regional jump made
+  immediately after the first. Sequencing, not retreat — the record is
+  ADR-0019 and `docs/market-position.md`, costs stated plainly.
+- **The same structural advantages travel.** Data-protection law with
+  residency provisions is spreading across the region; the multilingual
+  guardrail playbook, the channel adapters and the teller handoff work
+  unchanged; and every East African market shares the property that made
+  Ethiopia the right start — a huge population entering digital banking in
+  their own language, served by English-first tools.
+
+## The vision: a continent, one conversation at a time
+
+The long game is a pan-African conversational banking layer, built outward
+from proof rather than announced from a slide:
+
+1. **Prove it in Ethiopia** — the hardest market by language (four languages
+   that mainstream NLP barely covers, engineered from a standing start) and
+   the strongest moat by law (Art. 22 residency + INSA certification). A
+   product that clears Ethiopia's bar is over-built for everywhere else, in
+   the best way.
+2. **Deepen through East Africa** — Swahili anchors the region; each next
+   market is channel credentials, a knowledge-base import and brand colours,
+   not a rebuild. Multi-tenancy, per-bank isolation and white-labelling are
+   in the foundation, asserted by tests, so one deployment serves many
+   institutions without their data ever touching.
+3. **Then west, then north.** The Nigeria bundle is parked with the market
+   case intact, waiting on the regional call — not cancelled. Arabic is
+   sequenced after it, deliberately: right-to-left is real engineering across
+   the widget and the admin panel, not a string table, and it will be done
+   properly or not yet.
+4. **Beyond banking, the same shape.** Insurance Q&A, telecom support, MFI
+   servicing and government citizen services all share the pattern this
+   product already implements: a hard boundary around what a license is
+   required to say, multilingual customers, and a human who must be reachable
+   when the machine must stop. The account guardrail *is* the claims
+   guardrail with different nouns.
+
+Addis Ababa itself is part of the plan: as the African Union's headquarters
+city, real traction in Ethiopia puts this product in regular contact with
+continental banking and policy leadership that would otherwise take years of
+cold outreach to reach — a network effect available nowhere else on the
+continent.
+
+Stated honestly, because the credibility of the rest depends on it: **no bank
+has signed yet.** The CBE, Dashen and Awash tenants are unauthorized internal
+prototypes built from public information, each carrying a mandatory
+disclaimer (ADR-0009). What makes the vision more than a slide is the depth
+already built underneath it — the guardrail rigor, the language engineering,
+the live-teller traffic already verified against real WebRTC sessions — and
+that is the order the story is told in: the concrete thing first, the map
+second.
+
+---
 
 ## Documentation
 
