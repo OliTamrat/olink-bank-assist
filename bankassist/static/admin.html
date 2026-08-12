@@ -398,8 +398,14 @@ textarea { min-height: 170px; resize: vertical; }
 
 .content { min-width: 0; }
 .topbar {
-  background: var(--surface); border-bottom: 1px solid var(--line);
-  padding: 14px 24px; display: flex; align-items: center; gap: 14px;
+  /* Translucent over the page it sticks above, so scrolled content reads as
+     passing underneath a surface rather than vanishing under a wall. The
+     solid --surface fallback stands in where backdrop-filter is unsupported. */
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 24px; display: flex; align-items: center; gap: 12px;
   flex-wrap: wrap; position: sticky; top: 0; z-index: 5;
 }
 .topbar h2 { font-size: 17px; }
@@ -409,12 +415,31 @@ textarea { min-height: 170px; resize: vertical; }
    Answers. Sits between the spacer and the topbar tools rather than taking
    the spacer's own flex slot, so it has a bounded width instead of
    stretching across whatever room the page title leaves. */
-.gsearch { position: relative; width: 260px; max-width: 40vw; }
+.gsearch { position: relative; width: 300px; max-width: 40vw; }
+.gs-ico {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  display: flex; color: var(--muted); pointer-events: none;
+}
 .gsearch input {
   width: 100%; background: var(--surface-2); border: 1px solid var(--line);
-  border-radius: 8px; padding: 7px 10px; font-size: 13px; color: var(--ink);
+  border-radius: 999px; padding: 7px 34px 7px 33px; font-size: 13px;
+  color: var(--ink); transition: border-color .15s ease, box-shadow .15s ease;
+}
+.gsearch input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--brand) 60%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
 }
 .gsearch input::placeholder { color: var(--muted); }
+/* The "/" hint chip — a promise the shortcut keeps. Hidden while typing (the
+   shortcut is moot once you are in the box) and on phones (no keyboard). */
+.gs-key {
+  position: absolute; right: 11px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; line-height: 1; color: var(--faint);
+  border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px;
+  pointer-events: none; font-family: inherit;
+}
+.gsearch:focus-within .gs-key { display: none; }
 .gsearch-results {
   position: absolute; top: calc(100% + 6px); right: 0;
   width: min(420px, 90vw); max-height: 70vh; overflow-y: auto;
@@ -448,6 +473,7 @@ textarea { min-height: 170px; resize: vertical; }
 }
 @media (max-width: 720px) {
   .gsearch { width: 100%; max-width: none; order: 3; }
+  .gs-key { display: none; }
 }
 /* ------------------------------------------------------------------ toasts
    Bottom-right on a desktop, full width along the bottom on a phone — out of
@@ -501,17 +527,22 @@ textarea { min-height: 170px; resize: vertical; }
 }
 
 /* ----------------------------------------------------------- topbar tools
-   Two controls, each answering a question the page could not answer before.
+   Each control answers a question the page could not answer before.
 
    "Updated 6m ago" — a dashboard gets left open on a second monitor all day,
    and every number on it silently ages. Without a timestamp there is no way to
    tell a quiet morning from a stale tab, and that is the failure mode where
    someone acts on numbers from yesterday.
 
-   The queue button — the rail badge disappears when the rail is collapsed, and
-   it is invisible on the pages an operator actually works from. The one
-   time-sensitive thing in this product should be reachable from anywhere. */
-.tools { display: flex; align-items: center; gap: 8px; }
+   The queue buttons — the rail badge disappears when the rail is collapsed,
+   and it is invisible on the pages an operator actually works from. The two
+   time-sensitive things in this product — a customer waiting for a live call,
+   and an escalation waiting for a person — should be reachable from anywhere.
+
+   `.toptools`, not `.tools`: the page-level toolbar class of the same name is
+   defined later with `flex-wrap` and a bottom margin, and same-specificity
+   rules resolve by source order — the topbar was silently inheriting both. */
+.toptools { display: flex; align-items: center; gap: 8px; }
 .stamp {
   font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -531,6 +562,17 @@ textarea { min-height: 170px; resize: vertical; }
 .qbtn.hot { border-color: color-mix(in srgb, var(--warn) 55%, var(--line));
   color: var(--warn); }
 .qbtn.hot .cnt { color: var(--warn); }
+/* A customer holding for a live call outranks an escalation that can wait
+   until after coffee — so the live chip escalates to the error colour, one
+   step past the escalation chip's warning. The dot pulses so a glance
+   catches it even before the number is read. */
+.qbtn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.qbtn.live-hot { border-color: color-mix(in srgb, var(--bad) 55%, var(--line));
+  color: var(--bad); }
+.qbtn.live-hot .cnt { color: var(--bad); }
+.qbtn.live-hot .dot { background: var(--bad); animation: livePulse 1.4s ease-in-out infinite; }
+@keyframes livePulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .qbtn.live-hot .dot { animation: none; } }
 .spin { animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 720px) { .stamp, .qbtn .lbl { display: none; } }
@@ -1346,13 +1388,21 @@ td.title { color: var(--ink); font-weight: 550; }
       <h2 id="page-title">Dashboard</h2>
       <div class="spacer"></div>
       <div class="gsearch" id="gsearch">
+        <span class="gs-ico" id="gs-ico" aria-hidden="true"></span>
         <input id="gs-input" type="search" autocomplete="off" placeholder="Search everything…">
+        <span class="gs-key" aria-hidden="true">/</span>
         <div class="gsearch-results" id="gs-results" role="listbox" hidden></div>
       </div>
-      <div class="tools">
+      <div class="toptools">
         <span class="stamp" id="stamp" aria-live="polite"></span>
         <button class="iconbtn" id="refresh" title="Reload this page's data"
                 aria-label="Reload this page's data"></button>
+        <button class="qbtn hidden" id="live-btn"
+                title="Open the live call queue"
+                aria-label="Open the live call queue">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="lbl" id="live-lbl">Live</span><span class="cnt" id="live-count">0</span>
+        </button>
         <button class="qbtn hidden" id="queue-btn"
                 title="Open the escalation queue"
                 aria-label="Open the escalation queue">
@@ -1511,7 +1561,8 @@ var ICONS = {
   edit:      '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/>',
   trash:     '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>',
   refresh:   '<path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v4h-4"/>',
-  chevron:   '<path d="M9 5l7 7-7 7"/>'
+  chevron:   '<path d="M9 5l7 7-7 7"/>',
+  search:    '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>'
 };
 function icon(name, size) {
   return '<svg width="' + (size || 17) + '" height="' + (size || 17) + '" viewBox="0 0 24 24"' +
@@ -1946,7 +1997,7 @@ loadAdminStrings().then(function () {
 function paintAdminChrome() {
   var m = {
     lblConversation: "conversation", lblApproved: "approved_answers",
-    "queue-lbl": "queue", "signout-label": "sign_out"
+    "queue-lbl": "queue", "live-lbl": "nav_live_queue", "signout-label": "sign_out"
   };
   Object.keys(m).forEach(function (id) {
     var n = document.getElementById(id);
@@ -1954,15 +2005,16 @@ function paintAdminChrome() {
   });
   var t = {
     cMic: "mute", cCam: "camera", cHang: "end_session", adminLang: "search",
-    "queue-btn": "open_escalation_queue", "theme-toggle": "switch_dark_light"
+    "queue-btn": "open_escalation_queue", "live-btn": "open_live_queue",
+    "theme-toggle": "switch_dark_light"
   };
   Object.keys(t).forEach(function (id) {
     var n = document.getElementById(id);
     if (n && id !== "adminLang") n.title = A(t[id]);
   });
-  // A hover title a screen reader never speaks is half the job. Both of these
-  // carry an aria-label as well, and it has to follow the language with it.
-  ["queue-btn", "theme-toggle"].forEach(function (id) {
+  // A hover title a screen reader never speaks is half the job. Each of these
+  // carries an aria-label as well, and it has to follow the language with it.
+  ["queue-btn", "live-btn", "theme-toggle"].forEach(function (id) {
     var n = document.getElementById(id);
     if (n && n.getAttribute("aria-label")) n.setAttribute("aria-label", A(t[id]));
   });
@@ -2106,27 +2158,49 @@ function renderStamp() {
                  : A("updated_h_ago", null, { n: Math.floor(mins / 60) }));
 }
 
-/* The queue count on the rail, so waiting work is visible from any page. */
+/* The queue counts on the rail and in the topbar, so waiting work is visible
+   from any page. Two queues, refreshed independently: an operator without
+   `sessions.read` still gets their escalation count, and a teller without
+   `handoffs.read` still gets their live one. */
 function refreshBadge() {
-  if (!can("handoffs.read")) return;
-  api("/handoffs?status=open").then(function (rows) {
-    state.openHandoffs = rows.length;
-    var el = $("badge-handoffs");
-    if (el) {
-      el.textContent = rows.length;
-      el.classList.toggle("hidden", rows.length === 0);
-    }
-    // The same number in the topbar, which survives the rail being collapsed
-    // and is on screen while an operator is working inside a conversation.
-    var q = $("queue-btn");
-    if (!q) return;
-    q.classList.remove("hidden");
-    q.classList.toggle("hot", rows.length > 0);
-    $("queue-count").textContent = rows.length;
-    q.setAttribute("aria-label",
-      rows.length ? rows.length + " escalations waiting — open the queue"
-                  : "Escalation queue — nothing waiting");
-  }).catch(function () {});
+  if (can("handoffs.read")) {
+    api("/handoffs?status=open").then(function (rows) {
+      state.openHandoffs = rows.length;
+      var el = $("badge-handoffs");
+      if (el) {
+        el.textContent = rows.length;
+        el.classList.toggle("hidden", rows.length === 0);
+      }
+      // The same number in the topbar, which survives the rail being collapsed
+      // and is on screen while an operator is working inside a conversation.
+      var q = $("queue-btn");
+      if (!q) return;
+      q.classList.remove("hidden");
+      q.classList.toggle("hot", rows.length > 0);
+      $("queue-count").textContent = rows.length;
+      q.setAttribute("aria-label",
+        rows.length
+          ? A(rows.length === 1 ? "escalation_waiting" : "escalations_waiting",
+              null, { n: rows.length })
+          : A("queue_empty"));
+    }).catch(function () {});
+  }
+  if (can("sessions.read")) {
+    api("/teller/queue").then(function (rows) {
+      var waiting = rows.filter(function (r) { return r.state === "queued"; }).length;
+      state.liveWaiting = waiting;
+      var b = $("live-btn");
+      if (!b) return;
+      b.classList.remove("hidden");
+      b.classList.toggle("live-hot", waiting > 0);
+      $("live-count").textContent = waiting;
+      b.setAttribute("aria-label",
+        waiting
+          ? A(waiting === 1 ? "live_waiting_one" : "live_waiting_many",
+              null, { n: waiting })
+          : A("no_one_waiting"));
+    }).catch(function () {});
+  }
 }
 
 /* ------------------------------------------------------------ dashboard */
@@ -5659,10 +5733,38 @@ $("queue-btn").onclick = function () {
   state.hstatus = "open";
   go("handoffs");
 };
+$("live-btn").onclick = function () {
+  if (!can("sessions.read")) return;
+  go("teller");
+};
+$("gs-ico").innerHTML = icon("search", 14);
 wireGlobalSearch();
+/* "/" (or Ctrl/Cmd+K, for hands that learned it elsewhere) drops the cursor
+   into search from anywhere. Never while typing — "/" is an ordinary
+   character in a document title or a curated answer. */
+document.addEventListener("keydown", function (e) {
+  if (e.defaultPrevented) return;
+  var el = e.target;
+  var tag = (el && el.tagName || "").toLowerCase();
+  var typing = tag === "input" || tag === "textarea" || tag === "select" ||
+    (el && el.isContentEditable);
+  var slash = e.key === "/" && !typing && !e.ctrlKey && !e.metaKey && !e.altKey;
+  var chord = (e.key === "k" || e.key === "K") && (e.ctrlKey || e.metaKey);
+  if (!slash && !chord) return;
+  var gs = $("gs-input");
+  // offsetParent is null while the sign-in gate is up — no focus stealing.
+  if (!gs || gs.offsetParent === null) return;
+  e.preventDefault();
+  gs.focus();
+  gs.select();
+});
 // Once a minute is the resolution the stamp is rounded to, so anything faster
 // would repaint the same string.
 setInterval(renderStamp, 60000);
+// The queue counts age the same way the stamp does, and the topbar is the one
+// place they are supposed to be trustworthy from any page. can() is false
+// before sign-in, so this is a no-op until there is a session to count for.
+setInterval(refreshBadge, 60000);
 $("slug").value = state.slug;
 $("signin-btn").onclick = signInWithPassword;
 $("token-btn").onclick = signInWithToken;
