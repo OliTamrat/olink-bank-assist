@@ -839,6 +839,30 @@ td.title { color: var(--ink); font-weight: 550; }
   box-shadow: 0 1px 2px rgba(16,24,40,.08); }
 
 .empty { color: var(--muted); font-size: 13.5px; padding: 22px 0; text-align: center; }
+/* ------------------------------------------------------- performance page
+   A stat a manager reads across, and a 24-column hour histogram. The bars are
+   divs with a real height (not spans — a span ignores height, which is
+   exactly the empty-chart bug the dashboard already had once). */
+.statline {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13.5px;
+  color: var(--body);
+}
+.statline:last-of-type { border-bottom: 0; }
+.statline b { font-size: 19px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.hours { display: flex; align-items: stretch; gap: 3px; height: 148px; padding-top: 8px; }
+.hours .hcol {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  justify-content: flex-end;
+}
+.hours .hb {
+  background: color-mix(in srgb, var(--brand) 72%, var(--surface-2));
+  border-radius: 3px 3px 0 0;
+}
+.hours .hlab {
+  font-size: 10px; color: var(--faint); text-align: center; margin-top: 4px;
+  height: 12px; font-variant-numeric: tabular-nums;
+}
 .note { font-size: 12px; color: var(--faint); margin-top: 12px; }
 .meta { font-size: 12px; color: var(--muted); }
 .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
@@ -1478,6 +1502,7 @@ function setAdminLanguage(code) {
 
 var PAGES = [
   { id: "dashboard", key: "nav_dashboard", label: "Dashboard",     perm: "analytics.read",     load: loadDashboard },
+  { id: "performance", key: "nav_performance", label: "Performance", perm: "analytics.read",   load: loadPerformance },
   { id: "handoffs", key: "nav_escalations",  label: "Escalations",   perm: "handoffs.read",      load: loadHandoffs, badge: true },
   // Directly under Escalations, because it is the same work in a different
   // tense: the queue of people waiting NOW rather than the queue of people
@@ -1499,6 +1524,7 @@ var PAGES = [
 
 var ICONS = {
   dashboard: '<path d="M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z"/>',
+  performance: '<path d="M4.5 16a7.5 7.5 0 1 1 15 0"/><path d="M12 16l3.8-4.2"/><path d="M3.5 20h17"/>',
   handoffs:  '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-4.6A8.4 8.4 0 1 1 21 11.5z"/>',
   convos:    '<path d="M8 10h8M8 14h5M21 12a9 9 0 1 1-3.2-6.9"/><circle cx="19" cy="5" r="2"/>',
   docs:      '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5M8 13h8M8 17h5"/>',
@@ -2887,6 +2913,123 @@ function download(name, body, type) {
   var a = document.createElement("a");
   a.href = url; a.download = name; a.click();
   setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+}
+
+/* ---------------------------------------------------------- performance
+ *
+ * The operation behind the assistant. The Dashboard answers "is the assistant
+ * working" and Content Gaps answers "what should we write next"; this page
+ * answers the third question a bank asks — "is the operation keeping up" —
+ * for whoever manages the floor: which desks the work lands on and how fast
+ * it leaves, whether people who asked for a person reached one, when the
+ * load arrives, and who is on the air to meet it.
+ */
+function fmtDur(sec) {
+  // An em dash, not 0s: an average of nothing is not an instant answer.
+  return sec == null ? "—" : waitedSeconds(sec);
+}
+
+/* The server buckets by UTC hour because a bank record carries no timezone;
+ * the operator's clock IS the bank's clock, so the shift happens here. */
+function busyHoursChart(busy) {
+  if (!busy.length) return '<div class="empty">' + esc(A("perf_no_messages")) + "</div>";
+  var hours = [];
+  for (var i = 0; i < 24; i++) hours.push(0);
+  var shift = Math.round(-new Date().getTimezoneOffset() / 60);
+  busy.forEach(function (t) { hours[((t[1] + shift) % 24 + 24) % 24] += t[2]; });
+  var max = Math.max.apply(null, hours);
+  return '<div class="hours">' + hours.map(function (c, hh) {
+    return '<div class="hcol" title="' + hh + ':00 · ' + c + '">' +
+      '<div class="hb" style="height:' + (max && c ? Math.max(4, Math.round(c / max * 100)) : 0) + '%"></div>' +
+      '<div class="hlab">' + (hh % 6 === 0 ? hh : "") + "</div></div>";
+  }).join("") + "</div>";
+}
+
+function loadPerformance() {
+  var calls = [api("/analytics/operations?days=" + state.days)];
+  calls.push(can("sessions.read")
+    ? api("/teller-performance?days=" + state.days).catch(function () { return null; })
+    : Promise.resolve(null));
+  Promise.all(calls).then(function (both) {
+    if (state.page !== "performance") return;
+    var a = both[0], perf = both[1];
+    var e = a.escalations, live = a.live, st = a.staffing;
+
+    var h = '<div class="tools"><div class="seg">' +
+      [[7, "days_7"], [30, "days_30"], [90, "days_90"], [0, "days_all"]].map(function (d) {
+        return '<button data-days="' + d[0] + '" class="' + (state.days === d[0] ? "on" : "") + '">' +
+          esc(A(d[1])) + "</button>";
+      }).join("") + "</div>" +
+      '<div class="cap">' + esc(a.window_days
+        ? A("last_n_days_lower", null, { n: a.window_days }) : A("all_time_lower")) +
+      "</div></div>";
+
+    h += '<div class="kpis">' +
+      kpi(A("perf_open_escalations"), num(e.open),
+          e.urgent_open ? A("perf_n_urgent", null, { n: num(e.urgent_open) }) : "",
+          false, "handoffs", "", can("handoffs.read") && "handoffs:open") +
+      kpi(A("perf_avg_resolution"), fmtDur(e.avg_resolution_seconds),
+          A("perf_n_resolved", null, { n: num(e.resolved) }),
+          e.avg_resolution_seconds == null, "audit", "", null) +
+      kpi(A("perf_live_calls"), num(live.claimed),
+          live.abandoned ? A("perf_n_abandoned", null, { n: num(live.abandoned) })
+                         : A("perf_all_reached"),
+          false, "teller", "", can("sessions.read") && "teller") +
+      kpi(A("perf_avg_wait"), fmtDur(live.avg_wait_seconds),
+          live.avg_handle_seconds != null
+            ? A("perf_avg_handle", null, { t: fmtDur(live.avg_handle_seconds) })
+            : A("perf_no_calls_yet"),
+          live.avg_wait_seconds == null, "convos", "", null) +
+      "</div>";
+
+    /* Desk table, every desk in the fixed order the server returns them —
+       a manager who has learned where their queue sits must not have to
+       re-find it. Open is now; filed and resolved are the window. */
+    h += '<div class="row row-main">' +
+      '<div class="panel"><h3>' + esc(A("perf_desk_load")) + "</h3>" +
+      "<table><thead><tr><th>" + esc(A("perf_desk")) + "</th>" +
+      "<th>" + esc(A("perf_open")) + "</th>" +
+      "<th>" + esc(A("perf_filed")) + "</th>" +
+      "<th>" + esc(A("perf_resolved")) + "</th>" +
+      "<th>" + esc(A("perf_avg_short")) + "</th></tr></thead><tbody>" +
+      e.desks.map(function (d) {
+        return "<tr><td>" + esc(d.label) +
+          (d.urgent ? ' <span class="pill urgent">' +
+            esc(A("perf_n_urgent", null, { n: num(d.urgent) })) + "</span>" : "") +
+          "</td><td><b>" + num(d.open) + "</b></td>" +
+          "<td>" + num(d.filed) + "</td>" +
+          "<td>" + num(d.resolved) + "</td>" +
+          "<td>" + esc(fmtDur(d.avg_resolution_seconds)) + "</td></tr>";
+      }).join("") + "</tbody></table>" +
+      '<div class="note">' + esc(A("perf_desk_note")) + "</div></div>" +
+
+      '<div class="stack">' +
+      '<div class="panel"><h3>' + esc(A("perf_staffing")) + "</h3>" +
+      '<div class="statline"><span>' + esc(A("perf_on_duty_now")) + "</span><b>" +
+        num(st.on_duty_now) + "</b></div>" +
+      '<div class="statline"><span>' + esc(A("perf_front_line")) + "</span><b>" +
+        num(st.front_line) + "</b></div>" +
+      (perf && perf.is_manager && perf.tellers.length
+        ? '<div class="cap" style="margin-top:12px">' + esc(A("calls_per_teller")) + "</div>" +
+          donut(tellerPerfDonutData(perf.tellers).rows.map(function (r) {
+            return { label: r.label, count: r.count, slot: r.slot };
+          }))
+        : "") +
+      "</div>" +
+      '<div class="panel"><h3>' + esc(A("perf_busy_hours")) + "</h3>" +
+      busyHoursChart(a.busy) +
+      '<div class="note">' + esc(A("perf_busy_note")) + "</div></div>" +
+      "</div></div>";
+
+    $("main").innerHTML = h;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-days]"), function (b) {
+      b.onclick = function () {
+        state.days = parseInt(b.getAttribute("data-days"), 10);
+        go("performance");
+      };
+    });
+    wireDrills();
+  }).catch(function (err) { setStatus(err.message, "error"); });
 }
 
 /* ----------------------------------------------------------- escalations */
