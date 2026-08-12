@@ -4132,7 +4132,16 @@ function loadTeam() {
       teamDetail = perfData.detail;
       h += '<div class="panel" id="team-perf-panel"><h3>' + esc(A("calls_per_teller")) + "</h3>" +
         donut(perfData.rows, {
-          unit: A("unit_calls"), label: A("calls_per_teller"),
+          unit: A("unit_calls"), unitOne: A("unit_call", "call"),
+          label: A("calls_per_teller"),
+          // Same generic templates the Languages donut already uses — see
+          // donut()'s single-category collapse: below two live categories a
+          // ring is a picture of nothing, so it states the one fact as a
+          // sentence instead. Without these the default fell back to
+          // "All 1 calls were in X." — wrong grammar for the exact case a
+          // brand-new team (one teller, one call) hits immediately.
+          oneline: A("donut_all_in", "All {n} {unit} were in {label}."),
+          onelineOne: A("donut_all_in_one", "The single {unit} was in {label}."),
           empty: A("no_calls_taken_yet")
         }) + '<div id="team-perf-detail"></div></div>';
     }
