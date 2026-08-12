@@ -41,6 +41,7 @@ Three rules keep this tree true:
 | `runbooks/` | How to do operational things: deploy, connect channels, run the translation loops |
 | `integrations/` | One page per external service: what it needs, what it signs, what fails silently |
 | `decisions/` | ADRs — the *why* behind every load-bearing choice, with PR references |
+| `market-position.md` | Competitive landscape, positioning, language-expansion order |
 | `video-teller.md`, `per-person-logins.md` | Pre-OKM deep dives, kept in place |
 
 ## Writing rules

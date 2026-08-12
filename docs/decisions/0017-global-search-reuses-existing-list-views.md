@@ -1,4 +1,4 @@
-# ADR-0016 — Global search reuses existing list views; no new detail screen
+# ADR-0017 — Global search reuses existing list views; no new detail screen
 
 **Status:** accepted · **Date:** 2026-08-12
 
