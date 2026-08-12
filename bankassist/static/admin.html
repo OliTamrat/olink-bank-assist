@@ -905,6 +905,20 @@ td.title { color: var(--ink); font-weight: 550; }
   grid-template-columns: 1fr 340px; grid-template-rows: 1fr auto;
 }
 .callroom.open { display: grid; }
+
+/* Above the call room (10001), below the toast host (10050) -- opens while
+   the call room is still visible behind it, and a toast reporting the result
+   still needs to land on top of both once this closes. */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 10020; padding: 24px;
+  background: rgba(0, 0, 0, .6); display: grid; place-items: center;
+}
+.modal-card {
+  width: 100%; max-width: 440px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 16px; padding: 24px;
+  box-shadow: 0 12px 40px rgba(16, 24, 40, .35);
+}
+.modal-card h3 { font-size: 15px; margin-bottom: 12px; }
 .callroom .video { position: relative; grid-row: 1; overflow: hidden; background: #06070d; }
 .callroom .video video.remote { width: 100%; height: 100%; object-fit: cover; }
 .callroom .waiting {
@@ -5217,16 +5231,59 @@ function closeCall() {
 function hangUpCall() {
   if (!callSession) { closeCall(); return; }
   var id = callSession.id;
-  var note = prompt(A("session_summary_prompt"), "");
-  // A cancelled prompt is "I did not mean to hang up", not "end with no
-  // note" — the two are one keystroke apart and only one is recoverable.
-  if (note === null) return;
-  api("/teller/sessions/" + id + "/end", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resolution: note || null })
-  }).then(function () { setStatus(A("session_ended"), "ok"); })
-    .catch(function (e) { setStatus(e.message, "error"); })
-    .then(closeCall, closeCall);
+  showEndCallModal(function (note) {
+    // A cancelled dialog is "I did not mean to hang up", not "end with no
+    // note" — the two are one keystroke apart and only one is recoverable.
+    if (note === null) return;
+    api("/teller/sessions/" + id + "/end", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resolution: note || null })
+    }).then(function () { setStatus(A("session_ended"), "ok"); })
+      .catch(function (e) { setStatus(e.message, "error"); })
+      .then(closeCall, closeCall);
+  });
+}
+
+/* A themed dialog for the one free-text prompt this panel needs, in place of
+ * the browser's native prompt() — reported live as the one thing on this
+ * page that doesn't look like it belongs to it, because it isn't: no theme,
+ * no dark background, floating outside the panel's own visual language.
+ * Built directly rather than as a generic component — this is the only text
+ * prompt in the whole admin panel, so there is nothing else to share it with.
+ * `done` receives the typed text, or null if cancelled — same contract
+ * prompt() had, so the caller above needed no other change. */
+function showEndCallModal(done) {
+  var host = document.createElement("div");
+  host.className = "modal-overlay";
+  host.innerHTML =
+    '<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="endcall-title">' +
+    '<h3 id="endcall-title">' + esc(A("session_summary_prompt")) + "</h3>" +
+    '<textarea id="endcall-note" style="min-height:100px"></textarea>' +
+    '<div class="tools" style="margin-top:14px;justify-content:flex-end">' +
+    '<button class="btn ghost" id="endcall-cancel">' + esc(A("cancel")) + "</button>" +
+    '<button class="btn" id="endcall-submit">' + esc(A("end_session")) + "</button>" +
+    "</div></div>";
+  document.body.appendChild(host);
+
+  var textarea = host.querySelector("#endcall-note");
+  textarea.focus();
+
+  function finish(value) {
+    document.body.removeChild(host);
+    document.removeEventListener("keydown", onKey);
+    done(value);
+  }
+  function onKey(e) {
+    if (e.key === "Escape") finish(null);
+    // Cmd/Ctrl+Enter submits without reaching for the mouse mid-call.
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) finish(textarea.value);
+  }
+  document.addEventListener("keydown", onKey);
+  host.querySelector("#endcall-cancel").onclick = function () { finish(null); };
+  host.querySelector("#endcall-submit").onclick = function () { finish(textarea.value); };
+  // The dim backdrop cancels, same as Escape — only when the click lands on
+  // the backdrop itself, not the card, since the card sits inside it.
+  host.onclick = function (e) { if (e.target === host) finish(null); };
 }
 
 $("cMic").onclick = function () {
