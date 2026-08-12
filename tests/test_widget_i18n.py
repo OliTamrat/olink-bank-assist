@@ -55,7 +55,7 @@ def test_no_language_is_secretly_english() -> None:
     structural check while shipping nothing. The teller strings are the ones
     that matter, so they are the ones pinned."""
     table = json.loads(UI_JSON.read_text(encoding="utf-8"))
-    for lang in ("am", "om", "ti", "so"):
+    for lang in ("am", "om", "ti", "so", "sw"):
         for key in ("connect", "end_call", "join_queue", "waiting_for_teller"):
             assert table[lang][key] != table["en"][key], f"{lang}/{key} is still English"
 

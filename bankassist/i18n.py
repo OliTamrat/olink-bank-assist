@@ -1,4 +1,4 @@
-"""Fixed assistant strings in the five supported languages.
+"""Fixed assistant strings in the six supported languages.
 
 The strings themselves live in `strings.json`, not in this file. That is what
 lets a reviewer edit them: `scripts/i18n_export.py` writes a TSV, a native
@@ -6,9 +6,12 @@ speaker corrects the cells, and `scripts/i18n_import.py` writes it back. When
 the table lived as a Python literal, every correction had to be retyped by
 hand into source — and hand-copying Ge'ez is exactly where errors enter.
 
-EN and AM have been reviewed with care. OM, TI and SO are first-pass drafts
-and must go through the review workflow in `review/README.md` before a real
-bank pilot.
+EN and AM have been reviewed with care. OM, TI, SO and SW are first-pass
+drafts and must go through the review workflow in `review/README.md` before
+a real bank pilot. SW is appended last, not inserted alphabetically or by
+region — `scripts/build_review_workbook.py` locates the Ge'ez-script columns
+by position, and inserting a language mid-list would silently point that at
+the wrong column.
 
 `_NOTES` carries the reason each string is worded the way it is. It used to be
 inline comments, which meant the person doing the translating never saw any of
@@ -25,7 +28,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-SUPPORTED_LANGUAGES = ["en", "am", "om", "ti", "so"]
+SUPPORTED_LANGUAGES = ["en", "am", "om", "ti", "so", "sw"]
 
 LANGUAGE_NAMES = {
     "en": "English",
@@ -33,6 +36,7 @@ LANGUAGE_NAMES = {
     "om": "Afaan Oromoo",
     "ti": "ትግርኛ",
     "so": "Soomaali",
+    "sw": "Kiswahili",
 }
 
 STRINGS_PATH = Path(__file__).with_name("strings.json")

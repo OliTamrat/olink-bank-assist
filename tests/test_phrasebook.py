@@ -61,7 +61,7 @@ def test_untranslated_languages_are_visible() -> None:
     'covered' when nothing about it has been checked."""
     text = PHRASEBOOK.read_text(encoding="utf-8-sig")
     covered = {row[0] for row in _rows()}
-    for lang in ("ti", "so"):
+    for lang in ("ti", "so", "sw"):
         supplied = sum(1 for row in _rows() if row[0] == lang)
         outstanding = text.count(f"\n{lang}\t{TODO}")
         assert supplied or outstanding, f"{lang} vanished from the phrasebook entirely"

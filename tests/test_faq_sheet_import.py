@@ -40,7 +40,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def _sheet(tmp_path: Path, rows: list[list[str]]) -> Path:
     header = ["question (en)", "status", "field", "en (English)", "am (አማርኛ)",
-              "om (Afaan Oromoo)", "ti (ትግርኛ)", "so (Soomaali)", "reviewer notes"]
+              "om (Afaan Oromoo)", "ti (ትግርኛ)", "so (Soomaali)", "sw (Kiswahili)",
+              "reviewer notes"]
     out = ROOT / "review" / "faq-demo.tsv"
     out.parent.mkdir(exist_ok=True)
     out.write_text(

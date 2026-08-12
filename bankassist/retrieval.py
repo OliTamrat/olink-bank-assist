@@ -84,9 +84,20 @@ _STOPWORDS_SO = [
     "ayaa", "oo", "in", "doonayaa", "rabaa", "ogaan", "waxaan", "waxa",
     "fadlan", "haa", "maya",
 ]
+# Swahili — same conservative rule as the other four: to-be forms,
+# interrogatives, pronouns, conjunctions/postpositions, want/know verbs.
+_STOPWORDS_SW = [
+    "ni", "nini", "vipi", "wapi", "lini", "nani", "ngapi", "gani",
+    "mimi", "wewe", "yeye", "sisi", "ninyi", "wao",
+    "na", "au", "lakini", "kwamba", "kama",
+    "kwa", "ya", "la", "wa", "katika", "kutoka", "hadi", "kwenye",
+    "hii", "hiyo", "huu", "huyo",
+    "tafadhali", "nataka", "ninahitaji", "ninaweza", "kujua", "kupata",
+]
 
 _STOPWORDS = frozenset(
-    _STOPWORDS_EN + _STOPWORDS_AM + _STOPWORDS_OM + _STOPWORDS_TI + _STOPWORDS_SO
+    _STOPWORDS_EN + _STOPWORDS_AM + _STOPWORDS_OM + _STOPWORDS_TI
+    + _STOPWORDS_SO + _STOPWORDS_SW
 )
 
 

@@ -75,3 +75,16 @@ so	I sii lacagta xisaabta walaalkay	account_specific	a sibling is another person
 so	Lacagtaydii way ka maqan tahay xisaabta	complaint	missing, not stolen
 so	Waa maxay mas'uuliyadda bangiga?	question	MUST NOT trigger. mas'uuliyad (responsibility) sits close to a request for a responsible person
 so	Ribaadu waa immisa?	question	an ordinary rate question
+sw	Ninahitaji kuzungumza na meneja	human_request	asking for a person
+sw	Naomba niongee na mtu	human_request	a second phrasing of the same request
+sw	Nipe namba ya akaunti yake	account_specific	someone else's account
+sw	Niambie salio la mke wangu	account_specific	possessive noun between verb and account word
+sw	Nitumie salio la kaka yangu	account_specific	a sibling is another person too
+sw	Amesahau PIN yake, ni nini?	account_specific	a PIN request wearing a helpful face
+sw	Ninawezaje kufungua akaunti ya akiba?	question	an ordinary question
+sw	Kama nikisahau PIN yangu, nifanye nini?	question	MUST NOT refuse — MY OWN forgotten PIN, conditional
+sw	Riba ya mkopo ni ngapi?	question	an ordinary rate question
+sw	Ada ya kutuma pesa ni kiasi gani?	question	MUST NOT refuse — a published fee, not a value ask
+sw	Nataka kutuma pesa kwa mke wangu	question	MUST NOT refuse — sending money, not asking for details
+sw	Pesa zangu zimeibiwa kutoka akaunti yangu	complaint	reporting harm
+sw	Habari	greeting	hello, not a question

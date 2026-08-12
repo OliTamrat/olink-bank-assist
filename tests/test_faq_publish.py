@@ -84,7 +84,7 @@ def test_one_language_can_be_published_without_the_others(
     published = {r.language for r in rows if r.status == "published"}
     drafts = {r.language for r in rows if r.status == "draft"}
     assert published == {"en"}
-    assert drafts == {"am", "om", "ti", "so"}
+    assert drafts == {"am", "om", "ti", "so", "sw"}
 
 
 def test_the_audit_says_how_many_were_machine_translations(
@@ -98,13 +98,13 @@ def test_the_audit_says_how_many_were_machine_translations(
                 headers={"X-Admin-Token": demo_bank.admin_token})
     out = client.post("/admin/api/demo/faq/publish", json={},
                       headers={"X-Admin-Token": demo_bank.admin_token}).json()
-    assert out["published"] == 5
-    assert out["machine_translations"] == 4
+    assert out["published"] == 6
+    assert out["machine_translations"] == 5
     db_session.expire_all()
     entry = db_session.execute(
         select(AuditLog).where(AuditLog.action == "faq_published_bulk")
     ).scalars().one()
-    assert entry.log_metadata["machine_translations"] == 4
+    assert entry.log_metadata["machine_translations"] == 5
     assert entry.log_metadata["by_language"]["am"] == 1
 
 

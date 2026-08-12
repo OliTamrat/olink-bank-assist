@@ -44,7 +44,7 @@ def test_no_language_is_secretly_english() -> None:
     """A table copied from English and never translated passes every
     structural check while shipping nothing at all."""
     table = json.loads(ADMIN_JSON.read_text(encoding="utf-8"))
-    for lang in ("am", "om", "ti", "so"):
+    for lang in ("am", "om", "ti", "so", "sw"):
         identical = [k for k in table["en"] if table[lang][k] == table["en"][k]]
         assert not identical, f"{lang} still English for: {identical[:5]}"
 

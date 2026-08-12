@@ -5,7 +5,7 @@ tap away.**
 
 A white-label AI banking assistant for Ethiopian banks and microfinance
 institutions. Customers ask about accounts, transfers, loans, fees and saving
-in **Amharic, Afaan Oromo, Tigrinya, Somali or English**, over the channel
+in **Amharic, Afaan Oromo, Tigrinya, Somali, Swahili or English**, over the channel
 they already have on the phone they already own — a **web chat widget**,
 **Telegram**, **Viber**, **WhatsApp**, **Facebook Messenger**, **Instagram
 Direct** or **SMS**. When the assistant cannot answer, or must not, the customer
@@ -24,7 +24,7 @@ person, not a ticket.
 
 |  |  |
 |---|---|
-| **Five languages** | Amharic, Afaan Oromo, Tigrinya, Somali, English — detected per message, not per session |
+| **Six languages** | Amharic, Afaan Oromo, Tigrinya, Somali, Swahili, English — detected per message, not per session |
 | **Seven channels** | Web widget, Telegram, Viber, WhatsApp, Messenger, Instagram, SMS — every adapter built; each goes live when its credential is pasted |
 | **Three ways to answer** | The bank's curated words, its own documents, or a live human |
 | **Never invents a number** | An answer carrying a figure with no source fails the eval gate |
