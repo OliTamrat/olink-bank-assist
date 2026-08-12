@@ -27,3 +27,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0015 | "Ask OKM" pulls the portal's content; it is never pushed to |
 | 0016 | Positioning stays horizontal; Swahili leads the next languages |
 | 0017 | Global search reuses existing list views; no new detail screen |
+| 0018 | Swahili ships as a sixth language, first-pass like Somali |

@@ -3,7 +3,7 @@
 A white-label AI banking assistant for Ethiopian banks and microfinance
 institutions, by Olink Technologies. Each bank deploys a branded assistant its
 customers talk to about accounts, transfers, loans, fees and saving — in
-Amharic, Afaan Oromo, Tigrinya, Somali or English — over seven channels: the
+Amharic, Afaan Oromo, Tigrinya, Somali, Swahili or English — over seven channels: the
 web widget, Telegram, Viber, WhatsApp, Facebook Messenger, Instagram Direct
 and SMS.
 
@@ -52,7 +52,7 @@ tenant.
    credential (see `integrations/`).
 3. **The language gap** — tens of millions of new digital-banking users think
    in Amharic or Afaan Oromo while bank support runs English-first. Every
-   string in this product ships in five languages, verified by parity tests.
+   string in this product ships in six languages, verified by parity tests.
 
 ## Where the truth lives
 

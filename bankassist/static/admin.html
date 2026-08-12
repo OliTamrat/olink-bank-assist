@@ -1325,6 +1325,7 @@ td.title { color: var(--ink); font-weight: 550; }
         <option value="om">Afaan Oromoo</option>
         <option value="ti">ትግርኛ</option>
         <option value="so">Soomaali</option>
+        <option value="sw">Kiswahili</option>
       </select>
       <button class="railtoggle" id="rail-toggle">
         <span id="rail-glyph">‹‹</span><span class="label" id="rail-label">Collapse</span>
@@ -2203,7 +2204,7 @@ function bars(rows, total, labeller) {
  * enough to read. Anything unmapped falls back to neutral rather than picking
  * a colour at random — an unknown series is better grey than miscoloured.
  */
-var LANG_SLOT = { en: 1, am: 2, om: 3, ti: 4, so: 5 };
+var LANG_SLOT = { en: 1, am: 2, om: 3, ti: 4, so: 5, sw: 6 };
 var CHANNEL_SLOT = {
   web: 1, telegram: 2, whatsapp: 3, messenger: 4,
   instagram: 5, viber: 6, sms: 7
@@ -3331,7 +3332,7 @@ function downloadFaqSheet() {
   var rows = state.faqRows || [];
   if (!rows.length) { setStatus(A("nothing_to_download"), "error"); return; }
 
-  var LANGS = ["en", "am", "om", "ti", "so"];
+  var LANGS = ["en", "am", "om", "ti", "so", "sw"];
   var groups = {}, order = [];
   rows.forEach(function (f) {
     var key = f.source_faq_id || f.id;
@@ -3969,9 +3970,10 @@ function loadMsgs(id) {
 
 /* -------------------------------------------------------- knowledge base */
 var CATEGORIES = ["general", "products", "how-to", "financial-education", "fees"];
-var LANGS = ["en", "am", "om", "ti", "so"];
+var LANGS = ["en", "am", "om", "ti", "so", "sw"];
 var LANG_NAME = {
-  en: "English", am: "አማርኛ", om: "Afaan Oromoo", ti: "ትግርኛ", so: "Soomaali"
+  en: "English", am: "አማርኛ", om: "Afaan Oromoo", ti: "ትግርኛ", so: "Soomaali",
+  sw: "Kiswahili"
 };
 
 function loadDocs() {

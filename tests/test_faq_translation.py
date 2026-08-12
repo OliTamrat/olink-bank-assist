@@ -53,12 +53,12 @@ def test_every_missing_language_is_drafted(
         "/admin/api/demo/faq/translate", json={},
         headers={"X-Admin-Token": demo_bank.admin_token},
     ).json()
-    assert out["created"] == 4  # am, om, ti, so
+    assert out["created"] == 5  # am, om, ti, so, sw
     db_session.expire_all()
     langs = {
         r.language for r in db_session.execute(select(Faq)).scalars().all()
     }
-    assert langs == {"en", "am", "om", "ti", "so"}
+    assert langs == {"en", "am", "om", "ti", "so", "sw"}
 
 
 def test_a_machine_translation_is_a_draft(
@@ -144,7 +144,7 @@ def test_one_failure_does_not_lose_the_batch(
     out = client.post("/admin/api/demo/faq/translate", json={},
                       headers={"X-Admin-Token": demo_bank.admin_token}).json()
     assert out["failed"] == 1
-    assert out["created"] == 3
+    assert out["created"] == 4
     db_session.expire_all()
     langs = {r.language for r in db_session.execute(select(Faq)).scalars().all()}
     assert "om" not in langs

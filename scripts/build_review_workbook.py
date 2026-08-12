@@ -68,7 +68,10 @@ TOP = Alignment(vertical="top")
 
 EXPECTS = ["human_request", "account_specific", "complaint", "question", "greeting"]
 
-# Which columns hold Ge'ez, given `key, context, en, am, om, ti, so, notes`.
+# Which columns hold Ge'ez, given `key, context, en, am, om, ti, so, sw, notes`.
+# Safe only because sw is appended at the END of SUPPORTED_LANGUAGES rather
+# than inserted mid-list — see i18n.py's own note on that. Inserting a
+# language before ti/am would silently point these at the wrong column.
 ETHIOPIC_COLS = {4, 6}
 
 
@@ -146,7 +149,7 @@ def string_sheet(
         note = context if isinstance(context, str) else context.get(key, "")
         ws.append([key, note] + [table[lang].get(key, "") for lang in SUPPORTED_LANGUAGES] + [""])
 
-    for i, w in enumerate([26, 58, 44, 44, 44, 44, 44, 30], start=1):
+    for i, w in enumerate([26, 58, 44, 44, 44, 44, 44, 44, 30], start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
     for r in range(2, ws.max_row + 1):
@@ -163,7 +166,11 @@ def string_sheet(
                 # English is the source. Correcting it here does nothing, and
                 # a reviewer who edits it has spent effort that gets dropped.
                 cell.fill = LOCK_FILL
-            elif c <= 7:
+            elif c <= 2 + len(SUPPORTED_LANGUAGES):
+                # Language columns start at 3 (after key, context). Computed
+                # rather than a bare literal — a hardcoded `<= 7` here is
+                # exactly what left the newest language column unstyled the
+                # first time this file was extended for Swahili.
                 cell.fill = TODO_FILL if blank else EDIT_FILL
     style_header(ws, len(head))
     return ws
@@ -195,7 +202,7 @@ def main() -> int:
     ws.row_dimensions[1].height = 26
     line("Four sheets. Only three of them are translation.", size=12, color="57606A")
     line("")
-    line("Correct the five language columns. Leave the key, the context and the English "
+    line("Correct the six language columns. Leave the key, the context and the English "
          "columns alone — the code looks strings up by key, and edits to the English are "
          "dropped on import.", height=44)
     line("Anything in {curly braces} is a placeholder — {bank}, {n}, {name}. Keep it exactly "

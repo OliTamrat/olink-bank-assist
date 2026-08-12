@@ -28,6 +28,12 @@ def test_detect_somali() -> None:
     assert detect_language("Sidee xisaab uga furaa bangiga? Fadlan i caawi.") == "so"
 
 
+def test_detect_swahili() -> None:
+    assert detect_language(
+        "Nataka kufungua akaunti ya benki, tafadhali nisaidie."
+    ) == "sw"
+
+
 def test_detect_english() -> None:
     assert detect_language("How can I open a savings account?") == "en"
 

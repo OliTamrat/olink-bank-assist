@@ -57,7 +57,7 @@ def test_it_is_not_cacheable(
 def test_the_admin_labels_are_actually_served(client: TestClient) -> None:
     """The endpoint has to keep working, not merely keep its headers."""
     body = client.get("/admin/strings").json()
-    assert set(body) >= {"en", "am", "om", "ti", "so"}
+    assert set(body) >= {"en", "am", "om", "ti", "so", "sw"}
     # A key from the batch that exposed this — the dashboard's, not the nav's.
     assert body["am"]["questions_asked"] != body["en"]["questions_asked"]
 

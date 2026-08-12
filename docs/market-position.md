@@ -131,12 +131,19 @@ material to start from.
 **Native-speaker review resourcing is being handled directly** rather than
 tracked here as an open risk.
 
-**Recommended order, by reach per unit of effort:**
+**Swahili shipped 2026-08-12 — first-pass, not reviewed.** See ADR-0018 for
+the full record. The "point 5 is lighter" claim above was tested, not just
+argued: the discovery phase for Swahili's account guardrail (the noun list,
+the possessive pattern, the manager/person fence) needed no supplied native
+phrasings the way all four Ethiopian languages did, and the one real bug
+found — a conditional-infix trap in the "forgot PIN" rule — surfaced on the
+first adversarial pass rather than needing the five rounds Amharic/Oromo
+needed. That is one data point in favour of the claim, not proof it holds for
+every language on the list below; native review still has to run before a
+real pilot, exactly as this document already said.
 
-- **Swahili first.** ~200M speakers across Kenya, Tanzania, Uganda and
-  Rwanda; Latin script, so language detection reuses the existing Oromo/
-  Somali elimination pattern rather than needing a new one; and it is the
-  natural next step outward from Ethiopia into East Africa.
+**Remaining order, by reach per unit of effort:**
+
 - **Hausa, Yoruba, Igbo next**, as a Nigeria-specific bundle. Real local
   precedent exists, not just an estimate: Nigerian banks (Zenith, Access,
   UBA, Fidelity, Heritage, Keystone) already run WhatsApp/Telegram bots, and
@@ -149,4 +156,6 @@ tracked here as an open risk.
 
 ## Roadmap sequencing (as decided this session)
 
-**Build the global search bar first.** Language expansion starts after.
+~~**Build the global search bar first.**~~ **Shipped** (PR #125, merged
+2026-08-12). Language expansion started immediately after, with Swahili —
+see above.

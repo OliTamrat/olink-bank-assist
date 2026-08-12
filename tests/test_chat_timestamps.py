@@ -205,7 +205,7 @@ def test_the_new_labels_ship_in_every_language() -> None:
         for key in keys:
             for lang in SUPPORTED_LANGUAGES:
                 assert table[lang].get(key, "").strip(), f"{key} missing for {lang}"
-            for lang in ("am", "om", "ti", "so"):
+            for lang in ("am", "om", "ti", "so", "sw"):
                 assert table[lang][key] != table["en"][key], f"{key} still English in {lang}"
 
 

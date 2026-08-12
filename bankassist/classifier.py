@@ -38,6 +38,17 @@ _SOMALI_WORDS = {
     "mahadsanid", "magacaygu", "aniga", "adiga", "annaga", "iyaga",
     "maxaa", "deynta", "amaahda", "macmiilka", "warqad",
 }
+# Swahili — reaches for the same well-documented tooling every other major
+# world language does, so unlike Oromo/Somali/Tigrinya this list did not need
+# a native speaker to discover the disambiguation shape; it still needs one
+# to confirm coverage before a real pilot.
+_SWAHILI_WORDS = {
+    "akaunti", "fedha", "pesa", "benki", "salio", "mkopo", "riba", "amana",
+    "kadi", "huduma", "nataka", "ninahitaji", "tafadhali", "habari",
+    "asante", "jina", "langu", "yangu", "wapi", "lini", "vipi", "ngapi",
+    "jinsi", "ninaweza", "fungua", "kufungua", "kutuma", "tuma", "malipo",
+    "kiasi", "maelezo", "msaada", "karibu", "samahani", "sarafu",
+}
 # How many unmarked Latin words before a message counts as English prose.
 _LATIN_PROSE_WORDS = 3
 
@@ -60,24 +71,37 @@ def detect_language(text: str) -> str | None:
         return None
     om = len(words & _OROMO_WORDS)
     so = len(words & _SOMALI_WORDS)
+    sw = len(words & _SWAHILI_WORDS)
     en = len(words & _ENGLISH_WORDS)
-    best = max(om, so, en)
+    # Adding Swahili turned this from a binary Oromo/Somali tie-break into a
+    # genuine three-way one — deliberately kept as three named variables
+    # rather than a dict-and-loop, so the priority order below stays as
+    # readable as the two-way version it replaces.
+    local_best = max(om, so, sw)
+    best = max(local_best, en)
     if best == 0:
-        # No positive marker at all. Among the five supported languages only
-        # English, Afaan Oromo and Somali use Latin script, so unmarked Latin
-        # prose is English by elimination. Without this, an English question
-        # containing none of the listed words returned None, the sticky
-        # conversation language won, and someone who had greeted in Amharic
-        # got Amharic scaffolding wrapped around an English answer.
+        # No positive marker at all. Among the six supported languages only
+        # English, Afaan Oromo, Somali and Swahili use Latin script, so
+        # unmarked Latin prose is English by elimination. Without this, an
+        # English question containing none of the listed words returned
+        # None, the sticky conversation language won, and someone who had
+        # greeted in Amharic got Amharic scaffolding wrapped around an
+        # English answer.
         #
         # The word-count floor keeps that from overcorrecting: a bare "ATM"
         # or "OK" mid-Amharic-conversation carries no real signal and must
         # not flip the language.
         return "en" if len(words) >= _LATIN_PROSE_WORDS else None
-    if best == en:
+    if en >= local_best:
         return "en"
-    # "waan" is in both lists; prefer the language with more distinct hits.
-    return "om" if om >= so else "so"
+    # "waan" is in both the Oromo and Somali lists; prefer the local language
+    # with more distinct hits. A tie preserves the original two-way priority
+    # (om, then so) so adding Swahili cannot change how an Oromo/Somali tie
+    # was already resolved; sw is the newest and least-tested of the three,
+    # so it never wins a tie against either of the other two.
+    if om == local_best:
+        return "om"
+    return "so" if so == local_best else "sw"
 
 
 # ---------------------------------------------------------------- intent
@@ -116,6 +140,10 @@ _GREET_WORD = (
     r"selam|selaam|salam|salaam|salaan|nagaa|naga|"
     r"akkam|akam|asham\w*|jirta|jirtu|jirtan|fayyaa|there|"
     r"dehna|dehina|nagaadha|iska warran|sidee tahay|subax wanaagsan|"
+    # Swahili — hujambo/jambo (hello), mambo (informal "what's up"),
+    # shikamoo (respectful greeting to an elder), karibu (welcome), habari
+    # (news / "how are things") and salamu (greetings).
+    r"hujambo|jambo|mambo|shikamoo|karibu|habari|salamu|"
     r"ሰላም|ሰላምታ|ጤና ይስጥልኝ|ደህና|ደሕና|ነህ|ነሽ|ነኝ|ኖት|ናችሁ|ኑ|ከመይ|ሓዲኹም|"
     r"እንደምን|አደርክ|አደርሽ|አደራችሁ|ዋልክ|ዋልሽ|አለህ|አለሽ|አላችሁ"
 )
@@ -143,6 +171,7 @@ _INTRODUCTION_RE = re.compile(
     r"\b(my name is|i am called|call me)\b|"
     r"\b(maqaan koo|jedhama|na jedhu)\b|"
     r"\b(magacaygu|waxaa la i yidhaahdaa)\b|"
+    r"\b(jina langu ni|naitwa)\b|"
     r"እባላለሁ|ስሜ|ይበሃል|ስመይ|እባላለው",
     re.IGNORECASE,
 )
@@ -234,6 +263,10 @@ _OTHERS_ACCOUNT_NOUN = re.compile(
     # numbers, which are not account data.
     r"dhoksaa|"
     r"xisaab|akoonto|lambarka akoonka|"
+    # Swahili: akaunti (account), salio (balance), nambari/namba ya akaunti
+    # (account number), kadi (card) — first pass, still needs a native
+    # reviewer.
+    r"akaunti|salio|nambari ya akaunti|namba ya akaunti|kadi|"
     # Latin "pin", for the Somali and Oromo sentences that write it that way
     # — "PIN-keeda". Safe here because this list only ever fires alongside a
     # third-party possessive, so an ordinary "how do I change my pin" is
@@ -278,6 +311,14 @@ _OTHERS_POSSESSIVE = re.compile(
     # "xisaabteeda", "PIN-keeda", "lambarka xisaabteeda". Matching the suffix
     # where it is bound is what catches those.
     r"teeda\b|tiisa\b|-?keeda\b|-?kiisa\b|kayga\b|walaalkay|walaashay|"
+    # Swahili: "yake"/"lake" is "his/her" standing next to the account noun
+    # itself ("akaunti yake", "salio lake"); the kin terms below take a
+    # first-person possessive for the same reason ባለቤቴ does above — the
+    # relative being asked about is the third party even though the
+    # possessive reads "my" — first pass, still needs a native reviewer.
+    r"\byake\b|\blake\b|"
+    r"mke wangu|mume wangu|mke wake|mume wake|"
+    r"kaka (yangu|yake)|dada (yangu|yake)|mtoto wake|"
     # Tigrinya possessives. The suffix does the work here too — ሕሳባ is "her
     # account", ሕሳቡ "his" — and the kin terms are third parties in exactly
     # the way ባለቤቴ is in Amharic.
@@ -317,7 +358,11 @@ _DISCLOSURE_INTENT = re.compile(
     # cases out and running them, not by reading the rule. The sentence that
     # wanted it, "Waxay iloowday PIN-keeda, waa maxay?", is already carried by
     # the forgot verb, which stands on its own.
-    r"\bi sii\b|\bii sheeg\b|\bii dir\b|\bii soo dir\b",
+    r"\bi sii\b|\bii sheeg\b|\bii dir\b|\bii soo dir\b|"
+    # Swahili: nipe (give me), niambie (tell me), nitumie (send me),
+    # nionyeshe (show me), ni kiasi gani (how much is it) — first pass,
+    # still needs a native reviewer.
+    r"\bnipe\b|\bniambie\b|\bnitumie\b|\bnionyeshe\b|ni kiasi gani",
     re.IGNORECASE,
 )
 
@@ -331,7 +376,12 @@ _FORGOT = re.compile(r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|�
     # optional because both spellings appear.
     r"\bir?raanfa|\bdaga[td]|\bwalaal|"
     # Tigrinya ረሲዑ / ረሲዓ / ረሲዓቶ, and Somali iloow- / hilmaam-.
-    r"ረሲዑ|ረሲዓ|ረሲዖ|ረሲዕና|\bilo?ow|\bhilmaam")
+    r"ረሲዑ|ረሲዓ|ረሲዖ|ረሲዕና|\bilo?ow|\bhilmaam|"
+    # Swahili "forgotten" — the subject/tense marker prefixes the stem
+    # (nimesahau "I have forgotten", amesahau "he/she has forgotten"), so
+    # unlike Oromo's suffixing this is matched unanchored rather than with a
+    # leading \b — first pass, still needs a native reviewer.
+    r"sahau")
 
 # "if". Amharic marks the conditional with a ብ- prefix, so matching only
 # completed past forms was enough there — ብረሳ never looks like ረሳሁ. Oromo uses
@@ -348,7 +398,15 @@ _FORGOT = re.compile(r"ረሳችው|ረሳች|ረሳው|ረሳሁ|ረስቷል|�
 # irraanfadhe maal godha?" (what do I do if I forget my PIN) was refused —
 # the over-refusal direction, which is the one that hurts ordinary customers
 # and is invisible from inside the tests.
-_CONDITIONAL = re.compile(r"\byoon?\b", re.IGNORECASE)
+#
+# Swahili has the identical trap: the -ki- conditional infix ("nikisahau" —
+# if I forget) contains the bare "sahau" stem, so "Kama nikisahau PIN yangu,
+# nifanye nini?" (what do I do if I forget my PIN) matched _FORGOT with no
+# exclusion, until this was caught the same way the Oromo one names — by
+# writing the over-refusal case out and running it, not by reading the rule.
+# "kama" and "ikiwa" are both "if", used as separate words rather than a
+# suffix, which is why they are safe to exclude at the word level.
+_CONDITIONAL = re.compile(r"\byoon?\b|\bkama\b|\bikiwa\b", re.IGNORECASE)
 
 
 # ------------------------------------------------- value or procedure?
@@ -386,7 +444,12 @@ _PROCEDURAL_RE = re.compile(
     # "akkam" is a greeting and is deliberately NOT here.
     r"akkamitti|attamitti|akkamiin|maal gochuu|maal godha|yoo .*(bade|banne)|"
     # Tigrinya "how" (ብኸመይ) and Somali "how" (sidee).
-    r"ብኸመይ|ከመይ ጌረ|\bsidee\b|\bmaxaan sameeyaa\b",
+    r"ብኸመይ|ከመይ ጌረ|\bsidee\b|\bmaxaan sameeyaa\b|"
+    # Swahili "how" — vipi (also colloquial "what's up", but here only
+    # matters as a procedural marker so an ambiguous double meaning is
+    # harmless), namna gani / jinsi gani ("in what way"), nifanyeje / nifanye
+    # nini ("what should I do").
+    r"\bvipi\b|namna gani|jinsi gani|nifanyeje|nifanye nini",
     re.IGNORECASE,
 )
 
@@ -530,7 +593,15 @@ _COMPLAINT_RE = re.compile(
     r"\bxaday\b|\bxadeen\b|xatooyo|cabasho|\blumay\b|khiyaano|"
     # "missing", but only near money. maqan on its own is simply "absent" and
     # would turn "the branch manager is away" into a fraud report.
-    r"lacag[^.?!]{0,30}\bmaqan\b|\bmaqan\b[^.?!]{0,30}lacag",
+    r"lacag[^.?!]{0,30}\bmaqan\b|\bmaqan\b[^.?!]{0,30}lacag|"
+    # Swahili. wizi (theft), udanganyifu (fraud), malalamiko (complaints).
+    # -ibiwa is the passive "was robbed/stolen from" (nimeibiwa, ameibiwa) —
+    # matched unanchored for the same subject-prefix reason as the forgot
+    # stem above. "zimepotea" (are missing/lost) is fenced to money for the
+    # same reason "maqan" is, above — first pass, still needs a native
+    # reviewer.
+    r"\bwizi\b|ibiwa|udanganyifu|malalamiko|"
+    r"pesa[^.?!]{0,30}\bzimepotea\b|\bzimepotea\b[^.?!]{0,30}pesa",
     re.IGNORECASE,
 )
 
@@ -645,7 +716,15 @@ _HUMAN_REQUEST_RE = re.compile(
     # against "ሓላፍነት ባንኪ እንታይ እዩ?" in the phrasebook, which must stay an
     # ordinary question.
     r"ኣካያዲ|ኣመራር|ኣመራሪ|መራሒ|ሓላፊ|ተቖጻጻሪ|ኣማሓዳሪ|"
-    r"ሰብ\s*(ክዛረብ|ክረክብ|ኣዘራርቡኒ|ምዝራብ)|ምስ ሰብ|ሰብ ኣዘራርቡኒ",
+    r"ሰብ\s*(ክዛረብ|ክረክብ|ኣዘራርቡኒ|ምዝራብ)|ምስ ሰብ|ሰብ ኣዘራርቡኒ|"
+    # Swahili. meneja (manager), msimamizi (supervisor) and ofisa (officer)
+    # stand alone as unambiguous banking-manager words. "mtu"/"binadamu"
+    # (person) is fenced inside a speaking construction, the same fence
+    # Somali's bare qof needs above — first pass, still needs a native
+    # reviewer.
+    r"\bmeneja\b|\bmsimamizi\b|\bofisa\b|"
+    r"(zungumza|ongea|nizungumze|niongee)[^.?!]{0,24}\b(mtu|meneja|msimamizi)\b|"
+    r"\b(mtu|binadamu)\b[^.?!]{0,24}(zungumza|ongea)",
     re.IGNORECASE,
 )
 

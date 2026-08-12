@@ -6,10 +6,10 @@ around English content. detect_language() returned None for it — the
 English word list was 16 words and that phrase contained none of them — so
 the sticky conversation language won.
 
-The fix is detection by elimination: among the five supported languages only
-English, Afaan Oromo and Somali use Latin script, so unmarked Latin prose is
-English. That only holds while Oromo and Somali are positively identified
-first, which is what most of these guard.
+The fix is detection by elimination: among the six supported languages only
+English, Afaan Oromo, Somali and Swahili use Latin script, so unmarked Latin
+prose is English. That only holds while Oromo, Somali and Swahili are
+positively identified first, which is what most of these guard.
 """
 
 from __future__ import annotations
@@ -39,6 +39,9 @@ from bankassist.classifier import detect_language
         ("sidee lacag u dirtaa", "so"),
         ("waxaan doonayaa xisaab", "so"),
         ("magacaygu waa Oli", "so"),
+        ("nataka kujua kuhusu mkopo", "sw"),
+        ("nina swali kuhusu akaunti yangu", "sw"),
+        ("jina langu ni Oli", "sw"),
         # Ethiopic script is unambiguous.
         ("ሰላም ኦሊ እባላለሁ", "am"),
     ],

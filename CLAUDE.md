@@ -30,7 +30,7 @@ claims are enforced by `tests/test_docs_truth.py` (ADR-0013).
 and microfinance institutions, by Olink Technologies. Each bank deploys a
 branded assistant its customers talk to about accounts, transfers, loans,
 fees, saving, and financial education — in **Amharic, Afaan Oromo, Tigrinya,
-Somali, or English** — over a web chat widget, Telegram (Ethiopia's dominant
+Somali, Swahili, or English** — over a web chat widget, Telegram (Ethiopia's dominant
 messaging channel), Viber, WhatsApp, Facebook Messenger, Instagram Direct and
 SMS. All seven adapters are built; Telegram and Viber are self-serve to
 connect, the Meta three await the bank's business verification, SMS awaits an
@@ -73,7 +73,7 @@ other repo.
     project.
   - Neither configured → deterministic extractive answers. The demo still
     works. `active_backend()` returns `vertex | gemini | none`.
-- **Retrieval:** dependency-free BM25, five-language stopwords, per-tenant
+- **Retrieval:** dependency-free BM25, six-language stopwords, per-tenant
 - **Channels:** embeddable widget (`static/widget.html`) + webhook adapters
   for Telegram, Viber, the Meta trio (one module — `meta.py`) and SMS
   (`sms.py`, an aggregator contract). `channels.py` is the honest catalogue;
@@ -292,20 +292,20 @@ What makes this safe rather than a hallucination licence:
 ## Multilingual completeness (GOLDEN RULE — applies to every Olink product)
 
 **Founder rule, 2026-08-10, and it governs every product with multilingual
-features, not only this one: whatever ships in English ships in all five
+features, not only this one: whatever ships in English ships in all six
 languages.** English is not the product with translations bolted on afterwards
-— English is one of five, and a feature is not finished until its words exist
-in the other four.
+— English is one of six, and a feature is not finished until its words exist
+in the other five.
 
 Concretely, and with no exceptions to argue about later:
 
-1. **Every new feature ships its strings in all five languages in the same
+1. **Every new feature ships its strings in all six languages in the same
    change.** If a pull request adds a button, a label, an empty state, a
-   confirmation or an error, it adds `en`, `am`, `om`, `ti` and `so` — not
-   `en` plus a promise. A change that adds an English-only string is
+   confirmation or an error, it adds `en`, `am`, `om`, `ti`, `so` and `sw` —
+   not `en` plus a promise. A change that adds an English-only string is
    incomplete in the same way a change with a failing test is incomplete.
 2. **Machine translation is how the draft gets written; a native speaker is
-   how it ships.** Drafting all five immediately is right, and waiting for a
+   how it ships.** Drafting all six immediately is right, and waiting for a
    human to author from a blank sheet is how a language never ships at all.
    Drafts go out for review through the existing TSV workflow.
 3. **Every change that touches strings produces the linguist review sheet.**
@@ -322,16 +322,18 @@ and Afaan Oromo while every competitor's support is English-first. A product
 that is bilingual in its replies and English in its buttons has given that
 advantage away for the sake of whatever shortcut was taken that afternoon.
 
-### Where this stands — audited 2026-08-11
+### Where this stands — updated 2026-08-12
 
-**All three string tables are complete: 318 strings × 5 languages, no gaps,
-nothing silently left in English.**
+**All three string tables are complete: 338 strings × 6 languages, no gaps,
+nothing silently left in English.** Swahili (`sw`) is the newest column —
+first-pass drafted, not yet native-reviewed, exactly the status OM/TI/SO
+carry. See ADR-0018.
 
 | Table | Strings | Covers |
 |---|---|---|
 | `strings.json` | 20 | what the assistant says to a customer |
 | `ui_strings.json` | 49 | the widget's own buttons and labels |
-| `admin_strings.json` | 249 | the staff panel, teller console included |
+| `admin_strings.json` | 269 | the staff panel, teller console included |
 
 The widget and the admin panel both got their string tables in August 2026.
 The teller console was the last surface and is done — queue, duty panel,
@@ -601,11 +603,11 @@ These are the durable ones. Each has a regression test.
    single-chunk-corpus retrievability — that edge case is explicitly tested.
    This generalises: any future tenant's corpus could put some other word at
    exactly 50% by coincidence.
-3. **Stopwords must cover all five languages.** They were English-only, so an
+3. **Stopwords must cover all six languages.** They were English-only, so an
    Amharic question's function words counted as content words and the
    informativeness bar rose — Amharic was held to roughly three times the bar
-   of English for the same question. `_STOPWORDS_{EN,AM,OM,TI,SO}` merge into
-   one frozen set. `tests/test_language_parity.py`.
+   of English for the same question. `_STOPWORDS_{EN,AM,OM,TI,SO,SW}` merge
+   into one frozen set. `tests/test_language_parity.py`.
 4. **Greeting recognition accepted exactly one greeting token.** Combined
    forms — `Hi akkam?`, `ሰላም ኦሊ እባላለሁ` — fell through. Ethiopians
    code-switch constantly; treat mixed-language greetings as the norm.
@@ -655,9 +657,11 @@ These are the durable ones. Each has a regression test.
   (answer with our own equivalent — a legitimate customer phrasing) is a real
   NLU problem, not a ratio tweak. The test asserts what is actually
   guaranteed rather than a stronger property that is not.
-- **Linguist review of OM/TI/SO strings in `i18n.py` is the founder's, not
+- **Linguist review of OM/TI/SO/SW strings in `i18n.py` is the founder's, not
   ours** — Amharic and Afaan Oromo reviewed natively, Somali and Tigrinya
-  outsourced. Do not rewrite those strings speculatively.
+  outsourced. Swahili (added 2026-08-12, ADR-0018) has had no native review
+  at all yet — closer to Tigrinya's status than Somali's. Do not rewrite
+  those strings speculatively.
 
 ## The two reports — and why they are two
 
@@ -977,14 +981,15 @@ Remaining polish, not blockers:
       project, which no agent sandbox has, and the `deploy.yml` line only
       changes after the new SA + bindings are confirmed, since this
       pipeline auto-deploys on every green push to `main`.
-- [ ] **Linguist review of OM/TI/SO** — the one open language item, and it
+- [ ] **Linguist review of OM/TI/SO/SW** — the one open language item, and it
       now covers more than wording. `review/Olink_Bank_Assist_language_review.xlsx`
       carries four sheets: the assistant's replies, the phrasebook, the
-      widget's buttons and 249 staff-panel strings. **Sheet 2 matters most.**
+      widget's buttons and 269 staff-panel strings. **Sheet 2 matters most.**
       Every language defect found in a live demo so far was a sentence the
       assistant failed to UNDERSTAND, not a reply worded badly — and the
-      Tigrinya and Somali classifier rules are drafted from my own phrasings,
-      so that sheet is now load-bearing rather than cosmetic.
+      Tigrinya, Somali and (as of 2026-08-12, ADR-0018) Swahili classifier
+      rules are all drafted from my own phrasings, so that sheet is now
+      load-bearing rather than cosmetic.
 - [ ] Connect a BotFather bot via `POST /admin/api/{slug}/telegram/connect`.
 - [ ] **Run "Ask OKM" for the first time** — `bankassist/seed_okm.py`
       (ADR-0015, PR #115) has never touched a real database.
@@ -1059,10 +1064,10 @@ lender (smaller, faster procurement, hungrier).
 1. Plan before code for non-trivial changes; surface tradeoffs explicitly.
 2. Tests before merge — guardrail behavior and tenancy isolation must stay
    covered; new intents need classifier tests.
-2b. **All five languages before merge.** Any change adding a customer-facing
-   string adds `en`, `am`, `om`, `ti`, `so` in the same change, and regenerates
-   the linguist review sheet. See "Multilingual completeness" above — this is
-   a completion criterion, not a follow-up ticket.
+2b. **All six languages before merge.** Any change adding a customer-facing
+   string adds `en`, `am`, `om`, `ti`, `so`, `sw` in the same change, and
+   regenerates the linguist review sheet. See "Multilingual completeness"
+   above — this is a completion criterion, not a follow-up ticket.
 3. Never commit `.env` or real bank content; the `demo` tenant stays fictional.
 4. Conventional Commits; `main` deployable; work in feature branches.
 5. Demo figures are always labeled "illustrative" — never presented as a real
