@@ -2310,7 +2310,8 @@ function refreshBadge() {
    does not contain them — percentages wrong rather than merely incomplete.
    Used by both the chart and the CSV export, so there is one copy to drift. */
 var SUBSTANTIVE = ["account_blocked", "answered", "comparison", "complaint",
-                   "general_guidance", "human_request", "unanswered"];
+                   "general_guidance", "human_request", "service_issue",
+                   "unanswered"];
 
 function pct(x) { return x == null ? "—" : Math.round(x * 1000) / 10 + "%"; }
 function num(n) { return (n == null ? 0 : n).toLocaleString(); }
@@ -2909,7 +2910,8 @@ var REASON_LABEL = {
   complaint: "Complaint",
   human_requested: "Asked for a person",
   unanswered_question: "No answer in your content",
-  answered_from_general_knowledge: "Answered from general knowledge"
+  answered_from_general_knowledge: "Answered from general knowledge",
+  service_issue: "Something is broken"
 };
 
 /* How each outcome is written for a bank. Every key here is emitted by the
@@ -4498,9 +4500,14 @@ function bulkForm() {
  * Ranked by how often it was asked, because writing one article that answers
  * twenty people beats writing twenty that answer one.
  */
+/* English fallbacks only — the label a bank reads comes from A(), the same
+   as every other string on this page. These three were raw literals until a
+   fourth was about to be added beside them, which would have made a page in
+   Amharic show its gap reasons in English. */
 var GAP_REASON = {
   unanswered_question: "No answer found",
-  answered_from_general_knowledge: "Answered generically"
+  answered_from_general_knowledge: "Answered generically",
+  service_issue: "Broken, no fix published"
 };
 
 function loadGaps() {
@@ -4535,7 +4542,7 @@ function loadGaps() {
         '<div class="gapmeta">' +
           reasons.map(function (r) {
             return '<span class="pill ' + (r === "unanswered_question" ? "off" : "") + '">' +
-              esc(GAP_REASON[r] || r) + " " + g.reasons[r] + "</span>";
+              esc(A("gap_reason_" + r, GAP_REASON[r] || r)) + " " + g.reasons[r] + "</span>";
           }).join("") +
           langs.map(function (l) {
             return '<span class="pill">' + esc(LANG_NAME[l] || l) + " " + g.languages[l] + "</span>";

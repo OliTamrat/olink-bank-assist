@@ -61,6 +61,7 @@ ANSWERED = "answered"                    # from this bank's own content
 GENERAL_GUIDANCE = "general_guidance"    # universal banking, carries no sources
 UNANSWERED = "unanswered"                # nothing found — a content gap
 COMPLAINT = "complaint"                  # routed to a person
+SERVICE_ISSUE = "service_issue"          # something is broken AND we had no fix
 ACCOUNT_BLOCKED = "account_blocked"      # security template; no account access
 COMPARISON = "comparison"                # "is X better than you?"
 GREETING = "greeting"                    # hello, not a question
@@ -72,7 +73,7 @@ HUMAN_REQUEST = "human_request"          # asked for a person, not for informati
 # quietly inflate the numbers a bank is being sold on.
 SUBSTANTIVE = (
     ANSWERED, GENERAL_GUIDANCE, UNANSWERED, COMPLAINT, ACCOUNT_BLOCKED,
-    COMPARISON, HUMAN_REQUEST,
+    COMPARISON, HUMAN_REQUEST, SERVICE_ISSUE,
 )
 
 # Why a handoff was filed. Named constants rather than literals at the call
@@ -83,10 +84,15 @@ REASON_COMPLAINT = "complaint"
 REASON_HUMAN_REQUESTED = "human_requested"
 REASON_UNANSWERED = "unanswered_question"
 REASON_GENERAL_KNOWLEDGE = "answered_from_general_knowledge"
+# Something is broken and the bank's own content did not say how to fix it.
+# Separate from `unanswered_question` because the work is different: a
+# content gap is answered by writing a document, a service issue may be an
+# outage the bank needs to know about this morning.
+REASON_SERVICE_ISSUE = "service_issue"
 
 HANDOFF_REASONS = (
     REASON_COMPLAINT, REASON_HUMAN_REQUESTED, REASON_UNANSWERED,
-    REASON_GENERAL_KNOWLEDGE,
+    REASON_GENERAL_KNOWLEDGE, REASON_SERVICE_ISSUE,
 )
 
 # Substantive turns that did NOT need a person. account_blocked belongs here:
@@ -646,8 +652,21 @@ def handle_message(
                 outcome=GENERAL_GUIDANCE,
             )
         elif answer is None:
-            _create_handoff(db, bank, conversation, REASON_UNANSWERED, text[:2000], handoffs)
-            reply = t(language, "unknown")
+            # A service issue that the documents could not answer is where it
+            # finally becomes a person's work — but the wording has to match
+            # what was actually said. "I don't have verified information about
+            # that yet" is a non-answer to "my card was declined": the
+            # customer did not ask for information, they reported that
+            # something is broken. Same machinery as an unanswered question,
+            # different opening sentence and its own reason code, so a bank
+            # can see broken-thing volume separately from content gaps.
+            broken = intent == classifier.SERVICE_ISSUE
+            _create_handoff(
+                db, bank, conversation,
+                REASON_SERVICE_ISSUE if broken else REASON_UNANSWERED,
+                text[:2000], handoffs,
+            )
+            reply = t(language, "service_issue_ack" if broken else "unknown")
             # Retrieval is lexical, so a customer who phrases a question
             # differently from the knowledge base gets nothing — and most
             # people will not rephrase to match a corpus they can't see.
@@ -695,7 +714,7 @@ def handle_message(
                 handoff_created=True,
                 suggestions=suggestions,
                 awaiting_contact=conversation.awaiting_contact,
-                outcome=UNANSWERED,
+                outcome=SERVICE_ISSUE if broken else UNANSWERED,
             )
         else:
             reply = answer
