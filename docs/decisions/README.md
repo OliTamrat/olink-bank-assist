@@ -30,3 +30,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0018 | Swahili ships as a sixth language, first-pass like Somali |
 | 0019 | Regional focus narrows to East Africa; the Nigeria bundle is parked |
 | 0020 | Teller expertise is self-declared, and routing reorders, never hides |
+| 0021 | AI insights: rules are the floor, the model writes prose on top |

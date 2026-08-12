@@ -848,6 +848,23 @@ td.title { color: var(--ink); font-weight: 550; }
 .pill.off { background: var(--bad-bg); color: var(--bad); }
 /* Actionable-now, as distinct from working-already (.on) and
    blocked-on-paperwork (plain). */
+/* AI-insight severities. Act borrows the error palette because it is the
+   "today" pile; watch the warning; good the ok; info stays quiet. */
+.pill.sev-act { background: var(--bad-bg); color: var(--bad); }
+.pill.sev-watch { background: var(--warn-bg); color: var(--warn); }
+.pill.sev-good { background: var(--ok-bg); color: var(--ok); }
+.pill.sev-info { background: var(--surface-2); color: var(--muted); }
+.findings { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.finding {
+  display: flex; align-items: baseline; gap: 10px; font-size: 13.5px;
+  color: var(--body);
+}
+.finding .pill { flex: none; }
+.narrative { margin: 4px 0 10px; }
+.narrative p {
+  font-size: 13.5px; line-height: 1.55; color: var(--body); margin-bottom: 9px;
+  max-width: 72ch;
+}
 .pill.next { background: color-mix(in srgb, var(--brand) 16%, transparent);
   color: var(--brand); }
 
@@ -3038,6 +3055,15 @@ function loadPerformance() {
       '<div class="note">' + esc(A("perf_busy_note")) + "</div></div>" +
       "</div></div>";
 
+    /* AI insights — on demand, never on page load. The findings are cheap
+       but the narrative is a model call, and a page poll must never quietly
+       bill one; the button is the consent. */
+    h += '<div class="panel"><h3>' + esc(A("ai_insights")) + "</h3>" +
+      '<div id="insights-body">' +
+      '<div class="note">' + esc(A("insights_note")) + "</div>" +
+      '<button class="btn sm" id="gen-insights">' +
+      esc(A("generate_insights")) + "</button></div></div>";
+
     $("main").innerHTML = h;
     Array.prototype.forEach.call(document.querySelectorAll("[data-days]"), function (b) {
       b.onclick = function () {
@@ -3046,7 +3072,65 @@ function loadPerformance() {
       };
     });
     wireDrills();
+    wireInsights();
   }).catch(function (err) { setStatus(err.message, "error"); });
+}
+
+/* One finding, in the panel's own language. The templates live in the admin
+ * string table like every other label; the one transform done here is the
+ * peak hour, which arrives in UTC (like the chart it summarises) and is
+ * shifted to the operator's clock before it is worded. */
+function insightText(f) {
+  var vars = {};
+  Object.keys(f.vars || {}).forEach(function (k) { vars[k] = f.vars[k]; });
+  if (f.key === "peak_hour") {
+    var shift = Math.round(-new Date().getTimezoneOffset() / 60);
+    vars.hour = ((f.vars.utc_hour + shift) % 24 + 24) % 24;
+  }
+  return A("insight_" + f.key, null, vars);
+}
+
+function renderInsights(data) {
+  var h = '<div class="findings">' + data.findings.map(function (f) {
+    return '<div class="finding"><span class="pill sev-' + esc(f.severity) + '">' +
+      esc(A("sev_" + f.severity)) + "</span><span>" + esc(insightText(f)) +
+      "</span></div>";
+  }).join("") + "</div>";
+  if (data.narrative) {
+    h += '<div class="narrative">' + data.narrative.split(/\n{2,}/).map(function (p) {
+      return "<p>" + esc(p) + "</p>";
+    }).join("") + "</div>";
+  } else if (data.backend === "extractive-fallback") {
+    // Only claim "no model" when that is actually why. A configured backend
+    // that failed this one call gets the findings alone, without a note
+    // blaming configuration that is not at fault.
+    h += '<div class="note">' + esc(A("insights_no_model")) + "</div>";
+  }
+  h += '<div class="note">' + esc(A("insights_note")) + "</div>" +
+    '<button class="btn ghost sm" id="gen-insights">' +
+    esc(A("generate_insights")) + "</button>";
+  var body = $("insights-body");
+  if (body) { body.innerHTML = h; }
+  wireInsights();
+}
+
+function wireInsights() {
+  var b = $("gen-insights");
+  if (!b) return;
+  b.onclick = function () {
+    b.disabled = true;
+    $("insights-body").innerHTML =
+      '<div class="empty">' + esc(A("insights_generating")) + "</div>";
+    api("/analytics/insights?days=" + state.days +
+        "&language=" + encodeURIComponent(adminLang) + "&narrative=1")
+      .then(function (data) {
+        if (state.page === "performance") renderInsights(data);
+      })
+      .catch(function (e) {
+        setStatus(e.message, "error");
+        if (state.page === "performance") go("performance");
+      });
+  };
 }
 
 /* ----------------------------------------------------------- escalations */

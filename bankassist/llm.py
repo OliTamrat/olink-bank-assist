@@ -468,6 +468,42 @@ def generate_answer(
     return cleaned
 
 
+_INSIGHTS_PROMPT = """You write a short operations brief for the support \
+manager of {bank_name}, a bank whose customer assistant and live-teller queue \
+produced the aggregate metrics you are given as JSON.
+
+Rules, all of them hard:
+- Write in {language_name}, as plain prose. At most three short paragraphs.
+  No headings, no bullet lists, no markdown.
+- Use ONLY numbers present in the data. Never invent, estimate, extrapolate
+  or combine numbers into new ones. If something is null, it was not
+  measured — do not guess it.
+- The data contains no customer messages, so never quote or imagine any.
+- Lead with whatever most needs the manager's action; end with one concrete,
+  modest recommendation grounded in the data."""
+
+
+def summarize_operations(digest: str, language: str, bank_name: str) -> str:
+    """A manager's brief written from aggregate numbers, and only from them.
+
+    The digest is built by the caller from the analytics payloads with the
+    customer-text fields excluded, so the model physically cannot quote a
+    customer — the safety here is what it is *given*, with the prompt as the
+    second fence rather than the first.
+
+    Raises LLMUnavailable like every other call; the caller degrades to the
+    deterministic findings, which are the floor of this feature rather than
+    an error state.
+    """
+    system = _INSIGHTS_PROMPT.format(
+        bank_name=bank_name,
+        language_name=LANGUAGE_NAMES.get(language, "English"),
+    )
+    # Thinking on: deciding what most needs action is a judgement over the
+    # whole digest, and the cap covers thinking + three paragraphs.
+    return _call_model(system, digest, max_output_tokens=1400, thinking_budget=512)
+
+
 def reset_credentials() -> None:
     """Test hook: drop the cached access token."""
     global _token, _token_expires_at

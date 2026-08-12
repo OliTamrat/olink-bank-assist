@@ -36,6 +36,7 @@ from . import (
     handoff_webhook,
     i18n,
     ingest,
+    insights,
     livekit,
     llm,
     meta,
@@ -3754,6 +3755,69 @@ def analytics_operations(
             [dow, hour, count]
             for (dow, hour), count in sorted(busy.items())
         ],
+    }
+
+
+@app.get("/admin/api/{slug}/analytics/insights")
+def analytics_insights(
+    days: int = DEFAULT_ANALYTICS_DAYS,
+    language: str = "en",
+    narrative: bool = False,
+    principal: Principal = NeedsAnalyticsRead,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Findings a manager can act on — rules always, prose when a model is up.
+
+    Two layers, in that order (see `insights.py` for why): deterministic
+    threshold findings over the same aggregates Overview and Performance
+    already report, then an optional model-written brief over a digest of
+    those aggregates. The digest deliberately excludes `top_topics` — the
+    one aggregate field carrying (redacted) customer wording — so no
+    customer text can reach the model from here at all, which is what lets
+    this sit behind the same `analytics.read` gate as the reports it reads.
+
+    `narrative` is opt-in per request rather than default: the findings are
+    free, the model call is not, and a page poll must never quietly bill a
+    Gemini call. With no model configured (or a failed call) the response
+    carries `narrative: null` and the findings stand alone — extractive-mode
+    doctrine, applied to analytics.
+    """
+    if language not in SUPPORTED_LANGUAGES:
+        language = "en"
+    overview = analytics(days=days, principal=principal, db=db)
+    ops = analytics_operations(days=days, principal=principal, db=db)
+    found = insights.findings(overview, ops)
+
+    text: str | None = None
+    if narrative:
+        digest = {
+            "window_days": overview["window_days"],
+            "conversations": overview["conversations"],
+            "substantive_questions": overview["substantive_questions"],
+            "deflection_rate": overview["deflection_rate"],
+            "own_content_rate": overview["own_content_rate"],
+            "previous_window": overview["previous"],
+            "escalations": ops["escalations"],
+            "live_calls": ops["live"],
+            "staffing": ops["staffing"],
+            "findings": found,
+        }
+        try:
+            text = llm.summarize_operations(
+                json.dumps(digest, ensure_ascii=False),
+                language,
+                principal.bank.display_name,
+            )
+        except llm.LLMUnavailable:
+            text = None
+
+    return {
+        "window_days": overview["window_days"],
+        "since": overview["since"],
+        "findings": found,
+        "narrative": text,
+        "narrative_language": language if text else None,
+        "backend": llm.active_backend(),
     }
 
 
