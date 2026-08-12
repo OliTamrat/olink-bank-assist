@@ -909,6 +909,29 @@ td.title { color: var(--ink); font-weight: 550; }
 .statline.drill { cursor: pointer; }
 .statline.drill:hover span { color: var(--brand); }
 .statline b.warm { color: var(--warn); }
+/* Desk teams — the roster grouped the way the work arrives. A desk with no
+   declared members wears the warning colour: that is a coverage gap, not a
+   neutral empty state. */
+.deskgrid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px; margin-top: 4px;
+}
+.deskcard {
+  border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px;
+  background: var(--surface-2);
+}
+.deskcard.gap { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.deskcard h4 {
+  font-size: 12.5px; font-weight: 600; color: var(--ink);
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; margin-bottom: 7px;
+}
+.deskcard h4 .cnt {
+  font-size: 12px; font-weight: 700; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.deskcard.gap h4 .cnt { color: var(--warn); }
+.deskcard .member { font-size: 12.5px; color: var(--body); padding: 2px 0; }
 .note { font-size: 12px; color: var(--faint); margin-top: 12px; }
 .meta { font-size: 12px; color: var(--muted); }
 .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
@@ -4625,6 +4648,42 @@ function loadTeam() {
               (u.is_active ? "0" : "1") + '">' + esc(A(u.is_active ? "disable" : "restore")) + "</button>") +
           "</div></td></tr>";
       }).join("") + "</tbody></table></div>";
+
+    /* Desk teams — the roster organised the way the work arrives: one card
+       per desk, listing everyone who has declared it. People declare their
+       own desks (ADR-0020); this view is what a manager reads across. An
+       empty desk wears the warning colour, because it is not a neutral fact:
+       it is a queue whose calls nobody has claimed to know. Undeclared
+       tellers are shown once, honestly — routing treats them as covering
+       everything, so hiding them would make coverage look thinner than it
+       routes. */
+    var servers = users.filter(function (u) { return u.can_serve && u.is_active; });
+    if (servers.length) {
+      var undeclared = servers.filter(function (u) {
+        return !(u.teller_departments || []).length;
+      });
+      h += '<div class="panel"><h3>' + esc(A("desk_teams")) + "</h3>" +
+        '<div class="deskgrid">' +
+        Object.keys(DESK_LABEL).map(function (d) {
+          var members = servers.filter(function (u) {
+            return (u.teller_departments || []).indexOf(d) !== -1;
+          });
+          return '<div class="deskcard' + (members.length ? "" : " gap") + '">' +
+            "<h4>" + esc(deskLabel(d)) + '<span class="cnt">' + members.length + "</span></h4>" +
+            (members.length
+              ? members.map(function (u) {
+                  return '<div class="member">' + esc(u.display_name || u.email) + "</div>";
+                }).join("")
+              : '<div class="meta">' + esc(A("desk_no_members")) + "</div>") +
+            "</div>";
+        }).join("") + "</div>" +
+        (undeclared.length
+          ? '<div class="note">' +
+            esc(A(undeclared.length === 1 ? "one_takes_everything" : "n_take_everything",
+              null, { n: undeclared.length })) + "</div>"
+          : "") +
+        '<div class="note">' + esc(A("desk_teams_note")) + "</div></div>";
+    }
 
     // Manager-only by decision, not an accident of who happens to be looking:
     // a plain teller hitting /teller-performance gets back only their own
