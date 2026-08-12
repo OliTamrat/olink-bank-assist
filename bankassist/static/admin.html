@@ -404,6 +404,51 @@ textarea { min-height: 170px; resize: vertical; }
 }
 .topbar h2 { font-size: 17px; }
 .topbar .spacer { flex: 1; }
+/* --------------------------------------------------------- global search
+   One box across Conversations, Escalations, Knowledge Base and Curated
+   Answers. Sits between the spacer and the topbar tools rather than taking
+   the spacer's own flex slot, so it has a bounded width instead of
+   stretching across whatever room the page title leaves. */
+.gsearch { position: relative; width: 260px; max-width: 40vw; }
+.gsearch input {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 10px; font-size: 13px; color: var(--ink);
+}
+.gsearch input::placeholder { color: var(--muted); }
+.gsearch-results {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  width: min(420px, 90vw); max-height: 70vh; overflow-y: auto;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, .38);
+  z-index: 30; padding: 6px;
+}
+.gsearch-results .gs-group {
+  padding: 6px 8px 4px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted);
+}
+.gsearch-results .gs-row {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  padding: 8px; border-radius: 8px; cursor: pointer; color: var(--ink);
+  font-size: 13px; font-family: inherit;
+}
+.gsearch-results .gs-row:hover, .gsearch-results .gs-row:focus {
+  background: var(--surface); outline: none;
+}
+.gsearch-results .gs-row .gs-sub {
+  display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gsearch-results .gs-empty { padding: 12px 8px; color: var(--muted); font-size: 13px; }
+/* A row a search result was pinned to, briefly marked so a jump into a long
+   list is visible and not just a silent scroll. */
+.gs-flash { animation: gsFlash 1.6s ease-out; }
+@keyframes gsFlash {
+  from { background: var(--surface-2); }
+  to { background: transparent; }
+}
+@media (max-width: 720px) {
+  .gsearch { width: 100%; max-width: none; order: 3; }
+}
 /* ------------------------------------------------------------------ toasts
    Bottom-right on a desktop, full width along the bottom on a phone — out of
    the way of the content being worked on, and nowhere near the topbar where
@@ -1299,6 +1344,10 @@ td.title { color: var(--ink); font-weight: 550; }
     <div class="topbar">
       <h2 id="page-title">Dashboard</h2>
       <div class="spacer"></div>
+      <div class="gsearch" id="gsearch">
+        <input id="gs-input" type="search" autocomplete="off" placeholder="Search everything…">
+        <div class="gsearch-results" id="gs-results" role="listbox" hidden></div>
+      </div>
       <div class="tools">
         <span class="stamp" id="stamp" aria-live="polite"></span>
         <button class="iconbtn" id="refresh" title="Reload this page's data"
@@ -1480,7 +1529,11 @@ var state = {
   channels: [],       // the catalogue, fetched once — drives the rail sub-nav
   channel: null,      // which channel's page is open, if any
   railOpen: localStorage.getItem("ba_chan_open") !== "0",
-  loadedAt: null      // when the open page last fetched, for the topbar stamp
+  loadedAt: null,     // when the open page last fetched, for the topbar stamp
+  // Set by a global-search click, consumed once by the page it points at —
+  // see openSearchResult(). Never persisted; a stale pin from a previous
+  // visit must not silently re-open on the next unrelated page load.
+  convoPin: null, hPin: null, docPin: null, faqPin: null
 };
 
 /* ------------------------------------------------------------- plumbing */
@@ -1929,6 +1982,11 @@ function paintAdminChrome() {
   if (say) say.placeholder = A("message_customer");
   var ans = document.getElementById("ansQ");
   if (ans) ans.placeholder = A("search_approved_answers");
+  var gs = document.getElementById("gs-input");
+  if (gs) {
+    gs.placeholder = A("global_search_placeholder");
+    gs.setAttribute("aria-label", A("global_search_aria"));
+  }
   var freeze = document.getElementById("callFreeze");
   if (freeze) {
     var span = freeze.querySelector("span") || freeze;
@@ -2922,6 +2980,9 @@ function loadHandoffs() {
   var qs = [];
   if (st) qs.push("status=" + st);
   if (desk !== "all") qs.push("department=" + encodeURIComponent(desk));
+  // A global-search hit, force-included regardless of the status/desk tabs
+  // above — see the `pin` param on the /handoffs endpoint.
+  if (state.hPin) qs.push("pin=" + encodeURIComponent(state.hPin));
   // Both in one round trip. The desk strip is the thing an operator reads
   // first — "is there anything on fire" — and fetching it after the rows
   // would leave the answer to that question arriving second.
@@ -3016,6 +3077,12 @@ function loadHandoffs() {
         if (b) { b.focus(); b.setSelectionRange(at, at); }
       }, 0);
     };
+    if (state.hPin) {
+      var pinId = state.hPin;
+      state.hPin = null;
+      var pinRow = document.querySelector('[data-row="' + pinId + '"]');
+      if (pinRow) { pinRow.scrollIntoView({ block: "center" }); toggleHandoffDetail(pinId); }
+    }
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
@@ -3366,6 +3433,12 @@ function loadFaq() {
     if ($("faq-new")) $("faq-new").onclick = function () { faqForm(null, "", "en"); };
     if ($("faq-import")) $("faq-import").onclick = faqImportForm;
     if ($("faq-dl")) $("faq-dl").onclick = downloadFaqSheet;
+    if (state.faqPin) {
+      var pinId = state.faqPin;
+      state.faqPin = null;
+      var pinRow = document.querySelector('[data-faq="' + pinId + '"]');
+      if (pinRow) { pinRow.scrollIntoView({ block: "center" }); pinRow.click(); }
+    }
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
@@ -3569,6 +3642,125 @@ function faqForm(row, question, language, box) {
   }
 }
 
+/* ----------------------------------------------------------- global search
+ * One box across Conversations, Escalations, Knowledge Base and Curated
+ * Answers. A result deep-links into the page that already renders that kind
+ * of record rather than a detail view built just for search: a conversation
+ * or escalation opens inline via `pin=` (list_conversations/list_handoffs
+ * force-include a match outside their normal recent-window cap and current
+ * filter), a document or curated answer opens the same editor its own
+ * page's "Edit" click opens.
+ */
+var gsTimer = null;
+var GS_GROUPS = [
+  { key: "conversations", nav: "nav_conversations" },
+  { key: "handoffs", nav: "nav_escalations" },
+  { key: "documents", nav: "nav_knowledge_base" },
+  { key: "faq", nav: "nav_curated_answers" }
+];
+
+function wireGlobalSearch() {
+  var input = $("gs-input");
+  var box = $("gs-results");
+  if (!input || !box) return;
+  input.oninput = function () {
+    var q = input.value.trim();
+    if (gsTimer) clearTimeout(gsTimer);
+    if (q.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
+    // Typing is not a reason to ask the server on every keystroke — the same
+    // reasoning as the per-page search boxes, just against a live endpoint
+    // instead of an already-loaded list.
+    gsTimer = setTimeout(function () { runGlobalSearch(q); }, 250);
+  };
+  input.onkeydown = function (e) {
+    if (e.key === "Escape") { box.hidden = true; input.blur(); }
+  };
+  // Clicking anywhere outside the box closes it; clicking a result itself is
+  // handled by wire() below and closes it via openSearchResult().
+  document.addEventListener("click", function (e) {
+    if (!box.hidden && e.target !== input && !box.contains(e.target)) box.hidden = true;
+  });
+}
+
+function runGlobalSearch(q) {
+  var box = $("gs-results");
+  if (!box) return;
+  api("/search?q=" + encodeURIComponent(q)).then(function (data) {
+    // A slower request landing after a faster, more recent one would show
+    // results for a query the box no longer holds.
+    var input = $("gs-input");
+    if (!input || input.value.trim() !== q) return;
+    renderGlobalSearch(data);
+  }).catch(function () { /* a failed search stays quiet, same as the nav catalogue fetch */ });
+}
+
+function renderGlobalSearch(data) {
+  var box = $("gs-results");
+  var any = GS_GROUPS.some(function (g) { return (data[g.key] || []).length > 0; });
+  if (!any) {
+    box.innerHTML = '<div class="gs-empty">' +
+      esc(A("global_search_no_results", "No matches.")) + "</div>";
+    box.hidden = false;
+    return;
+  }
+  box.innerHTML = GS_GROUPS.map(function (g) {
+    var rows = data[g.key] || [];
+    if (!rows.length) return "";
+    return '<div class="gs-group">' + esc(A(g.nav)) + "</div>" +
+      rows.map(function (r) { return gsRow(g.key, r); }).join("");
+  }).join("");
+  box.hidden = false;
+  wire("[data-gs]", "gs", function (v) {
+    var i = v.indexOf(":");
+    openSearchResult(v.slice(0, i), v.slice(i + 1));
+  });
+}
+
+function gsRow(kind, r) {
+  var title, sub;
+  if (kind === "conversations") {
+    title = r.snippet || "…";
+    sub = [r.channel, r.language].filter(Boolean).join(" · ");
+  } else if (kind === "handoffs") {
+    title = r.snippet || r.contact_name || "…";
+    sub = [r.department_label, r.contact_name].filter(Boolean).join(" · ");
+  } else if (kind === "documents") {
+    title = r.title;
+    sub = [r.category, r.language].filter(Boolean).join(" · ");
+  } else {
+    title = r.question;
+    sub = r.answer;
+  }
+  return '<button type="button" class="gs-row" role="option" data-gs="' +
+    esc(kind) + ":" + esc(r.id) + '">' + esc(title) +
+    (sub ? '<span class="gs-sub">' + esc(sub) + "</span>" : "") + "</button>";
+}
+
+function openSearchResult(kind, id) {
+  var box = $("gs-results");
+  var input = $("gs-input");
+  if (box) box.hidden = true;
+  if (input) input.value = "";
+  if (kind === "conversations") {
+    // A stale filter or leftover text search from a previous visit could
+    // otherwise hide the very row the pin just forced into the list.
+    state.convoFilter = null;
+    state.cquery = "";
+    state.convoPin = id;
+    go("convos");
+  } else if (kind === "handoffs") {
+    state.hquery = "";
+    state.hPin = id;
+    go("handoffs");
+  } else if (kind === "documents") {
+    state.docPin = id;
+    go("docs");
+  } else if (kind === "faq") {
+    state.faqPin = id;
+    go("faq");
+  }
+}
+
 /* One handler for every drilled figure.
  *
  * A destination is "page" or "page:key=value". The filter is applied to the
@@ -3666,7 +3858,13 @@ function exportConvos() {
 /* --------------------------------------------------------- conversations */
 function loadConvos() {
   var f = state.convoFilter;
-  api("/conversations" + (f ? "?" + f.key + "=" + encodeURIComponent(f.value) : ""))
+  var qs = [];
+  if (f) qs.push(f.key + "=" + encodeURIComponent(f.value));
+  // A global-search hit: force-included even if it is older than the normal
+  // recent-100 window or outside the current filter — see the `pin` param on
+  // the /conversations endpoint.
+  if (state.convoPin) qs.push("pin=" + encodeURIComponent(state.convoPin));
+  api("/conversations" + (qs.length ? "?" + qs.join("&") : ""))
     .then(function (rows) {
     // The filter is stated and removable. A list silently showing a subset is
     // how someone concludes there were only eight conversations all month.
@@ -3736,6 +3934,12 @@ function loadConvos() {
     if ($("clear-filter")) {
       $("clear-filter").onclick = function () { state.convoFilter = null; loadConvos(); };
     }
+    if (state.convoPin) {
+      var pinId = state.convoPin;
+      state.convoPin = null;
+      var pinRow = document.querySelector('[data-msgs="' + pinId + '"]');
+      if (pinRow) { pinRow.scrollIntoView({ block: "center" }); loadMsgs(pinId); }
+    }
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
 
@@ -3785,7 +3989,7 @@ function loadDocs() {
       "<th>Title</th><th>Category</th><th>Language</th><th>Updated</th>" +
       (writable ? '<th style="text-align:right">Actions</th>' : "") + "</tr></thead><tbody>" +
       docs.map(function (d) {
-        return "<tr><td class='title'>" + esc(d.title) + "</td>" +
+        return "<tr data-doc='" + esc(d.id) + "'><td class='title'>" + esc(d.title) + "</td>" +
           '<td><span class="pill">' + esc(d.category) + "</span></td>" +
           "<td>" + esc(d.language) + "</td>" +
           '<td class="meta">' + new Date(d.updated_at).toLocaleDateString(adminLang || "en") + "</td>" +
@@ -3813,6 +4017,20 @@ function loadDocs() {
         docForm(state.docs.filter(function (d) { return d.id === id; })[0]);
       });
       wire("[data-del]", "del", deleteDoc);
+    }
+    if (state.docPin) {
+      var pinId = state.docPin;
+      state.docPin = null;
+      var tr = document.querySelector('[data-doc="' + pinId + '"]');
+      if (tr) {
+        tr.scrollIntoView({ block: "center" });
+        tr.classList.add("gs-flash");
+        setTimeout(function () { tr.classList.remove("gs-flash"); }, 1600);
+      }
+      if (writable) {
+        var pinnedDoc = docs.filter(function (d) { return d.id === pinId; })[0];
+        if (pinnedDoc) docForm(pinnedDoc);
+      }
     }
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
 }
@@ -5439,6 +5657,7 @@ $("queue-btn").onclick = function () {
   state.hstatus = "open";
   go("handoffs");
 };
+wireGlobalSearch();
 // Once a minute is the resolution the stamp is rounded to, so anything faster
 // would repaint the same string.
 setInterval(renderStamp, 60000);
