@@ -443,6 +443,15 @@ class User(Base):
     # an outage. Declaring languages narrows what is routed to you first; it
     # never takes work away from a bank that has not filled it in.
     teller_languages: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Which desks this person actually knows — codes from
+    # departments.DEPARTMENTS, same shape and same semantics as
+    # teller_languages: EMPTY MEANS "NOT DECLARED" AND IS TREATED AS "CAN
+    # TAKE ANYTHING". Not every teller knows every desk equally well, and the
+    # queue order is where that knowledge pays out; declaring narrows what is
+    # offered to you first, it never takes work away.
+    teller_departments: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     @property
@@ -544,6 +553,11 @@ class TellerSession(Base):
     # The teller who claimed it. A user id, so a session survives someone
     # leaving the bank — the audit row still resolves.
     teller_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # What the customer's question is about — a departments.DEPARTMENTS code,
+    # classified from their own recent words when they asked for a person
+    # (the same rules every escalation goes through). Null on sessions
+    # predating migration 0026; routing reads null as "matches everyone".
+    department: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     # The media channel, when one exists. The NAME only: tokens are minted per
     # join, short-lived, and never stored. A durable token in a database row
