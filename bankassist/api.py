@@ -4248,6 +4248,136 @@ def teller_queue(
     )
 
 
+@app.get("/admin/api/{slug}/teller-performance")
+def teller_performance(
+    days: int = DEFAULT_ANALYTICS_DAYS,
+    principal: Principal = NeedsSessionsRead,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Calls handled, per teller.
+
+    Manager-only for now, by design: a person who holds `users.manage` (the
+    same gate the Team page itself sits behind) sees every teller's row. Only
+    `sessions.read` — a plain teller, working the queue — sees exactly one row,
+    their own, never a colleague's. Scoping happens HERE, not by what the
+    frontend chooses to render: hitting this endpoint directly cannot get a
+    teller their colleague's call volume or wait times, because the query
+    itself never reads another teller's rows into scope.
+
+    Only sessions someone actually claimed are counted — `teller_user_id` set.
+    A session abandoned before anyone claimed it is a queue-staffing signal,
+    not a mark against a teller, and stays out of this report; Escalations is
+    where it belongs.
+    """
+    bank = principal.bank
+    days = max(0, min(days, 365))
+    since = datetime.now(UTC) - timedelta(days=days) if days else None
+
+    is_manager = principal.user is None or roles.user_has(
+        db, principal.user, permissions.Perm.USERS_MANAGE
+    )
+
+    where = [
+        TellerSession.bank_id == bank.id,
+        TellerSession.teller_user_id.is_not(None),
+    ]
+    if since is not None:
+        where.append(TellerSession.requested_at >= since)
+    if not is_manager:
+        if principal.user is None:
+            # The break-glass token always counts as a manager (see
+            # is_manager above) so this branch is unreachable in practice —
+            # kept only so a future change to that rule fails safe rather
+            # than crashing on principal.user.id below.
+            return {"window_days": days, "since": iso(since), "is_manager": False, "tellers": []}
+        where.append(TellerSession.teller_user_id == principal.user.id)
+
+    rows = db.execute(select(TellerSession).where(*where)).scalars().all()
+
+    ids = {r.teller_user_id for r in rows if r.teller_user_id}
+    names = {
+        u.id: (u.display_name or u.email)
+        for u in db.execute(select(User).where(User.id.in_(ids))).scalars()
+    } if ids else {}
+
+    tellers: dict[str, dict[str, Any]] = {}
+    wait_totals: dict[str, int] = {}
+    for r in rows:
+        assert r.teller_user_id is not None  # filtered by the where clause above
+        entry = tellers.setdefault(
+            r.teller_user_id,
+            {
+                "teller_user_id": r.teller_user_id,
+                "name": names.get(r.teller_user_id, "Unknown"),
+                "count": 0,
+                "avg_wait_seconds": 0,
+                "states": {},
+            },
+        )
+        entry["count"] += 1
+        entry["states"][r.state] = entry["states"].get(r.state, 0) + 1
+        wait_totals[r.teller_user_id] = (
+            wait_totals.get(r.teller_user_id, 0) + r.waited_seconds
+        )
+
+    out = list(tellers.values())
+    for entry in out:
+        total = wait_totals[entry["teller_user_id"]]
+        entry["avg_wait_seconds"] = round(total / entry["count"])
+
+    # Every front-line teller on the roster, including one who has taken zero
+    # calls — the same reasoning as the Languages panel showing every
+    # supported language at zero. A donut listing only who has claimed
+    # something answers "who's had traffic"; a manager checking on someone
+    # new is asking the other question, and that person missing from the
+    # list reads as "not a teller" rather than "zero calls so far."
+    #
+    # "Front-line" means holds teller.serve without also holding
+    # users.manage — an admin who technically CAN join a call (see
+    # permissions.py: users.manage implies everything) is not one of "my
+    # tellers" for the purposes of this report, and would otherwise pad
+    # every bank's donut with a permanent zero-call admin row.
+    if is_manager:
+        seen = set(tellers.keys())
+        for u in db.execute(
+            select(User).where(User.bank_id == bank.id, User.disabled_at.is_(None))
+        ).scalars():
+            if u.id in seen:
+                continue
+            if not roles.user_has(db, u, permissions.Perm.TELLER_SERVE):
+                continue
+            if roles.user_has(db, u, permissions.Perm.USERS_MANAGE):
+                continue
+            out.append({
+                "teller_user_id": u.id,
+                "name": u.display_name or u.email,
+                "count": 0,
+                "avg_wait_seconds": 0,
+                "states": {},
+            })
+
+    out.sort(key=lambda t: (-int(t["count"]), str(t["name"])))
+
+    # A teller who has never claimed a session still gets their own row —
+    # zeroed out — so their card can say "no calls yet in this window" rather
+    # than the caller getting an empty list and having to guess why.
+    if not is_manager and not out and principal.user is not None:
+        out = [{
+            "teller_user_id": principal.user.id,
+            "name": principal.user.display_name or principal.user.email,
+            "count": 0,
+            "avg_wait_seconds": 0,
+            "states": {},
+        }]
+
+    return {
+        "window_days": days,
+        "since": iso(since),
+        "is_manager": is_manager,
+        "tellers": out,
+    }
+
+
 @app.post("/admin/api/{slug}/teller/sessions/{session_id}/claim")
 def claim_teller_session(
     session_id: str,
