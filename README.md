@@ -480,7 +480,7 @@ by code and must never fail in either mode.
 ## Database migrations
 
 Production schema is managed by **Alembic** — `0001_initial.py` is the
-baseline, head is **0025**. `BANKASSIST_DATABASE_URL` is the single source of
+baseline, head is **0026**. `BANKASSIST_DATABASE_URL` is the single source of
 truth for the URL (`migrations/env.py` reads it; `alembic.ini` has none).
 
 ```bash
@@ -590,7 +590,7 @@ olink-bank-assist/
     seed*.py          Demo Bank Ethiopia (15 docs) + CBE / Dashen / Awash prospect tenants
     evals.py          Golden-question eval runner
     static/           widget.html (embeddable chat + call), admin.html (the whole console)
-  migrations/         Alembic environment + versions (0001 baseline .. 0025 head)
+  migrations/         Alembic environment + versions (0001 baseline .. 0026 head)
   docs/               The knowledge base: overview, architecture, runbooks/,
                       integrations/, decisions/ (19 ADRs) — see docs/README.md
   tests/              1,450+ tests: tenancy, guardrails, retrieval, teller lifecycle,
@@ -602,13 +602,13 @@ olink-bank-assist/
 ## Language notes
 
 Six languages, and that means the whole product rather than the replies
-alone. **369 strings across three tables, no gaps:**
+alone. **378 strings across three tables, no gaps:**
 
 | Table | Strings | Covers |
 |---|---|---|
 | `strings.json` | 20 | what the assistant says |
 | `ui_strings.json` | 52 | the widget's buttons and labels |
-| `admin_strings.json` | 297 | the staff panel, teller console included |
+| `admin_strings.json` | 306 | the staff panel, teller console included |
 
 - Ethiopic script is detected as Amharic, with a Tigrinya orthographic tell
   (the ኣ series) to separate the two. Afaan Oromo, Somali and Swahili — the

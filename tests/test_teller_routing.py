@@ -1,4 +1,4 @@
-"""Language routing for the queue.
+"""Language and expertise routing for the queue.
 
 The interesting cases are all about what routing must NOT do: strand the one
 customer nobody speaks to, hide work from a teller, or empty every queue on
@@ -43,7 +43,7 @@ def test_a_session_with_no_language_yet_matches_anybody() -> None:
 
 def test_a_matching_customer_is_offered_first() -> None:
     # (language, waited_seconds) — the English one waited longer.
-    order = t.queue_order([(EN, 40), (AM, 10)], [AM])
+    order = t.queue_order([(EN, None, 40), (AM, None, 10)], [AM])
     assert order == [1, 0]
 
 
@@ -51,12 +51,12 @@ def test_oldest_first_still_holds_inside_a_group() -> None:
     """Language reorders across groups, never within one. Anything else and
     the person who has waited longest keeps losing, which is what a queue
     exists to prevent."""
-    order = t.queue_order([(AM, 10), (AM, 50), (AM, 30)], [AM])
+    order = t.queue_order([(AM, None, 10), (AM, None, 50), (AM, None, 30)], [AM])
     assert order == [1, 2, 0]
 
 
 def test_an_undeclared_teller_gets_a_plain_oldest_first_queue() -> None:
-    order = t.queue_order([(AM, 10), (OM, 50), (EN, 30)], None)
+    order = t.queue_order([(AM, None, 10), (OM, None, 50), (EN, None, 30)], None)
     assert order == [1, 2, 0]
 
 
@@ -66,7 +66,7 @@ def test_nobody_is_starved_by_a_language_they_do_not_speak() -> None:
     someone else. Past PATIENCE their wait outranks any match.
     """
     long_wait = t.PATIENCE + 1
-    order = t.queue_order([(AM, 5), (OM, long_wait)], [AM])
+    order = t.queue_order([(AM, None, 5), (OM, None, long_wait)], [AM])
     assert order[0] == 1
 
 
@@ -75,7 +75,7 @@ def test_two_starving_customers_are_still_oldest_first() -> None:
     longest wait wins — otherwise the tie-break would quietly reintroduce the
     starvation this rule exists to remove."""
     order = t.queue_order(
-        [(AM, t.PATIENCE + 10), (OM, t.PATIENCE + 90)], [AM]
+        [(AM, None, t.PATIENCE + 10), (OM, None, t.PATIENCE + 90)], [AM]
     )
     assert order == [1, 0]
 
@@ -83,7 +83,7 @@ def test_two_starving_customers_are_still_oldest_first() -> None:
 def test_a_match_still_wins_below_the_patience_threshold() -> None:
     """Guards the boundary from the other side: patience must not be so eager
     that it cancels routing for every real queue."""
-    order = t.queue_order([(EN, t.PATIENCE - 1), (AM, 0)], [AM])
+    order = t.queue_order([(EN, None, t.PATIENCE - 1), (AM, None, 0)], [AM])
     assert order == [1, 0]
 
 
@@ -98,7 +98,7 @@ def test_routing_returns_every_session_it_was_given() -> None:
     A hard filter would strand the one customer nobody can serve — the
     opposite of what routing them is for.
     """
-    sessions = [(AM, 10), (OM, 20), (EN, 30), (None, 40)]
+    sessions = [(AM, None, 10), (OM, None, 20), (EN, None, 30), (None, None, 40)]
     order = t.queue_order(sessions, [AM])
     assert sorted(order) == list(range(len(sessions)))
 
