@@ -4089,8 +4089,13 @@ function exportAudit() {
 
 /* ------------------------------------------------------------ team */
 function loadTeam() {
-  Promise.all([api("/users"), api("/roles")]).then(function (res) {
-    var users = res[0], rolesList = res[1];
+  // Calls-per-teller needs sessions.read on top of the users.manage that gets
+  // anyone onto this page at all — a bank could hand out users.manage without
+  // it on a custom role. Missing it degrades to no donut, the same way
+  // loadChannels() degrades traffic counts rather than failing the page.
+  var perf = can("sessions.read") ? api("/teller-performance") : Promise.resolve(null);
+  Promise.all([api("/users"), api("/roles"), perf]).then(function (res) {
+    var users = res[0], rolesList = res[1], tellerPerf = res[2];
     var h = '<div class="tools"><button class="btn sm" id="new-user">' + esc(A("add_person")) + "</button>" +
       '<div style="flex:1"></div><span class="meta">' +
       esc(A(users.length === 1 ? "one_account" : "n_accounts", null, { n: users.length })) +
@@ -4116,6 +4121,22 @@ function loadTeam() {
           "</div></td></tr>";
       }).join("") + "</tbody></table></div>";
 
+    // Manager-only by decision, not an accident of who happens to be looking:
+    // a plain teller hitting /teller-performance gets back only their own
+    // row (see the endpoint), so this donut only ever draws for someone who
+    // holds users.manage. tellerPerf.is_manager mirrors that server-side
+    // scoping rather than re-deciding it in the browser.
+    var teamDetail = [];
+    if (tellerPerf && tellerPerf.is_manager && tellerPerf.tellers.length) {
+      var perfData = tellerPerfDonutData(tellerPerf.tellers);
+      teamDetail = perfData.detail;
+      h += '<div class="panel" id="team-perf-panel"><h3>' + esc(A("calls_per_teller")) + "</h3>" +
+        donut(perfData.rows, {
+          unit: A("unit_calls"), label: A("calls_per_teller"),
+          empty: A("no_calls_taken_yet")
+        }) + '<div id="team-perf-detail"></div></div>';
+    }
+
     /* The permission matrix, generated from the rows require() actually
        checks. A matrix kept in a document drifts from the system; this one
        cannot, because it is the system. */
@@ -4130,11 +4151,68 @@ function loadTeam() {
 
     $("main").innerHTML = h;
     state.roleNames = rolesList.map(function (r) { return r.name; });
+    state.teamPerfDetail = teamDetail;
     $("new-user").onclick = userForm;
     wire("[data-active]", "active", function (id, el) {
       setUserActive(id, el.getAttribute("data-to") === "1");
     });
+    wireDetailPanel("team-perf-panel", "team-perf-detail",
+      function () { return state.teamPerfDetail; }, tellerDetailCard);
   }).catch(function (e) { $("main").innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+}
+
+/* Calls per teller, shaped exactly like topicDonutData(): top 6 get their own
+ * wedge, the rest fold into one "N other tellers" wedge rather than being
+ * dropped, so a bank with a bigger team still sees an honest total. */
+var TELLER_DONUT_MAX = 6;
+function tellerPerfDonutData(tellersList) {
+  var head = tellersList.slice(0, TELLER_DONUT_MAX);
+  var rest = tellersList.slice(TELLER_DONUT_MAX);
+  var detail = head.map(function (t) { return { isOther: false, teller: t }; });
+  var rows = head.map(function (t, i) {
+    return { label: t.name, count: t.count, slot: (i % 8) + 1, topicIdx: i };
+  });
+  if (rest.length) {
+    var restCount = rest.reduce(function (s, t) { return s + t.count; }, 0);
+    rows.push({
+      label: A("n_other_tellers", null, { n: rest.length }),
+      count: restCount, slot: (head.length % 8) + 1, topicIdx: head.length
+    });
+    detail.push({ isOther: true, items: rest });
+  }
+  return { rows: rows, detail: detail };
+}
+
+var CALL_STATE_LABEL_KEY = { ended: "call_resolved", active: "active", failed: "call_dropped" };
+function callStateClass(state) {
+  return state === "failed" ? "bad" : (state === "active" ? "warn" : "");
+}
+
+/* One teller's detail card, or the folded-in tail's compact list — same
+ * shape as topicDetailCard()'s isOther branch. No "view X" secondary action:
+ * unlike a topic or a language, there is no page that lists one teller's
+ * historic sessions to drill into. */
+function tellerDetailCard(item) {
+  if (item.isOther) {
+    return '<div class="topicdetail">' +
+      '<h3>' + esc(A("n_other_tellers", null, { n: item.items.length })) + "</h3>" +
+      item.items.map(function (t) {
+        return '<div class="topic"><span class="n">' + t.count + "</span><span>" +
+          esc(t.name) + "</span></div>";
+      }).join("") + "</div>";
+  }
+  var t = item.teller;
+  var states = t.states || {};
+  var rows = Object.keys(states).map(function (s) {
+    var cls = callStateClass(s);
+    return '<div class="topic' + (cls ? " " + cls : "") + '"><span class="n">' +
+      states[s] + "</span><span>" +
+      esc(A(CALL_STATE_LABEL_KEY[s], s)) + "</span></div>";
+  }).join("");
+  return '<div class="topicdetail">' +
+    '<h3>' + esc(t.name) + "</h3>" + rows +
+    '<div class="note">' + esc(A("avg_wait_before_answering")) + " " +
+    esc(waitedSeconds(t.avg_wait_seconds)) + "</div></div>";
 }
 
 function userForm() {
@@ -4347,6 +4425,24 @@ function waitedSeconds(sec) {
   return m < 60 ? m + "m " + (sec % 60) + "s" : Math.floor(m / 60) + "h " + (m % 60) + "m";
 }
 
+/* This teller's own numbers — reuses bars(), the same small breakdown the
+ * Dashboard's "What happened" panel draws, rather than a donut: this page's
+ * job is the live queue, not a report, and the manager-facing deep dive
+ * already lives on the Team page. */
+function tellerSelfCard(mine) {
+  var states = mine.states || {};
+  var rows = Object.keys(states).map(function (s) { return { state: s, count: states[s] }; });
+  return '<div class="panel"><h3>' + esc(A("your_performance")) + "</h3>" +
+    (mine.count
+      ? bars(rows, mine.count, function (r) {
+          return [A(CALL_STATE_LABEL_KEY[r.state], r.state), callStateClass(r.state), null];
+        }) +
+        '<div class="note">' + esc(A("avg_wait_before_answering")) + " " +
+        esc(waitedSeconds(mine.avg_wait_seconds)) + "</div>"
+      : '<div class="empty">' + esc(A("no_calls_yet_window")) + "</div>") +
+    "</div>";
+}
+
 // Whether the tenant offers live sessions at all, and whether customers can
 // see the button right now. Read once per visit rather than on every 4s poll:
 // it changes only when somebody toggles it, and re-reading it fifteen times a
@@ -4357,6 +4453,13 @@ var tellerSettings = null;
 // fifteen times a minute per teller is a request per teller for a value nobody
 // touched.
 var TELLER_SETTINGS_EVERY = 10;
+
+// A teller's own call count for the "Your performance" card at the bottom of
+// this page. Same throttle as the settings strip and for the same reason —
+// how many calls you've taken today does not need second-by-second freshness,
+// and the server already scopes this to exactly one row (see
+// /teller-performance), so there is nothing here worth polling harder for.
+var tellerPerf = null;
 
 function loadTellerQueue() {
   stopTellerPolling();
@@ -4384,6 +4487,14 @@ function loadTellerQueue() {
         if (state.page === "teller" && lastRows !== null) renderTellerQueue(lastRows);
       })
       .catch(function () {});
+    if (can("teller.serve")) {
+      api("/teller-performance")
+        .then(function (p) {
+          tellerPerf = p;
+          if (state.page === "teller" && lastRows !== null) renderTellerQueue(lastRows);
+        })
+        .catch(function () {});
+    }
   };
 
   var draw = function () {
@@ -4524,6 +4635,14 @@ function renderTellerQueue(rows) {
     '<div class="meta">' + esc(A("session_scope_body")) + "</div>" +
     '<div class="note" style="color:var(--bad)">' +
     esc(A("never_money_movement")) + "</div></div>";
+
+  // Own numbers only — never a colleague's, by the same server-side scoping
+  // the Team page's manager donut relies on (see /teller-performance). A
+  // compact row rather than a donut: this page's job is the live queue, and
+  // a big chart competing for space with it would work against that.
+  if (canServe && tellerPerf && tellerPerf.tellers.length) {
+    h += tellerSelfCard(tellerPerf.tellers[0]);
+  }
 
   $("main").innerHTML = h;
   var toggle = $("teller-toggle");
