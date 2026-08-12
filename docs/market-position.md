@@ -142,17 +142,26 @@ needed. That is one data point in favour of the claim, not proof it holds for
 every language on the list below; native review still has to run before a
 real pilot, exactly as this document already said.
 
-**Remaining order, by reach per unit of effort:**
+**Regional focus narrowed to East Africa, 2026-08-12 — see ADR-0019.** The
+Nigeria bundle below is **parked, not cancelled**: the market case (real
+local precedent, a large reachable population) still holds and this document
+is not walking it back. The founder's call is sequencing, not opportunity —
+go deep in the region Swahili already anchors before making a second regional
+jump to West Africa. Any next language work is evaluated against East
+Africa's reach first.
 
-- **Hausa, Yoruba, Igbo next**, as a Nigeria-specific bundle. Real local
-  precedent exists, not just an estimate: Nigerian banks (Zenith, Access,
-  UBA, Fidelity, Heritage, Keystone) already run WhatsApp/Telegram bots, and
-  at least one Nigerian digital bank markets "banking in Yoruba, Igbo,
-  Hausa, and Pidgin" as an explicit differentiator.
-- **Arabic after that, not first.** Reach is large (Sudan, North Africa) but
-  right-to-left layout is real engineering across the widget and the admin
-  panel, not a string-table change — sequence it once the Latin-script
-  languages are proven out.
+**Parked — Nigeria bundle (Hausa, Yoruba, Igbo):**
+
+- Real local precedent exists, not just an estimate: Nigerian banks (Zenith,
+  Access, UBA, Fidelity, Heritage, Keystone) already run WhatsApp/Telegram
+  bots, and at least one Nigerian digital bank markets "banking in Yoruba,
+  Igbo, Hausa, and Pidgin" as an explicit differentiator. This is real
+  whitespace whenever the regional call revisits it.
+- **Arabic stays sequenced after the Nigeria bundle, not before it.** Reach
+  is large (Sudan, North Africa) but right-to-left layout is real engineering
+  across the widget and the admin panel, not a string-table change — this
+  was never a candidate for the near-term list regardless of the regional
+  question above.
 
 ## Roadmap sequencing (as decided this session)
 

@@ -812,18 +812,26 @@
   // Intent -> what the bank's evaluator should understand happened. These
   // mirror classifier.py's taxonomy; the point is to make a refusal read as
   // a deliberate policy control rather than the bot failing to answer.
+  //
+  // `key` names a ui_strings.json entry rather than carrying literal text —
+  // these objects are built once at load, before the language table is even
+  // fetched, so the label has to be resolved with T() at render time. It
+  // wasn't: every chip here was hardcoded English regardless of the
+  // customer's language, despite the matching label_* keys already existing
+  // translated in all six languages — found by actually testing the widget
+  // in Swahili rather than by reading the string table.
   var INTENTS = {
-    question:          { label: "Product guidance", icon: "book" },
+    question:          { key: "label_product_guidance", icon: "book" },
     greeting:          null,
-    comparison:        { label: "Competitive query", icon: "chart" },
-    investment_advice: { label: "Advice guardrail", icon: "shield", cls: "guard" },
-    account_specific:  { label: "Account-data guardrail", icon: "lock", cls: "guard" },
+    comparison:        { key: "label_competitive", icon: "chart" },
+    investment_advice: { key: "label_advice_guard", icon: "shield", cls: "guard" },
+    account_specific:  { key: "label_account_guard", icon: "lock", cls: "guard" },
     // NOT a guardrail chip, deliberately. "How do I block my card" is answered
     // from the bank's own published material like any other question, and
     // stamping a lock on it would tell a bank evaluating the product that we
     // refuse the how-to questions their call centre spends all day on.
-    account_procedure: { label: "Product guidance", icon: "book" },
-    complaint:         { label: "Complaint", icon: "flag", cls: "guard" }
+    account_procedure: { key: "label_product_guidance", icon: "book" },
+    complaint:         { key: "label_complaint", icon: "flag", cls: "guard" }
   };
 
   // Outcome -> label, checked before INTENTS. Intent describes what was
@@ -838,10 +846,10 @@
   // wrong belong here; everything else falls through to the intent chip.
   var OUTCOMES = {
     // Stored a phone number. Not guidance of any kind.
-    contact_captured: { label: "Contact saved", icon: "user", cls: "human" },
+    contact_captured: { key: "label_contact_saved", icon: "user", cls: "human" },
     // Found nothing and routed to a person. Admitting the gap is the point;
     // "Product guidance" claimed the opposite of what happened.
-    unanswered:       { label: "Knowledge gap", icon: "book", cls: "guard" },
+    unanswered:       { key: "label_knowledge_gap", icon: "book", cls: "guard" },
     // Already carries its own "General guidance" chip below. A second chip
     // reading "Product guidance" both duplicates it and contradicts it, since
     // this answer is explicitly NOT the bank's published content.
@@ -1012,17 +1020,22 @@
       ? OUTCOMES[data.outcome]
       : INTENTS[data.intent];
     if (it) {
-      chips.push('<span class="chip ' + (it.cls || "") + '">' + svg(it.icon) + it.label + '</span>');
+      chips.push('<span class="chip ' + (it.cls || "") + '">' + svg(it.icon) + esc(T(it.key)) + '</span>');
     }
     if (data.general_knowledge) {
-      chips.push('<span class="chip guard">' + svg("book") + 'General guidance</span>');
+      chips.push('<span class="chip guard">' + svg("book") + esc(T("label_general")) + '</span>');
     }
     if (data.handoff_created) {
-      chips.push('<span class="chip human">' + svg("user") + 'Routed to a person</span>');
+      chips.push('<span class="chip human">' + svg("user") + esc(T("label_routed_to_person")) + '</span>');
     }
     var n = (data.sources || []).length;
     if (n) {
-      chips.push('<span class="chip src" data-toggle="1">' + svg("doc") + n + ' source' + (n > 1 ? "s" : "") + '</span>');
+      // {n} always interpolated, never built from fragments — a bare
+      // `n + " source" + (n > 1 ? "s" : "")` only pluralizes correctly in
+      // English, the exact anti-pattern this product's own multilingual
+      // rule exists to catch.
+      var srcLabel = n > 1 ? T("n_sources", { n: n }) : T("one_source", { n: n });
+      chips.push('<span class="chip src" data-toggle="1">' + svg("doc") + esc(srcLabel) + '</span>');
     }
     if (!chips.length) return;
 
