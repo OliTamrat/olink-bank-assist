@@ -17,6 +17,7 @@ to extractive answers. The assistant never depends on the model being up.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
@@ -466,6 +467,112 @@ def generate_answer(
     if INSUFFICIENT_CONTEXT in cleaned:
         raise LLMDeclined(cleaned)
     return cleaned
+
+
+_INSIGHTS_PROMPT = """You are the analytics engine behind the operations \
+console of {bank_name}, a bank whose AI customer assistant and live-teller \
+queue produced the aggregate metrics you are given as JSON.
+
+Analyze the data yourself: look for patterns, contrasts and trade-offs
+across volumes, deflection, escalation desks, the live-call funnel, staffing
+and hourly load. The `machine_findings` entries are hints from simple
+threshold rules — you may confirm, reprioritise or go beyond them, but do
+not merely restate them.
+
+Reply with ONLY a JSON object, no code fences and no other text, in exactly
+this shape:
+
+{{"headline": "one sentence, the single most important thing",
+ "assessment": [{{"title": "short heading", "body": "a short paragraph"}}],
+ "actions": [{{"text": "one concrete, modest step", "priority": "now"}}]}}
+
+Rules, all of them hard:
+- Every string is written in {language_name}.
+- 2 to 4 assessment sections; 2 to 4 actions; "priority" is exactly one of
+  "now", "soon" or "later".
+- Use ONLY numbers present in the data. Never invent, estimate, extrapolate
+  or combine numbers into new figures. If something is null, it was not
+  measured — do not guess it.
+- The data contains no customer messages, so never quote or imagine any."""
+
+
+def _parse_brief(raw: str) -> dict[str, Any]:
+    """The model's JSON, validated into the shape the page renders.
+
+    Anything malformed raises LLMUnavailable rather than rendering broken —
+    the caller falls back to the deterministic findings, which is a better
+    page than a half-parsed brief.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        raise LLMUnavailable(f"brief was not JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LLMUnavailable("brief was not an object")
+    headline = data.get("headline")
+    assessment = data.get("assessment")
+    actions = data.get("actions")
+    if not isinstance(headline, str) or not headline.strip():
+        raise LLMUnavailable("brief has no headline")
+    if not isinstance(assessment, list) or not assessment:
+        raise LLMUnavailable("brief has no assessment")
+    clean_sections = []
+    for section in assessment[:6]:
+        if (
+            isinstance(section, dict)
+            and isinstance(section.get("title"), str)
+            and isinstance(section.get("body"), str)
+        ):
+            clean_sections.append(
+                {"title": section["title"].strip(), "body": section["body"].strip()}
+            )
+    if not clean_sections:
+        raise LLMUnavailable("brief sections were malformed")
+    clean_actions = []
+    if isinstance(actions, list):
+        for action in actions[:6]:
+            if isinstance(action, dict) and isinstance(action.get("text"), str):
+                priority = action.get("priority")
+                clean_actions.append({
+                    "text": action["text"].strip(),
+                    # An unknown priority degrades to the middle, never to a
+                    # rendering error.
+                    "priority": priority if priority in ("now", "soon", "later") else "soon",
+                })
+    return {
+        "headline": headline.strip(),
+        "assessment": clean_sections,
+        "actions": clean_actions,
+    }
+
+
+def analyze_operations(digest: str, language: str, bank_name: str) -> dict[str, Any]:
+    """A structured operations brief the model composed itself.
+
+    The model is the analyst here, not a copywriter over precomputed
+    findings — it receives the full aggregate picture and decides what
+    matters. The digest is built by the caller from the analytics payloads
+    with the customer-text fields excluded, so the model physically cannot
+    quote a customer — the safety is what it is *given*, with the prompt as
+    the second fence rather than the first.
+
+    Raises LLMUnavailable like every other call (including on malformed
+    output); the caller degrades to the deterministic findings.
+    """
+    system = _INSIGHTS_PROMPT.format(
+        bank_name=bank_name,
+        language_name=LANGUAGE_NAMES.get(language, "English"),
+    )
+    # Thinking on and sized generously: this is the one call in the product
+    # whose entire job is judgement over a whole dataset, and the cap covers
+    # thinking + a multi-section brief.
+    raw = _call_model(system, digest, max_output_tokens=2400, thinking_budget=768)
+    return _parse_brief(raw)
 
 
 def reset_credentials() -> None:

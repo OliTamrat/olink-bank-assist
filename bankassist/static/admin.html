@@ -848,6 +848,50 @@ td.title { color: var(--ink); font-weight: 550; }
 .pill.off { background: var(--bad-bg); color: var(--bad); }
 /* Actionable-now, as distinct from working-already (.on) and
    blocked-on-paperwork (plain). */
+/* AI-insight severities. Act borrows the error palette because it is the
+   "today" pile; watch the warning; good the ok; info stays quiet. */
+.pill.sev-act { background: var(--bad-bg); color: var(--bad); }
+.pill.sev-watch { background: var(--warn-bg); color: var(--warn); }
+.pill.sev-good { background: var(--ok-bg); color: var(--ok); }
+.pill.sev-info { background: var(--surface-2); color: var(--muted); }
+.findings { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.finding {
+  display: flex; align-items: baseline; gap: 10px; font-size: 13.5px;
+  color: var(--body);
+}
+.finding .pill { flex: none; }
+/* The AI Insights page. The hero carries the model's one-sentence headline
+   in the same brand-tinted banner language as the dashboard's welcome; the
+   action cards are the "what do I do" row and sit above the assessment so
+   the page answers before it explains. */
+.brief-hero {
+  background: linear-gradient(120deg,
+    color-mix(in srgb, var(--brand) 26%, var(--surface)),
+    var(--surface) 72%);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 22px 24px; margin-bottom: 16px;
+}
+.brief-kicker {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); margin-bottom: 8px;
+}
+.brief-hero h2 { font-size: 21px; line-height: 1.35; letter-spacing: -.01em; max-width: 62ch; }
+.actiongrid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px; margin-bottom: 16px;
+}
+.actioncard {
+  border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px;
+  background: var(--surface); display: flex; flex-direction: column; gap: 8px;
+  align-items: flex-start;
+}
+.actioncard.p-now { border-left: 3px solid var(--bad); }
+.actioncard.p-soon { border-left: 3px solid var(--warn); }
+.actioncard.p-later { border-left: 3px solid var(--line); }
+.actioncard p { font-size: 13.5px; line-height: 1.5; color: var(--body); }
+.brief-body {
+  font-size: 13.5px; line-height: 1.55; color: var(--body); max-width: 70ch;
+}
 .pill.next { background: color-mix(in srgb, var(--brand) 16%, transparent);
   color: var(--brand); }
 
@@ -1563,6 +1607,7 @@ function setAdminLanguage(code) {
 var PAGES = [
   { id: "dashboard", key: "nav_dashboard", label: "Dashboard",     perm: "analytics.read",     load: loadDashboard },
   { id: "performance", key: "nav_performance", label: "Performance", perm: "analytics.read",   load: loadPerformance },
+  { id: "insights", key: "ai_insights", label: "AI insights",   perm: "analytics.read",     load: loadInsights },
   { id: "handoffs", key: "nav_escalations",  label: "Escalations",   perm: "handoffs.read",      load: loadHandoffs, badge: true },
   // Directly under Escalations, because it is the same work in a different
   // tense: the queue of people waiting NOW rather than the queue of people
@@ -1585,6 +1630,7 @@ var PAGES = [
 var ICONS = {
   dashboard: '<path d="M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z"/>',
   performance: '<path d="M4.5 16a7.5 7.5 0 1 1 15 0"/><path d="M12 16l3.8-4.2"/><path d="M3.5 20h17"/>',
+  insights:  '<path d="M11 4l1.7 4.8L17.5 10.5l-4.8 1.7L11 17l-1.7-4.8L4.5 10.5l4.8-1.7z"/><path d="M18.5 14.5l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/>',
   handoffs:  '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-4.6A8.4 8.4 0 1 1 21 11.5z"/>',
   convos:    '<path d="M8 10h8M8 14h5M21 12a9 9 0 1 1-3.2-6.9"/><circle cx="19" cy="5" r="2"/>',
   docs:      '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5M8 13h8M8 17h5"/>',
@@ -3070,6 +3116,118 @@ function loadPerformance() {
     });
     wireDrills();
   }).catch(function (err) { setStatus(err.message, "error"); });
+}
+
+/* ------------------------------------------------------------ AI insights
+ *
+ * The AI's own read of the operation, on its own page. The model is the
+ * analyst: it receives the full aggregate picture and composes the brief —
+ * headline, assessment, prioritised actions — in the panel's own language.
+ * The threshold findings are the offline floor: no model, failed call or
+ * malformed reply all degrade to them, so the page works in every
+ * configuration (extractive-mode doctrine, applied to analytics).
+ *
+ * Opening the page IS the consent for the model call — there is no button
+ * to find first — but a result is cached per (window, language) so moving
+ * between pages does not re-bill a call whose numbers have not moved.
+ * Regenerate forces a fresh one.
+ */
+function insightText(f) {
+  // Fallback findings, in the panel's own language. The one transform done
+  // here is the peak hour, which arrives in UTC (like the chart it
+  // summarises) and is shifted to the operator's clock before it is worded.
+  var vars = {};
+  Object.keys(f.vars || {}).forEach(function (k) { vars[k] = f.vars[k]; });
+  if (f.key === "peak_hour") {
+    var shift = Math.round(-new Date().getTimezoneOffset() / 60);
+    vars.hour = ((f.vars.utc_hour + shift) % 24 + 24) % 24;
+  }
+  return A("insight_" + f.key, null, vars);
+}
+
+function renderBrief(data) {
+  var h = "";
+  if (data.brief) {
+    var b = data.brief;
+    h += '<div class="brief-hero"><div class="brief-kicker">' +
+      esc(A("ai_insights")) + " · " +
+      esc(data.window_days
+        ? A("last_n_days_lower", null, { n: data.window_days })
+        : A("all_time_lower")) + "</div>" +
+      "<h2>" + esc(b.headline) + "</h2></div>";
+    if (b.actions && b.actions.length) {
+      h += '<div class="actiongrid">' + b.actions.map(function (a2) {
+        return '<div class="actioncard p-' + esc(a2.priority) + '">' +
+          '<span class="pill sev-' +
+          (a2.priority === "now" ? "act" : (a2.priority === "soon" ? "watch" : "info")) +
+          '">' + esc(A("priority_" + a2.priority)) + "</span>" +
+          "<p>" + esc(a2.text) + "</p></div>";
+      }).join("") + "</div>";
+    }
+    h += '<div class="row row-half">' + b.assessment.map(function (s) {
+      return '<div class="panel"><h3>' + esc(s.title) + "</h3>" +
+        '<p class="brief-body">' + esc(s.body) + "</p></div>";
+    }).join("") + "</div>";
+  } else {
+    // The deterministic floor. Only claim "no model" when that is actually
+    // why — a configured backend that failed this one call gets the
+    // findings alone, without a note blaming configuration.
+    h += '<div class="panel"><h3>' + esc(A("ai_insights")) + "</h3>" +
+      '<div class="findings">' + data.findings.map(function (f) {
+        return '<div class="finding"><span class="pill sev-' + esc(f.severity) + '">' +
+          esc(A("sev_" + f.severity)) + "</span><span>" + esc(insightText(f)) +
+          "</span></div>";
+      }).join("") + "</div>" +
+      (data.backend === "extractive-fallback"
+        ? '<div class="note">' + esc(A("insights_no_model")) + "</div>"
+        : "") +
+      "</div>";
+  }
+  h += '<div class="tools" style="margin-top:14px">' +
+    '<button class="btn ghost sm" id="gen-insights">' +
+    esc(A("generate_insights")) + "</button>" +
+    '<span class="note" style="margin-top:0">' + esc(A("insights_note")) + "</span></div>";
+  return h;
+}
+
+function loadInsights() {
+  var key = state.days + "|" + adminLang;
+  var cached = state.insightsCache && state.insightsCache.key === key
+    ? state.insightsCache.data : null;
+
+  function paint(data) {
+    if (state.page !== "insights") return;
+    var h = '<div class="tools"><div class="seg">' +
+      [[7, "days_7"], [30, "days_30"], [90, "days_90"], [0, "days_all"]].map(function (d) {
+        return '<button data-days="' + d[0] + '" class="' + (state.days === d[0] ? "on" : "") + '">' +
+          esc(A(d[1])) + "</button>";
+      }).join("") + "</div></div>";
+    h += renderBrief(data);
+    $("main").innerHTML = h;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-days]"), function (b) {
+      b.onclick = function () {
+        state.days = parseInt(b.getAttribute("data-days"), 10);
+        go("insights");
+      };
+    });
+    var gen = $("gen-insights");
+    if (gen) {
+      gen.onclick = function () {
+        state.insightsCache = null;
+        go("insights");
+      };
+    }
+  }
+
+  if (cached) { paint(cached); return; }
+  $("main").innerHTML = '<div class="empty">' + esc(A("insights_generating")) + "</div>";
+  api("/analytics/insights?days=" + state.days +
+      "&language=" + encodeURIComponent(adminLang) + "&brief=1")
+    .then(function (data) {
+      state.insightsCache = { key: key, data: data };
+      paint(data);
+    })
+    .catch(function (err) { setStatus(err.message, "error"); });
 }
 
 /* ----------------------------------------------------------- escalations */

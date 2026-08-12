@@ -36,6 +36,7 @@ from . import (
     handoff_webhook,
     i18n,
     ingest,
+    insights,
     livekit,
     llm,
     meta,
@@ -3759,6 +3760,81 @@ def analytics_operations(
             [dow, hour, count]
             for (dow, hour), count in sorted(busy.items())
         ],
+    }
+
+
+@app.get("/admin/api/{slug}/analytics/insights")
+def analytics_insights(
+    days: int = DEFAULT_ANALYTICS_DAYS,
+    language: str = "en",
+    brief: bool = False,
+    principal: Principal = NeedsAnalyticsRead,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The AI's own read of the operation — with a deterministic fallback.
+
+    The model is the analyst (see ADR-0021, amended by the founder's review):
+    it receives the full aggregate picture — Overview, Performance, language
+    outcomes, channel mix, the hourly load matrix and the machine findings
+    as hints — and composes a structured brief itself: headline, assessment
+    sections, prioritised actions. The threshold rules in `insights.py`
+    remain as the offline floor: with no model configured, or a failed or
+    malformed call, the findings render alone and the page still works —
+    extractive-mode doctrine, applied to analytics.
+
+    What never changes, either way: the digest excludes `top_topics` — the
+    one aggregate field carrying (redacted) customer wording — so no
+    customer text can reach the model from here at all. That is what lets
+    this sit behind the same `analytics.read` gate as the reports it reads.
+
+    `brief` is opt-in per request: the caller (the AI Insights page) asks
+    for it when the manager opens the page — visiting the page is the
+    consent — and never from a background poll.
+    """
+    if language not in SUPPORTED_LANGUAGES:
+        language = "en"
+    overview = analytics(days=days, principal=principal, db=db)
+    ops = analytics_operations(days=days, principal=principal, db=db)
+    found = insights.findings(overview, ops)
+
+    composed: dict[str, Any] | None = None
+    if brief:
+        digest = {
+            "window_days": overview["window_days"],
+            "conversations": overview["conversations"],
+            "conversations_per_day": overview["daily"],
+            "substantive_questions": overview["substantive_questions"],
+            "deflection_rate": overview["deflection_rate"],
+            "own_content_rate": overview["own_content_rate"],
+            "previous_window": overview["previous"],
+            "outcomes": overview["outcomes"],
+            "languages": overview["languages"],
+            "channels": [
+                {"channel": c["channel"], "count": c["count"]}
+                for c in overview["channels"]
+            ],
+            "escalations": ops["escalations"],
+            "live_calls": ops["live"],
+            "staffing": ops["staffing"],
+            "busy_utc_weekday_hour_count": ops["busy"],
+            "machine_findings": found,
+        }
+        try:
+            composed = llm.analyze_operations(
+                json.dumps(digest, ensure_ascii=False),
+                language,
+                principal.bank.display_name,
+            )
+        except llm.LLMUnavailable:
+            composed = None
+
+    return {
+        "window_days": overview["window_days"],
+        "since": overview["since"],
+        "brief": composed,
+        "brief_language": language if composed else None,
+        "findings": found,
+        "backend": llm.active_backend(),
     }
 
 
