@@ -358,7 +358,11 @@
     "unverified_scope": "Until this is done you can only give general guidance — products, eligibility and how to apply.",
     "fayda_number_required": "Fayda number (required — it is what the record keeps)",
     "download_for_translation": "Download for translation",
-    "nothing_to_download": "No approved answers to download yet."
+    "nothing_to_download": "No approved answers to download yet.",
+    "reason_service_issue": "Something is broken",
+    "gap_reason_unanswered_question": "No answer found",
+    "gap_reason_answered_from_general_knowledge": "Answered generically",
+    "gap_reason_service_issue": "Broken, no fix published"
   },
   "am": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -719,7 +723,11 @@
     "unverified_scope": "ይህ እስኪከናወን ድረስ አጠቃላይ መመሪያ ብቻ መስጠት ይችላሉ — ምርቶች፣ ብቁነትና እንዴት ማመልከት እንደሚቻል።",
     "fayda_number_required": "የፋይዳ ቁጥር (ያስፈልጋል — መዝገቡ የሚይዘው ይህ ነው)",
     "download_for_translation": "ለትርጉም አውርድ",
-    "nothing_to_download": "እስካሁን የሚወርድ የተፈቀደ መልስ የለም።"
+    "nothing_to_download": "እስካሁን የሚወርድ የተፈቀደ መልስ የለም።",
+    "reason_service_issue": "የተበላሸ ነገር አለ",
+    "gap_reason_unanswered_question": "መልስ አልተገኘም",
+    "gap_reason_answered_from_general_knowledge": "በአጠቃላይ መልስ ተሰጥቷል",
+    "gap_reason_service_issue": "ተበላሽቷል፤ የታተመ መፍትሔ የለም"
   },
   "om": {
     "nav_dashboard": "Daashboordii",
@@ -1080,7 +1088,11 @@
     "unverified_scope": "Hanga kun raawwatutti qajeelfama waliigalaa qofa kennuu dandeessu — oomishaalee, ulaagaa fi akkaataa itti iyyatan.",
     "fayda_number_required": "Lakkoofsa Fayda (barbaachisaa — kan galmeen qabatu isa kana)",
     "download_for_translation": "Hiikkaaf buufadhu",
-    "nothing_to_download": "Hanga ammaatti deebiin mirkanaa'e buufamu hin jiru."
+    "nothing_to_download": "Hanga ammaatti deebiin mirkanaa'e buufamu hin jiru.",
+    "reason_service_issue": "Wanti tokko hin hojjetu",
+    "gap_reason_unanswered_question": "Deebiin hin argamne",
+    "gap_reason_answered_from_general_knowledge": "Waliigalaan deebi'e",
+    "gap_reason_service_issue": "Hin hojjetu; furmaanni hin maxxanfamne"
   },
   "ti": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -1441,7 +1453,11 @@
     "unverified_scope": "እዚ ክሳብ ዝፍጸም ሓፈሻዊ መምርሒ ጥራይ ክትህቡ ትኽእሉ — ኣቕሑ፣ ብቕዓትን ከመይ ጌርካ ከም እትሓትትን።",
     "fayda_number_required": "ቁጽሪ ፋይዳ (የድሊ — እቲ መዝገብ ዝሕዞ እዚ እዩ)",
     "download_for_translation": "ንትርጉም ኣውርድ",
-    "nothing_to_download": "ክሳብ ሕጂ ዝወርድ ዝጸደቐ መልሲ የለን።"
+    "nothing_to_download": "ክሳብ ሕጂ ዝወርድ ዝጸደቐ መልሲ የለን።",
+    "reason_service_issue": "ዝተበላሸወ ነገር ኣሎ",
+    "gap_reason_unanswered_question": "መልሲ ኣይተረኽበን",
+    "gap_reason_answered_from_general_knowledge": "ብሓፈሻ መልሲ ተዋሂቡ",
+    "gap_reason_service_issue": "ተበላሽዩ፤ ዝተሓትመ መፍትሒ የለን"
   },
   "so": {
     "nav_dashboard": "Dashboard-ka",
@@ -1802,7 +1818,11 @@
     "unverified_scope": "Ilaa tan la sameeyo waxaad kaliya bixin kartaa hagaajin guud — alaabta, u-qalmitaanka iyo sida loo codsado.",
     "fayda_number_required": "Lambarka Fayda (loo baahan yahay — waa waxa diiwaanku hayo)",
     "download_for_translation": "Soo dejiso turjumaadda",
-    "nothing_to_download": "Weli ma jiraan jawaabo la ansixiyay oo la soo dejiyo."
+    "nothing_to_download": "Weli ma jiraan jawaabo la ansixiyay oo la soo dejiyo.",
+    "reason_service_issue": "Wax baa jaban",
+    "gap_reason_unanswered_question": "Jawaab lama helin",
+    "gap_reason_answered_from_general_knowledge": "Si guud loogaga jawaabay",
+    "gap_reason_service_issue": "Way jabantahay, xal lama daabicin"
   },
   "sw": {
     "nav_dashboard": "Dashibodi",
@@ -2163,6 +2183,10 @@
     "unverified_scope": "Hadi hili litakapofanyika unaweza tu kutoa mwongozo wa jumla — bidhaa, sifa za kustahiki na jinsi ya kuomba.",
     "fayda_number_required": "Namba ya Fayda (inahitajika — ndiyo inayowekwa kwenye rekodi)",
     "download_for_translation": "Pakua kwa Tafsiri",
-    "nothing_to_download": "Hakuna majibu yaliyoidhinishwa ya kupakua bado."
+    "nothing_to_download": "Hakuna majibu yaliyoidhinishwa ya kupakua bado.",
+    "reason_service_issue": "Kitu hakifanyi kazi",
+    "gap_reason_unanswered_question": "Hakuna jibu lililopatikana",
+    "gap_reason_answered_from_general_knowledge": "Imejibiwa kwa ujumla",
+    "gap_reason_service_issue": "Haifanyi kazi, hakuna suluhisho lililochapishwa"
   }
 }

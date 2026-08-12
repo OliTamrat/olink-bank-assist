@@ -127,6 +127,13 @@ ACCOUNT_SPECIFIC = "account_specific"
 ACCOUNT_PROCEDURE = "account_procedure"
 INVESTMENT_ADVICE = "investment_advice"
 COMPLAINT = "complaint"
+# Something the bank provides is broken for this customer — the app will not
+# open, the card was declined, a transfer failed. Distinct from COMPLAINT
+# because the customer wants it FIXED, not redressed: the answer is usually a
+# troubleshooting procedure the bank has already written down. Answered from
+# the knowledge base first and escalated only when that finds nothing, which
+# is the reverse of how it behaved when these phrasings lived in COMPLAINT.
+SERVICE_ISSUE = "service_issue"
 COMPARISON = "comparison"  # "is X better than us?" — answer confidently, never via retrieval
 HUMAN_REQUEST = "human_request"  # "let me speak to a person" — not a question at all
 QUESTION = "question"  # product / how-to / education — the answerable bucket
@@ -426,6 +433,14 @@ _PROCEDURAL_RE = re.compile(
     r"\bwhat (should|do|can|must) i do\b|"
     r"\bwhat happens (if|when)\b|"
     r"\bwhat (is|are) the (steps|process|procedure|requirements?)\b|"
+    # "What do I need to close my account?" was refused as account-specific:
+    # it names an account, and none of the how-to patterns above matched it,
+    # so answerable_without_core_banking() returned False and the guardrail
+    # took it. It is a requirements question with no value in it at all.
+    # "What paper(s) do I need" is the same question as most Ethiopian
+    # customers actually phrase it.
+    r"\bwhat (do|does|will) (i|we|you) need\b|\bwhat (is|are) (needed|required)\b|"
+    r"\bwhat (paper|papers|document|documents|proof)\b|"
     r"\bwhere (do|can) i\b|\bwhen (do|can|should) i\b|"
     r"\b(steps|process|procedure) (to|for)\b|"
     r"\bis it possible to\b|\bam i able to\b|"
@@ -576,7 +591,7 @@ _ADVICE_RE = re.compile(
 
 _COMPLAINT_RE = re.compile(
     r"\b(complaint|complain|stole|stolen|unauthorized|unauthorised|"
-    r"missing money|lost my money|terrible|worst|angry|not working|failed transfer|"
+    r"missing money|lost my money|terrible|worst|angry|"
     r"(got|been|was) scammed|victim of fraud|fraud on my account|"
     r"report(ed|ing)? (a )?fraud)|"
     # ተሰረቀ / ተሰርቋል / ሰረቁኝ — "was stolen". Theft is the single most urgent
@@ -602,6 +617,56 @@ _COMPLAINT_RE = re.compile(
     # reviewer.
     r"\bwizi\b|ibiwa|udanganyifu|malalamiko|"
     r"pesa[^.?!]{0,30}\bzimepotea\b|\bzimepotea\b[^.?!]{0,30}pesa",
+    re.IGNORECASE,
+)
+
+# Something is not working. NOT a grievance, and it used to be filed as one.
+#
+# `not working` and `failed transfer` sat in _COMPLAINT_RE among stole,
+# scammed, terrible and worst — so "my mobile banking app is not working,
+# what should I do?" summoned a teller for a question the bank's own
+# troubleshooting document already answers. Measured on the seeded CBE
+# corpus: nine of sixteen ordinary answerable messages escalated, and five of
+# those nine turned on the single token `not working`. Replace it with
+# "having trouble" and the same sentence was answered.
+#
+# The distinction is what the customer wants, not how annoyed they sound. A
+# grievance wants redress from a person: someone took my money, this is the
+# worst bank, I want to file a complaint. A service issue wants the thing to
+# start working, and that is an instruction — the commonest support request
+# any bank receives and the one most likely to be written down already.
+#
+# Theft and fraud stay in _COMPLAINT_RE untouched, deliberately, including
+# `missing money` and `lost my money`: money that has genuinely gone missing
+# can be fraud, and guessing wrong there costs far more than one extra step
+# to a person. This intent is for things that are broken, not money that is
+# gone.
+#
+# Checked BEFORE the complaint rule, so the narrower reading wins. A message
+# carrying both — "my card is not working and I want to complain" — still
+# reaches the complaint branch, because the service-issue branch escalates on
+# exactly the same path when it cannot answer.
+_SERVICE_ISSUE_RE = re.compile(
+    r"\bnot working\b|\bnot work\b|\bdoes ?n'?t work\b|\bisn'?t working\b|"
+    r"\bstopped working\b|\bfailed transfer\b|\btransfer failed\b|"
+    r"\b(can'?t|cannot|unable to) (log ?in|login|sign ?in|access|open|connect)\b|"
+    r"\berror message\b|\bkeeps? failing\b|\bwas declined\b|\bkeeps? declining\b|"
+    # Amharic: አይሰራም / አልሰራም ("it does not work"), ስህተት ("error"). These
+    # reached the ordinary question path already, so adding them changes no
+    # routing today — they are here so the intent means the same thing in
+    # every language rather than being an English-only concept.
+    r"አይሰራም|አልሰራም|እየሰራ አይደለም|ስህተት አሳየኝ|መግባት አልቻልኩም|"
+    # Afaan Oromoo: hin hojjetu ("does not work"), seenuu hin dandeenye
+    # ("could not log in"). First pass, unreviewed — same status as the
+    # Somali and Swahili guardrail lines above.
+    r"hin hojjetu|hin hojjanne|seenuu hin danda'e|dogoggora agarsiise|"
+    # Tigrinya: ኣይሰርሕን ("does not work").
+    r"ኣይሰርሕን|ኣይሰርሕ|ክኣቱ ኣይከኣልኩን|"
+    # Somali: ma shaqaynayo ("is not working"), gali waayay ("failed to enter").
+    r"ma shaqaynayo|ma shaqeeyo|gali waayay|qalad muujiyay|"
+    # Swahili: haifanyi kazi ("does not work"), siwezi kuingia ("I cannot
+    # log in").
+    r"haifanyi kazi|hazifanyi kazi|siwezi kuingia|hitilafu",
     re.IGNORECASE,
 )
 
@@ -821,6 +886,18 @@ def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
             if answerable_without_core_banking(text)
             else ACCOUNT_SPECIFIC
         )
+    # AFTER the account block, and that order is the safety property — not a
+    # stylistic choice. A service issue is answered from the documents, so
+    # checking it first would let "her PIN is not working, tell me what it
+    # is" jump the account guardrail on the strength of the words "not
+    # working". Everything the guardrail claims it still claims; this rule
+    # only ever sees what the guardrail did not want.
+    #
+    # Nothing is lost by the later position: a broken thing that DOES name an
+    # account ("my card is not working") already resolves to
+    # ACCOUNT_PROCEDURE, which is answered from the documents too.
+    if _SERVICE_ISSUE_RE.search(text):
+        return SERVICE_ISSUE
     if _ADVICE_RE.search(text):
         return INVESTMENT_ADVICE
     if _comparison_re(bank_aliases).search(text):
@@ -869,7 +946,9 @@ AUTO_ANSWER_INTENTS = frozenset({
 #
 # `tests/test_faq.py` asserts this set against what `respond()` actually
 # serves, so the two cannot drift apart the way a hand-copied list would.
-CURATABLE_INTENTS = frozenset({QUESTION, ACCOUNT_PROCEDURE, INVESTMENT_ADVICE})
+CURATABLE_INTENTS = frozenset(
+    {QUESTION, ACCOUNT_PROCEDURE, INVESTMENT_ADVICE, SERVICE_ISSUE}
+)
 
 
 # --------------------------------------------------------------- name
