@@ -367,12 +367,30 @@ def _guarded_admin_routes() -> list[Any]:
     Excludes the identity routes: login and logout must be reachable by
     someone with no session at all, and `me`/`me/password` are about yourself
     rather than about a capability.
+
+    The `mfa/*` routes are the same second category, and the reasoning is
+    worth stating because "a security route with no permission on it" reads
+    like the bug this test exists to find. Managing your own second factor is
+    not a capability somebody grants you — gating enrolment behind
+    `users.manage` would mean only administrators could protect their
+    accounts, which is backwards. They are not unauthenticated: every one
+    takes `require_user`, so a signed-in person can only ever act on their own
+    credential, and `_own_bank` refuses a slug that is not theirs.
+
+    `login/mfa` belongs with `login` for the same reason `login` does — it is
+    the second half of the same act, reachable only by someone holding a
+    pending session and nothing else.
     """
     unguarded_by_design = {
         "/admin/api/{slug}/login",
+        "/admin/api/{slug}/login/mfa",
         "/admin/api/{slug}/logout",
         "/admin/api/{slug}/me",
         "/admin/api/{slug}/me/password",
+        "/admin/api/{slug}/mfa",
+        "/admin/api/{slug}/mfa/enroll",
+        "/admin/api/{slug}/mfa/activate",
+        "/admin/api/{slug}/mfa/disable",
     }
     return [
         r

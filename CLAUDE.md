@@ -312,6 +312,33 @@ What makes this safe rather than a hallucination licence:
   correct, and an earlier per-case version of this check fired on those.
   `tests/test_eval_boundary.py`.
 
+### Admin accounts carry a second factor (ADR-0027)
+
+TOTP, written out rather than pulled in — RFC 6238 is twenty lines of `hmac`
+and the RFC publishes test vectors, so `tests/test_totp.py` **proves** it
+against the standard instead of trusting a dependency.
+
+The load-bearing parts, none of which are obvious from the diff:
+
+- **`admin_auth.resolve()` is the only gate.** A session whose password
+  verified but whose code has not resolves to **nobody**, so a route written
+  before MFA existed is still unreachable with a half-finished login. Never
+  add a parallel challenge store — that would be a second thing granting
+  access, with its own expiry and revocation to get wrong.
+- **`last_used_step` is what makes it one-time**, and it retires the drift
+  window too: spending the current code invalidates the previous step's.
+- **Enrolment does not count until a code is proved.** An unverified
+  credential is not a second factor — otherwise closing the tab between the
+  QR and the first code is a lockout by a secret nobody holds.
+- **Personal settings carry NO permission.** Your own password and your own
+  second factor live on the **Account** page, and `can(null)` means everyone.
+  They used to sit on Settings behind `integrations.manage`, which meant a
+  teller could not change their own password — found by rendering the panel
+  as an operator, not by reading the code.
+- **The per-bank admin token still bypasses MFA**, deliberately: it is the
+  break-glass credential. Retiring it is the natural next step and is not
+  done.
+
 ## Multilingual completeness (GOLDEN RULE — applies to every Olink product)
 
 **Founder rule, 2026-08-10, and it governs every product with multilingual
@@ -347,7 +374,7 @@ advantage away for the sake of whatever shortcut was taken that afternoon.
 
 ### Where this stands — updated 2026-08-12
 
-**All three string tables are complete: 439 strings × 6 languages, no gaps,
+**All three string tables are complete: 468 strings × 6 languages, no gaps,
 nothing silently left in English.** Swahili (`sw`) is the newest column —
 first-pass drafted, not yet native-reviewed, exactly the status OM/TI/SO
 carry. See ADR-0018.
@@ -356,7 +383,7 @@ carry. See ADR-0018.
 |---|---|---|
 | `strings.json` | 22 | what the assistant says to a customer |
 | `ui_strings.json` | 52 | the widget's own buttons and labels |
-| `admin_strings.json` | 365 | the staff panel, teller console included |
+| `admin_strings.json` | 394 | the staff panel, teller console included |
 
 The widget and the admin panel both got their string tables in August 2026.
 The teller console was the last surface and is done — queue, duty panel,
@@ -490,7 +517,7 @@ was. Both were caught by re-running rather than by re-reading.
 **Live** at `https://bankassist-430565798339.us-east1.run.app`, deployed from
 `main` by GitHub Actions on every CI-green push. **1,350+ tests** (the CI run
 is the exact count — do not hard-code one here, it drifts), mypy `--strict`
-clean, ruff clean, 20 golden-question evals, schema at migration **0026**.
+clean, ruff clean, 20 golden-question evals, schema at migration **0027**.
 `tests/test_docs_truth.py` checks the claims in this paragraph against the
 code; if you change the schema head or add channels, it will tell you what
 prose to update.
@@ -1034,7 +1061,7 @@ Remaining polish, not blockers:
 - [ ] **Linguist review of OM/TI/SO/SW** — the one open language item, and it
       now covers more than wording. `review/Olink_Bank_Assist_language_review.xlsx`
       carries four sheets: the assistant's replies, the phrasebook, the
-      widget's buttons and 365 staff-panel strings. **Sheet 2 matters most.**
+      widget's buttons and 394 staff-panel strings. **Sheet 2 matters most.**
       Every language defect found in a live demo so far was a sentence the
       assistant failed to UNDERSTAND, not a reply worded badly — and the
       Tigrinya, Somali and (as of 2026-08-12, ADR-0018) Swahili classifier

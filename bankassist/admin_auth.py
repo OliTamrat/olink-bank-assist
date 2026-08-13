@@ -44,21 +44,39 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+# How long a half-finished login stays open. Minutes, not hours: the only
+# thing that has to happen inside it is reading six digits off a phone, and a
+# password already verified is a credential sitting in the open until the
+# second factor lands.
+PENDING_MFA_LIFETIME = timedelta(minutes=5)
+
+
 def issue(
-    db: Session, user: User, *, ip: str | None = None, user_agent: str | None = None
+    db: Session,
+    user: User,
+    *,
+    ip: str | None = None,
+    user_agent: str | None = None,
+    pending_mfa: bool = False,
 ) -> tuple[str, AdminSession]:
     """Create a session. Returns (plaintext token, row).
 
     The plaintext is returned once and never stored — only its hash goes to
     the database, so a database read cannot yield a working credential.
+
+    `pending_mfa` marks a session whose password was accepted and whose second
+    factor has not been given yet. It resolves to nobody until `complete_mfa`
+    clears it, and it expires in minutes rather than hours.
     """
     token = secrets.token_urlsafe(32)
     row = AdminSession(
         user_id=user.id,
         token_hash=_hash(token),
-        expires_at=datetime.now(UTC) + SESSION_LIFETIME,
+        expires_at=datetime.now(UTC)
+        + (PENDING_MFA_LIFETIME if pending_mfa else SESSION_LIFETIME),
         created_ip=ip,
         user_agent=(user_agent or "")[:300] or None,
+        pending_mfa=pending_mfa,
     )
     db.add(row)
     db.flush()
@@ -94,7 +112,45 @@ def resolve(db: Session, token: str | None) -> User | None:
     # theatre.
     if user is None or not user.is_active:
         return None
+    # The password was right; the second factor was not given. This is the
+    # ONLY place that decides, deliberately: every route in the product
+    # reaches its user through here, so a route written before MFA existed —
+    # or after, by somebody who did not think about it — is still not
+    # reachable with a half-finished login. Fail closed, in one place.
+    if row.pending_mfa:
+        return None
     return user
+
+
+def pending_session(db: Session, token: str | None) -> AdminSession | None:
+    """The half-authenticated session a token names, for the MFA step only.
+
+    Deliberately separate from `resolve`, and deliberately not returning a
+    User: this is the one caller that must see past the pending flag, and
+    handing it the session rather than the person keeps it obvious at the
+    call site that nobody is signed in yet.
+    """
+    if not token:
+        return None
+    row = db.execute(
+        select(AdminSession).where(AdminSession.token_hash == _hash(token))
+    ).scalar_one_or_none()
+    if row is None or not row.pending_mfa:
+        return None
+    if row.revoked_at is not None or _aware(row.expires_at) <= datetime.now(UTC):
+        return None
+    return row
+
+
+def complete_mfa(session: AdminSession) -> None:
+    """Promote a pending session to a real one, once the code has verified.
+
+    The lifetime is reset here rather than at issue: a pending session lives
+    five minutes, and inheriting that as the signed-in lifetime would log
+    somebody out four minutes after they arrived.
+    """
+    session.pending_mfa = False
+    session.expires_at = datetime.now(UTC) + SESSION_LIFETIME
 
 
 def revoke(db: Session, token: str) -> None:
