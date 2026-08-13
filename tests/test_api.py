@@ -220,3 +220,42 @@ def test_seed_is_idempotent(client: TestClient, demo_bank: Any) -> None:
     bank, created = seed()
     assert created is False
     assert bank.id == demo_bank.id
+
+
+def test_health_names_the_instance_as_well_as_the_build(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two fields, because one cannot tell you which kind of stale you have.
+
+    A deploy of cacfc97 reported success, the workflow logs showed the right
+    image and the right `BANKASSIST_GIT_SHA`, and `/health` still answered
+    with the previous sha. From outside there was no way to distinguish a
+    stale build, a stale instance, a stale *response* and the wrong service —
+    which meant reading GitHub Actions history, the exact thing this endpoint
+    exists to avoid.
+
+    `K_REVISION` is injected by Cloud Run and never set by us, so it names the
+    revision actually answering. Matching sha + instance means genuinely live;
+    an instance that moved while the sha did not means the deploy shipped the
+    wrong build; neither moving means the request never arrived at the new
+    revision at all.
+    """
+    monkeypatch.setenv("K_REVISION", "bankassist-00273-5th")
+    body = client.get("/health").json()
+    assert body["instance"] == "bankassist-00273-5th"
+
+    # Read per request, not cached: caching it would reintroduce precisely the
+    # staleness the field exists to detect.
+    monkeypatch.setenv("K_REVISION", "bankassist-00274-abc")
+    assert client.get("/health").json()["instance"] == "bankassist-00274-abc"
+
+    # Absent off Cloud Run (local dev) rather than an error.
+    monkeypatch.delenv("K_REVISION", raising=False)
+    assert client.get("/health").json()["instance"] == ""
+
+
+def test_health_is_never_cacheable(client: TestClient) -> None:
+    """A cached diagnostic answers "what is running right now" wrong, with
+    full confidence — and it is the first thing suspected when a deploy looks
+    like it did not land."""
+    assert "no-store" in client.get("/health").headers["cache-control"]

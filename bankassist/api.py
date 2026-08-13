@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import os
 import time
 from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -425,6 +426,22 @@ class HealthOut(BaseModel):
     # and without this, answering "is main actually live?" meant reading
     # GitHub Actions history instead of making one request.
     revision: str = ""
+    # The Cloud Run revision serving this request, straight from `K_REVISION`
+    # (the platform injects it; we never set it). It disambiguates the one
+    # question `revision` alone cannot answer.
+    #
+    # A deploy of cacfc97 reported success, the logs showed the right image
+    # and the right `BANKASSIST_GIT_SHA`, and `/health` still said af67ed4 —
+    # and there was no way to tell from outside whether that was a stale
+    # build, a stale instance, a stale *response*, or the wrong service
+    # entirely. Answering it meant reading Actions logs, which is exactly
+    # what this endpoint exists to avoid.
+    #
+    # With both: matching sha + revision means genuinely live. A revision
+    # name that moved while the sha did not means the deploy shipped the
+    # wrong build. Neither moving means the request never reached the new
+    # revision — a cache, or a different host.
+    instance: str = ""
 
 
 # ---------------------------------------------------------------- public
@@ -442,6 +459,10 @@ def health(response: Response) -> HealthOut:
         llm=active_backend(),
         llm_ready=credentials_ready(),
         revision=get_settings().git_sha[:7],
+        # Read per request, not through cached settings: it identifies the
+        # instance answering, and caching it would reintroduce exactly the
+        # staleness this field exists to detect.
+        instance=os.environ.get("K_REVISION", ""),
     )
 
 
