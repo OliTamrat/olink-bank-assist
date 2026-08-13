@@ -42,7 +42,7 @@ from pathlib import Path
 
 import pytest
 
-PAGES = ["widget.html", "admin.html"]
+PAGES = ["widget.html", "admin.html", "site.html"]
 
 # Things the browser provides. Deliberately short: a name that belongs here and
 # is missing shows up as a failure with the name in it, which is a two-second

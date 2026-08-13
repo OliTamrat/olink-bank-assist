@@ -561,6 +561,40 @@ assistant to surface about the prospect it is pitching to.
 fifth prospect tenant is a content file, not new plumbing: aliases/name/color,
 a `_DOCS` list, one `seed()` call.
 
+### The public page (ADR-0030)
+
+`static/site.html`, served at **`/`** from this app rather than a separate
+marketing host — because the hero *is* the running widget
+(`/widget?bank=demo`), and across two origins that becomes a third-party
+iframe a bank's proxy blocks and a demo that can drift from the product.
+
+Three things it is not allowed to say, each machine-checked by
+`tests/test_marketing_site.py`:
+
+1. **No prospect bank's name.** CBE, Dashen and Awash are unauthorized
+   prototypes (ADR-0009). Internally that is a demo with a disclaimer;
+   publicly it implies a relationship that does not exist.
+2. **No invented metric.** Zero production deployments means no "% deflected",
+   no "N banks", no "trusted by".
+3. **No price.** The decision is the *model* — per institution, never per
+   seat, setup plus volume-tiered — and not a number. A `$` on the page means
+   somebody reversed that while filling in the pricing table.
+
+It also **does not lead with the live handoff**: Glia owns that ground at
+scale, and `market-position.md` says leading with it will be caught. The spine
+is *your customers already message you, in their own language, on Telegram*.
+
+**The page is English on purpose** — a deliberate exception to the
+multilingual golden rule, recorded in ADR-0030. Its reader works in English,
+its content is persuasive prose rather than interface labels, and three of the
+six languages are still unreviewed. The six-language claim is proved by the
+embedded product, not by translating the chrome.
+
+**`SITE.contactEmail` and `SITE.domain` are empty and must be set before
+launch.** The CTAs carry `data-pending` and say so rather than opening a mail
+window addressed to nobody; there is no canonical or OG URL until the domain
+exists.
+
 ### The widget
 
 `static/widget.html` is a demo surface as much as a chat window — it has to

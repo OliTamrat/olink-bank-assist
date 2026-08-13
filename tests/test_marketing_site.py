@@ -1,0 +1,164 @@
+"""The public page, and the claims it is allowed to make.
+
+A marketing page fails differently from a product surface. It does not crash;
+it says something that is not true, and nobody notices until a prospect does.
+The three failures this guards are all ones this repo is specifically exposed
+to:
+
+1. **A prospect bank's name on a public page.** CBE, Dashen and Awash are
+   unauthorized internal prototypes built from public information (ADR-0009).
+   Internally that is a demo with a disclaimer. Publicly it implies a
+   relationship that does not exist — a trademark problem, and the fastest way
+   to lose those three as customers. The page demos on the fictional tenant.
+
+2. **A number nobody can stand behind.** There are no production deployments,
+   so any "% deflected", "N banks", "M conversations" is invented. The rule
+   the assistant follows — never state a figure you cannot source — applies to
+   our own copy too.
+
+3. **A price.** The decision is to publish the pricing *model* and not a
+   number, because a figure with no delivery-cost data behind it is one we get
+   negotiated down from. A `$` on this page means somebody reversed that.
+
+Plus the ordinary ones: the page must serve, the demo must point at the real
+widget, and it must reach no third-party origin — a bank's staff sit behind
+proxies that block them, and the whole font/vendor doctrine exists for this.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+SITE = (
+    Path(__file__).resolve().parent.parent / "bankassist" / "static" / "site.html"
+).read_text(encoding="utf-8")
+
+
+def test_the_page_is_served_at_the_root(client: TestClient) -> None:
+    r = client.get("/")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert "no-store" in r.headers["cache-control"]
+    assert "Olink Bank Assist" in r.text
+
+
+@pytest.mark.parametrize("bank", ["CBE", "Commercial Bank of Ethiopia", "Dashen", "Awash"])
+def test_no_prospect_bank_appears_on_the_public_page(bank: str) -> None:
+    """The landmine.
+
+    These three exist in the repo as prototypes built from public information,
+    each carrying a mandatory in-product disclaimer. A public page naming them
+    is a different act entirely from an internal demo, and not one anybody
+    authorised.
+    """
+    assert bank.lower() not in SITE.lower(), (
+        f"{bank} is named on the public marketing page — see ADR-0009"
+    )
+
+
+def test_the_demo_is_the_real_widget_on_the_fictional_tenant() -> None:
+    """Not a video, not a screenshot, and not a real bank's slug."""
+    frames = re.findall(r'<iframe[^>]*src="([^"]+)"', SITE)
+    assert frames, "the page has no live demo"
+    assert any(f.startswith("/widget?bank=demo") for f in frames), f"demo src is {frames}"
+    for src in frames:
+        assert src.startswith("/"), f"the demo frame is off-origin: {src}"
+
+
+def test_no_invented_metrics() -> None:
+    """There are no production deployments, so there are no production numbers.
+
+    Written as a pattern rather than a word list because the tempting forms
+    are all numeric: "94% deflected", "12 banks", "40,000 conversations".
+    """
+    body = re.sub(r"<!--.*?-->", "", SITE, flags=re.S)
+    forbidden = [
+        r"\d+\s*%\s*(of\s+)?(deflect|resolv|contain|automat)",
+        r"\b\d+\s*(banks|institutions|customers|clients)\b",
+        r"\b\d[\d,]*\s*(conversations|messages|users)\s+(handled|served|answered)",
+        r"\btrusted by\b",
+        r"\bjoin \d+",
+    ]
+    for pattern in forbidden:
+        hit = re.search(pattern, body, re.I)
+        assert not hit, f"unsupportable claim on the public page: {hit.group(0)!r}"
+
+
+def test_no_price_is_published() -> None:
+    """The decision is the model, not a number (this session, with the founder).
+
+    A currency figure here means somebody quietly reversed that — most likely
+    while "just filling in the pricing table".
+    """
+    body = re.sub(r"<!--.*?-->", "", SITE, flags=re.S)
+    money = re.search(r"(?:\$|USD|ETB|Br\.?)\s?\d", body)
+    assert not money, f"a price appeared on the public page: {money.group(0)!r}"
+    # …and the model itself is still stated, so "no numbers" cannot quietly
+    # become "no pricing section at all".
+    assert "per seat" in body.lower(), "the per-institution pricing model is gone"
+    assert re.search(r"conversation volume", body, re.I), "the volume tier basis is gone"
+
+
+def test_it_reaches_no_third_party_origin() -> None:
+    """Same doctrine as the vendored fonts and the LiveKit SDK.
+
+    A marketing page is where a CDN link normally creeps in — an icon set, a
+    font, an analytics tag. On a page a bank's staff open from inside their
+    own network, every extra origin is one more thing their proxy can block
+    and their security review can object to.
+    """
+    for url in re.findall(r'(?:src|href)="(https?://[^"]+)"', SITE):
+        raise AssertionError(f"the public page loads from an external origin: {url}")
+
+
+def test_the_launch_placeholders_are_findable_and_empty() -> None:
+    """Two values set this page live, and shipping a guessed one is worse.
+
+    An invented contact address silently drops enquiries; a canonical URL
+    invented before the domain is chosen is a wrong URL that has to be hunted
+    down. Both are empty on purpose, and the buttons admit it rather than
+    opening a blank mail window addressed to nobody.
+    """
+    block = re.search(r"var SITE = \{(.*?)\};", SITE, re.S)
+    assert block, "the launch-config block is gone"
+    for key in ("contactEmail", "domain"):
+        assert key in block.group(1), f"{key} is no longer configurable"
+    # No stray address hard-coded elsewhere on the page.
+    without_config = re.sub(r"var SITE = \{.*?\};", "", SITE, flags=re.S)
+    stray = re.findall(r"[\w.+-]+@[\w-]+\.[\w.]+", without_config)
+    assert not stray, f"a contact address is hard-coded outside the config: {stray}"
+
+
+def test_the_language_claim_states_what_is_reviewed() -> None:
+    """The page says six languages. Two of them have been reviewed by a native
+    speaker and three have not, and saying so is the difference between a
+    claim and a claim somebody can catch us on."""
+    body = SITE.lower()
+    assert "tigrinya" in body and "somali" in body and "swahili" in body
+    assert re.search(r"review", body), "the review status is not mentioned at all"
+    assert re.search(r"first-pass|first pass|under (professional )?review", body), (
+        "the page claims six reviewed languages without qualifying which"
+    )
+
+
+def test_geez_is_not_tracked_like_latin_here_either() -> None:
+    """Same defect, same fix, on a page that also sets big headlines.
+
+    The page carries Amharic and Tigrinya in the language row, and its
+    headings use the same negative tracking the panel's did.
+    """
+    assert re.search(r"h[123]:lang\(am\)", SITE), "no Ge'ez heading rule"
+    rule = re.search(r"h1:lang\(am\).*?\{([^}]*)\}", SITE, re.S)
+    assert rule and "letter-spacing: normal" in rule.group(1)
+
+
+def test_every_nav_target_exists() -> None:
+    """A nav that scrolls to nothing is the cheapest possible way to look
+    unfinished on the one page whose job is not looking unfinished."""
+    ids = set(re.findall(r'id="([^"]+)"', SITE))
+    for href in re.findall(r'href="#([^"]+)"', SITE):
+        assert href in ids, f"nav links to #{href}, which does not exist"
