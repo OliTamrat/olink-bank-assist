@@ -137,8 +137,17 @@ a { color: inherit; }
 }
 /* Ge'ez is never set in the serif — Playfair has no Ethiopic, and the
    fallback would be a system face wearing the serif's tracking and leading.
-   Same rule as the panel: normal tracking, more leading. */
-.display:lang(am), .display:lang(ti) {
+   Same rule as the panel: normal tracking, more leading.
+
+   THE DESCENDANT SELECTOR IS NOT OPTIONAL. `:lang()` matches the element
+   whose language it is, and the headline's morphing line is a SPAN inside
+   the `.display` heading with its own `lang` — so `.display:lang(am)` alone
+   never matched it and the Amharic and Tigrinya lines rendered in Playfair,
+   which has no Ethiopic at all. Caught by reading computed styles in a
+   browser; invisible in the markup, because the rule was right there and
+   looked like it applied. */
+.display:lang(am), .display:lang(ti),
+.display :lang(am), .display :lang(ti) {
   font-family: var(--sans); font-weight: 600;
   letter-spacing: normal; line-height: 1.3;
 }
@@ -203,12 +212,21 @@ section + section { border-top: 1px solid var(--line); }
 .wrap { position: relative; z-index: 1; }
 
 /* ================================================================== nav */
+/* Transparent over the hero, and it materialises once you leave it. A bar
+   that is already opaque at scroll-0 puts a hard horizontal line across the
+   top of the composition and costs the hero its full height for nothing. */
 .nav {
   position: sticky; top: 0; z-index: 60; height: 64px;
+  background: transparent; border-bottom: 1px solid transparent;
+  transition: background .28s ease, border-color .28s ease,
+              backdrop-filter .28s ease;
+}
+.nav.stuck {
   background: color-mix(in srgb, var(--bg) 78%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%);
-  border-bottom: 1px solid var(--line);
+  border-bottom-color: var(--line);
 }
+@media (prefers-reduced-motion: reduce) { .nav { transition: none; } }
 .nav .wrap { display: flex; align-items: center; height: 100%; gap: 18px; }
 .brand {
   display: flex; align-items: center; gap: 9px; text-decoration: none;
@@ -220,11 +238,26 @@ section + section { border-top: 1px solid var(--line); }
   display: grid; place-items: center; color: #04211d; font-size: 11px; font-weight: 800;
 }
 .nav .links { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+/* Scroll-spy. The pill is a single element that slides between the links
+   rather than a class toggled on each one — one moving object reads as
+   deliberate where six fading backgrounds read as flicker. Sits behind the
+   links, positioned from JS. */
+.nav .links { position: relative; }
+.nav .pipe {
+  position: absolute; z-index: 0; top: 50%; left: 0; height: 32px; width: 0;
+  transform: translateY(-50%); border-radius: 999px; opacity: 0;
+  background: var(--card-2); border: 1px solid var(--line);
+  transition: transform .34s cubic-bezier(.22,.61,.36,1), width .34s cubic-bezier(.22,.61,.36,1),
+              opacity .24s ease;
+}
+@media (prefers-reduced-motion: reduce) { .nav .pipe { transition: opacity .2s ease; } }
 .nav .links a {
+  position: relative; z-index: 1;
   font-size: 13.5px; color: var(--muted); text-decoration: none;
-  padding: 8px 13px; border-radius: 8px; white-space: nowrap; transition: color .18s;
+  padding: 8px 13px; border-radius: 8px; white-space: nowrap; transition: color .22s;
 }
 .nav .links a:hover { color: var(--ink); }
+.nav .links a.here { color: var(--ink); }
 @media (max-width: 900px) { .nav .links a.sm-hide { display: none; } }
 @media (max-width: 430px) { .brand .wm { display: none; } .nav .wrap { gap: 10px; padding: 0 16px; } }
 
@@ -297,6 +330,45 @@ body::after {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 20%, transparent);
 }
 .hero h1 { max-width: 15ch; margin: 0 auto; }
+
+/* ------------------------------------------------------- the morph line
+   Its own block so the swap recentres instead of reflowing the sentence
+   above it, and a min-height so a short language (Luqaddooda) and a long one
+   (Afaan isaaniitiin) do not bounce the page. */
+.morph-line {
+  display: block; min-height: 1.1em; margin-top: .06em;
+}
+.morph {
+  display: inline-block;
+  transition: opacity .32s ease, transform .32s cubic-bezier(.22,.61,.36,1),
+              filter .32s ease;
+}
+.morph.out { opacity: 0; transform: translateY(-14px); filter: blur(6px); }
+.morph em { font-style: italic; color: var(--brand); }
+/* Ge'ez never in the serif — Playfair has no Ethiopic. `lang` is set on the
+   span as it changes, so `.display:lang()` above catches it. */
+
+.langpicker {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 7px;
+  margin-top: 26px;
+}
+.langpicker button {
+  font-family: var(--sans); font-size: 12px; cursor: pointer;
+  padding: 7px 13px; border-radius: 999px; color: var(--muted);
+  background: transparent; border: 1px solid transparent;
+  transition: color .2s, background .2s, border-color .2s;
+}
+.langpicker button:hover { color: var(--ink); background: var(--card-2); }
+.langpicker button.on {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  border-color: color-mix(in srgb, var(--brand) 42%, transparent);
+}
+.langpicker button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .morph { transition: none; }
+  .morph.out { opacity: 1; transform: none; filter: none; }
+}
 .hero .lede { font-size: 18px; max-width: 54ch; }
 /* One word in the serif's italic, because the reference does exactly this —
    a single emphasised phrase is what stops a big headline reading flat. */
@@ -522,6 +594,7 @@ footer .glow i { opacity: .16; }
   <div class="wrap">
     <a class="brand" href="#top"><span class="mk">BA</span><span class="wm">Olink Bank&nbsp;Assist</span></a>
     <div class="links">
+      <span class="pipe" id="pipe" aria-hidden="true"></span>
       <a class="sm-hide" href="#demo">Live demo</a>
       <a class="sm-hide" href="#languages">Languages</a>
       <a class="sm-hide" href="#safety">Safety</a>
@@ -536,7 +609,15 @@ footer .glow i { opacity: .16; }
   <div class="glow"><i class="a"></i><i class="b"></i><i class="c"></i></div>
   <div class="wrap">
     <div class="pill"><span class="dot"></span> Live demo running on this page</div>
-    <h1 class="display">Your customers already message you. In <em>their</em> language.</h1>
+    <!-- The headline finishes in a different language every few seconds, in
+         that language's own script — and the row below lets a visitor drive
+         it. The claim and the demonstration are the same object, which is the
+         only kind of hero animation worth the bytes. -->
+    <h1 class="display">
+      Your customers already message you.
+      <span class="morph-line"><span class="morph" id="morph" lang="en">In <em>their</em> language.</span></span>
+    </h1>
+    <div class="langpicker" id="langpicker" role="group" aria-label="Show the headline in another language"></div>
     <p class="lede">
       An AI assistant for banks and microfinance institutions that answers from
       your own documents — in Amharic, Afaan&nbsp;Oromoo, Tigrinya, Somali,
@@ -873,6 +954,169 @@ var SITE = {
     }
     a.href = "#contact";
   });
+})();
+
+/* ------------------------------------------------------- the headline
+   The last line of the headline finishes in a different language every few
+   seconds, in that language's own script, and a row of buttons lets a
+   visitor drive it.
+
+   This is the one piece of hero animation worth its bytes, because the claim
+   and the demonstration are the same object: the sentence says the assistant
+   answers in the customer's language, and then it does. A particle field
+   would have been easier and would have said nothing.
+
+   The phrases are short and standard rather than composed — "in their
+   language" in each. Amharic and Afaan Oromoo are native-reviewed; Tigrinya,
+   Somali and Swahili carry the same first-pass status as the rest of those
+   tables (see the linguist runbook's ledger). */
+(function headline() {
+  var el = document.getElementById("morph");
+  var picker = document.getElementById("langpicker");
+  if (!el || !picker) return;
+
+  var LINES = [
+    { code: "en", name: "English",      html: 'In <em>their</em> language.' },
+    { code: "am", name: "አማርኛ",         html: "በቋንቋቸው።" },
+    { code: "om", name: "Afaan Oromoo", html: "Afaan isaaniitiin." },
+    { code: "ti", name: "ትግርኛ",         html: "ብቋንቋኦም።" },
+    { code: "so", name: "Soomaali",     html: "Luqaddooda." },
+    { code: "sw", name: "Kiswahili",    html: "Kwa lugha yao." }
+  ];
+  var reduced = window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var at = 0, timer = null, driving = false;
+
+  var buttons = LINES.map(function (line, i) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = line.name;
+    b.setAttribute("lang", line.code);
+    b.addEventListener("click", function () {
+      // A visitor who picks a language has taken over. Stop cycling rather
+      // than fighting them for control of the headline three seconds later.
+      driving = true;
+      clearTimeout(timer);
+      show(i);
+    });
+    picker.appendChild(b);
+    return b;
+  });
+
+  function paint(i) {
+    var line = LINES[i];
+    el.innerHTML = line.html;
+    el.lang = line.code;          // `.display:lang()` keeps Ge'ez out of the serif
+    buttons.forEach(function (b, n) { b.classList.toggle("on", n === i); });
+    at = i;
+  }
+
+  function show(i) {
+    if (i === at && el.innerHTML) { paint(i); return; }
+    if (reduced) { paint(i); return; }
+    el.classList.add("out");
+    setTimeout(function () {
+      paint(i);
+      // Next frame, so the browser paints the incoming state before the
+      // class comes off and the transition actually runs.
+      window.requestAnimationFrame(function () { el.classList.remove("out"); });
+    }, 320);
+  }
+
+  function tick() {
+    if (driving) return;
+    show((at + 1) % LINES.length);
+    timer = setTimeout(tick, 3200);
+  }
+
+  paint(0);
+  if (!reduced) timer = setTimeout(tick, 2600);
+  // A tab nobody is looking at does not need a headline animation.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) clearTimeout(timer);
+    else if (!driving && !reduced) timer = setTimeout(tick, 2600);
+  });
+})();
+
+/* Light that follows the pointer. The hero's spotlight drifts a little with
+   the cursor — a few percent, nowhere near 1:1, because a glow that tracks
+   exactly reads as a gimmick while one that lags reads as depth. Pointer
+   only: no touch handler, since there is no cursor to follow and the
+   listener would just cost scroll performance on a phone. */
+(function pointerLight() {
+  var hero = document.getElementById("top");
+  if (!hero || !window.matchMedia || !window.matchMedia("(pointer: fine)").matches) return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var blooms = hero.querySelectorAll(".glow i");
+  var queued = false, mx = 0, my = 0;
+  hero.addEventListener("pointermove", function (e) {
+    var r = hero.getBoundingClientRect();
+    mx = (e.clientX - r.left) / r.width - .5;
+    my = (e.clientY - r.top) / r.height - .5;
+    if (queued) return;
+    queued = true;
+    window.requestAnimationFrame(function () {
+      queued = false;
+      Array.prototype.forEach.call(blooms, function (b, i) {
+        var depth = (i + 1) * 14;
+        b.style.translate = (mx * depth) + "px " + (my * depth * .6) + "px";
+      });
+    });
+  }, { passive: true });
+})();
+
+/* ------------------------------------------------------------- navbar
+   Two behaviours, both about telling you where you are.
+
+   STUCK: the bar is transparent over the hero and materialises once you
+   leave it, so the composition is not cut by a hard line at scroll-0.
+
+   SCROLL-SPY: one pill slides between the links rather than six backgrounds
+   fading in and out — a single moving object reads as deliberate where six
+   independent fades read as flicker. Position is measured from the DOM, so
+   it stays correct when the wordmark drops at 430px and the links reflow. */
+(function navbar() {
+  var nav = document.querySelector(".nav");
+  var pipe = document.getElementById("pipe");
+  if (!nav || !pipe) return;
+
+  var links = Array.prototype.filter.call(
+    nav.querySelectorAll(".links a"),
+    function (a) { return (a.getAttribute("href") || "").charAt(0) === "#"; });
+  var sections = links.map(function (a) {
+    return document.getElementById(a.getAttribute("href").slice(1));
+  });
+
+  function move(a) {
+    if (!a) { pipe.style.opacity = "0"; return; }
+    pipe.style.width = a.offsetWidth + "px";
+    pipe.style.transform = "translate(" + a.offsetLeft + "px, -50%)";
+    pipe.style.opacity = "1";
+  }
+
+  var queued = false;
+  function update() {
+    queued = false;
+    nav.classList.toggle("stuck", window.scrollY > 24);
+
+    // The section whose top is nearest above the reading line.
+    var line = window.innerHeight * 0.34, best = -1, bestTop = -Infinity;
+    sections.forEach(function (s, i) {
+      if (!s) return;
+      var top = s.getBoundingClientRect().top;
+      if (top <= line && top > bestTop) { bestTop = top; best = i; }
+    });
+    links.forEach(function (a, i) { a.classList.toggle("here", i === best); });
+    move(best === -1 ? null : links[best]);
+  }
+  function onScroll() {
+    if (queued) return;
+    queued = true;
+    window.requestAnimationFrame(update);
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll);
+  update();
 })();
 
 /* Scroll reveal. The class is added by script rather than sitting in the

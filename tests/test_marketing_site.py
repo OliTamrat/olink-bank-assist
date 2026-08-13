@@ -155,12 +155,28 @@ def test_geez_never_gets_set_in_the_display_serif() -> None:
     serif falls through to a system face while keeping the serif's tracking
     and leading. It has to switch families, not just relax the spacing.
     """
-    rule = re.search(r"\.display:lang\(am\)[^{]*\{([^}]*)\}", SITE, re.S)
+    # Comments in this file discuss the selector by name, so strip them first
+    # — otherwise the regex matches the prose and asserts against the wrong
+    # block, which is its own way of passing while testing nothing.
+    css = re.sub(r"/\*.*?\*/", "", SITE, flags=re.S)
+
+    rule = re.search(r"\.display:lang\(am\)[^{]*\{([^}]*)\}", css, re.S)
     assert rule, "no Ge'ez rule on the display face"
     body = rule.group(1)
     assert "var(--sans)" in body, "Ge'ez is still being set in the display serif"
     assert "letter-spacing: normal" in body, "Ge'ez is tracked like Latin"
     assert re.search(r"line-height: 1\.[23]", body), "Ge'ez leading is Latin's"
+
+    # …and it must reach DESCENDANTS. The headline's morphing line is a span
+    # inside the heading carrying its own `lang`, so the element-only form
+    # never matched it and the Amharic and Tigrinya lines rendered in
+    # Playfair — which has no Ethiopic at all. The rule looked correct in the
+    # markup, which is why only a computed style in a real browser found it.
+    for descendant in (".display :lang(am)", ".display :lang(ti)"):
+        assert descendant in css, (
+            f"the Ge'ez rule is missing `{descendant}` — a nested element with "
+            "its own lang will render Ge'ez in the display serif"
+        )
 
 
 def test_the_serif_reaches_the_selling_surfaces_and_stops() -> None:
