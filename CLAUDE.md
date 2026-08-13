@@ -601,9 +601,26 @@ exchange for nothing. Both faces are SIL OFL 1.1 with the licences committed
 alongside.
 
 They are **variable** (one file covers 100–900) and **split by script**, so
-`unicode-range` decides what downloads: an English session fetches 48 KB of
+`unicode-range` decides what downloads: an English session fetches 71 KB of
 Latin and never touches the 198 KB of Ge'ez. Dropping the ranges would put all
-331 KB on every Ethiopian mobile connection.
+399 KB on every Ethiopian mobile connection.
+
+**Inter must be the build WITH the `opsz` axis** (`inter-*-opsz-normal.woff2`
+from fontsource, not `-wght-`). Inter 4 has optical sizing 14–32, and
+`font-optical-sizing: auto` moves the 46px hero onto the **display** cut. The
+first build shipped the weight-only file, the hero rendered in the text cut
+blown up, and the founder's verdict was "not even the same font" — correctly.
+It costs 23 KB and nothing outside the font's `fvar` table can see it, so
+`tests/test_fonts.py` reads that table (hence `fonttools` in dev deps).
+
+**Ge'ez is not Latin. Do not set it like Latin.** `-.025em` tracking crowds a
+script whose characters are whole syllables with already-minimal sidebearings;
+`1.1` leading nearly touches; `700` fills the counters in. Ethiopic headlines
+are `letter-spacing: normal; line-height: 1.28; font-weight: 600`, keyed on
+**`:lang()`** so it follows the text rather than the panel — the mock card
+cycles languages independently of the interface. This bites at *display* size
+only: the widget's `-.01em` at 15px is 0.15 of a pixel and was deliberately
+left alone.
 
 ### The sign-in card plays (ADR-0029)
 

@@ -50,6 +50,20 @@ dev = [
     # undeclared import makes that test skip silently, which is worse than
     # not having written it.
     "openpyxl>=3.1",
+    # Reads the variable-font axes out of the vendored woff2 files. Declared
+    # for the same reason openpyxl is: the test that needs it would otherwise
+    # skip silently, and the thing it guards is invisible without it.
+    #
+    # What it guards: Inter must ship with its OPTICAL-SIZE axis. The first
+    # build of the fonts shipped the weight-only file, which has no `opsz`,
+    # so the 46px sign-in headline rendered in Inter's text cut instead of
+    # its display cut — looser and softer, and visibly not the Inter anyone
+    # recognises. Nothing about that is detectable from a filename, a byte
+    # count, or the CSS; only the font's own `fvar` table says it.
+    #
+    # brotli is not used directly — fontTools needs it to decompress woff2.
+    "fonttools>=4.50",
+    "brotli>=1.1",
 ]
 
 [tool.setuptools]

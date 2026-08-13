@@ -44,8 +44,8 @@ Both are SIL OFL 1.1, and both licences are committed alongside them.
 
 | File | Size | Fetched when |
 |---|---|---|
-| `inter-latin.woff2` | 48 KB | any Latin character |
-| `inter-latin-ext.woff2` | 85 KB | a Latin-Extended one — rare here |
+| `inter-latin.woff2` | 71 KB | any Latin character |
+| `inter-latin-ext.woff2` | 130 KB | a Latin-Extended one — rare here |
 | `noto-sans-ethiopic.woff2` | 198 KB | any Ge'ez character |
 
 That split is what makes vendoring Ge'ez affordable. Verified in a real
@@ -91,6 +91,55 @@ blank panel, and the fallback text is readable.
   Roman. `tests/test_fonts.py` asserts the allowlist, the woff2 magic number,
   the stack order, the range gating, and that no page reaches out to a font
   CDN.
+
+## Revised 2026-08-13 — the first build got the wrong Inter, and set Ge'ez like Latin
+
+The founder's verdict on what shipped: *"the Ge'ez and also the Latin font
+looks ugly, not even the same font we used on DAPS Analytics."* Two separate
+mistakes, both mine, both in this ADR's own decision.
+
+**Inter must ship with its optical-size axis.** Inter 4 carries `opsz` 14–32,
+and `font-optical-sizing: auto` — the CSS default — moves a 46px headline onto
+the **display** cut: tighter, more compact, higher contrast. The first build
+took fontsource's `wght`-only file, which has no `opsz`, so the hero rendered
+in Inter's **text** cut scaled up to 46px: looser, wider, softer. Google Fonts
+*does* serve the axis, so a site loading Inter from there gets the display cut
+and this did not — which is precisely why it read as a different typeface.
+Rendering both at 46px side by side made the difference obvious. Costs 23 KB
+on the Latin file and 45 KB on Latin-Extended.
+
+Nothing outside the font can see this. The filename is ours, the CSS is
+identical either way, and the byte count is 23 KB that somebody will
+eventually try to save. `tests/test_fonts.py` now reads the `fvar` table —
+which is why `fonttools` is a declared dev dependency, on the same reasoning
+as `openpyxl`.
+
+**Ge'ez is not Latin and must not be set like it.** The hero's `-.025em`
+tracking, `1.1` leading and `700` weight are tuned for Inter at display size,
+and all three are wrong for Ethiopic:
+
+- a Ge'ez character is a whole **syllable** with dense internal structure, and
+  its sidebearings are already the minimum that keeps the strokes apart —
+  pulling a pixel out of every gap at 46px is what turned the Amharic hero
+  into a grey block;
+- `1.1` leading nearly touches across two lines of a script with tall, busy
+  forms;
+- `700` fills the counters in. At 46px Ge'ez reads better at 600, and the
+  weight drop is invisible beside the Latin because the script is denser to
+  start with.
+
+Now `letter-spacing: normal; line-height: 1.28; font-weight: 600`, keyed on
+**`:lang()`** rather than the panel's language — the mock card cycles
+languages independently of the interface, so the rule has to follow the text.
+Both the headline and the card set `lang` from JS for that reason, which is
+also just correct: a screen reader handed Amharic tagged `en` pronounces it as
+English.
+
+**The widget was checked and deliberately left alone.** Its negative tracking
+is `-.01em` on a 15px bank name and a 17px sheet heading — 0.15 of a pixel,
+which is not the defect. The defect is display size: `-.025em` at 46px is over
+a pixel per character. Message bubbles already sit at `line-height: 1.5`.
+Changing the widget would have been motion without a reason.
 
 ## References
 

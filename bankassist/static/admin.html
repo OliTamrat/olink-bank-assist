@@ -131,6 +131,16 @@
    Both are variable fonts: one file covers 100-900, so the weights this panel
    actually uses (400/500/550/600/700) cost nothing extra.
 
+   INTER CARRIES ITS OPTICAL-SIZE AXIS, and that is not optional. Inter 4 has
+   `opsz` 14-32, and `font-optical-sizing: auto` — the CSS default — moves a
+   46px headline onto Inter's DISPLAY cut: tighter, more compact, higher
+   contrast. The first build of this shipped fontsource's wght-only file,
+   which has no opsz, so the hero was Inter TEXT scaled up to 46px — looser
+   and softer, and visibly not the Inter anybody recognises from a site that
+   loads it from Google Fonts (which does serve the axis). The founder's
+   words were "not even the same font". He was right, and this is why.
+   Costs 23 KB on the Latin file. Worth it: the hero is the screen.
+
    `unicode-range` is what makes this cheap. The browser fetches a file only
    when it needs a glyph inside that range, so an English session never pulls
    the 198 KB of Ge'ez and an Amharic one never pulls Latin Extended.
@@ -320,6 +330,26 @@ button { font-family: inherit; }
   font-weight: 700; color: #fff; max-width: 19ch;
   text-shadow: 0 2px 30px rgba(0, 0, 0, .45);
 }
+/* Ge'ez is not Latin and must not be set like it. Three values above are
+   tuned for Inter at display size and all three are wrong for Ethiopic:
+
+   - `-.025em` tracking CROWDS it. A Ge'ez character is a whole syllable with
+     dense internal structure, and its sidebearings are already the minimum
+     that keeps the strokes apart. Pulling a pixel out of each gap at 46px is
+     what turned the Amharic hero into a grey block.
+   - `1.1` leading is too tight. Ethiopic has no descenders to speak of but
+     tall, busy forms, so two lines at 1.1 nearly touch.
+   - `700` fills the counters in. Ge'ez at 46px reads better at 600; the
+     weight difference is invisible next to the Latin because the script is
+     denser to begin with.
+
+   Scoped by `:lang()`, so it follows the text rather than the panel — the
+   mock card cycles languages independently of the interface. Both the
+   headline and the card set `lang` from JS for exactly this reason. */
+.stage-line:lang(am), .stage-line:lang(ti) {
+  letter-spacing: normal; line-height: 1.28; font-weight: 600;
+}
+.gate h1:lang(am), .gate h1:lang(ti) { letter-spacing: normal; }
 .stage-sub {
   font-size: 15px; line-height: 1.65; color: rgba(255, 255, 255, .8);
   max-width: 46ch; margin-top: -14px;
@@ -1886,7 +1916,7 @@ td.title { color: var(--ink); font-weight: 550; }
            the stage still carries no metrics. -->
       <div class="chatmock">
         <div class="chatmock-inner">
-          <div class="mock-head">
+          <div class="mock-head" id="mock-head">
             <span class="mock-dot"></span>
             <b id="mock-name">Assistant</b>
             <span id="mock-status">online</span>
@@ -2383,6 +2413,12 @@ function paintGateCopy() {
   $("mfa-hint").textContent = A("mfa_hint",
     "Enter the 6-digit code from your authenticator app, or one of your recovery codes.");
 
+  // `lang` on the elements, not just on <html>. It is what the Ge'ez
+  // typography rules key off, and it is true regardless: a screen reader
+  // handed Amharic text tagged `en` pronounces it as English.
+  $("stage-line").lang = adminLang;
+  $("stage-sub").lang = adminLang;
+  $("gate-title").lang = adminLang;
   $("stage-line").textContent =
     A("stage_line", "Your bank’s front door, in your customer’s language.");
   $("stage-sub").textContent = A("stage_sub",
@@ -2480,6 +2516,10 @@ function mockScript() {
    defect the founder reported one level up, and on the same card. If the
    customer is speaking Tigrinya, the whole window is Tigrinya. */
 function paintMockCard(lang) {
+  // The card's own language, independent of the panel's — which is the whole
+  // reason `lang` is set per element rather than once on <html>.
+  $("mock-thread").lang = lang;
+  $("mock-head").lang = lang;
   $("mock-name").textContent = inLang(lang, "assistant", "Assistant");
   $("mock-status").textContent = inLang(lang, "online", "online");
   $("mock-src").textContent = inLang(lang, "n_sources", "{n} sources", { n: 2 });

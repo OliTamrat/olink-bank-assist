@@ -134,6 +134,75 @@ def test_each_face_is_range_gated(page: str) -> None:
         assert "font-display: swap" in face, f"an @font-face in {page} blocks paint"
 
 
+def test_inter_ships_its_optical_size_axis() -> None:
+    """The regression that made the founder say "not even the same font".
+
+    Inter 4 carries `opsz` 14–32, and `font-optical-sizing: auto` — the CSS
+    default — moves a 46px headline onto the DISPLAY cut: tighter, more
+    compact, higher contrast. The first build of these fonts shipped
+    fontsource's weight-only file, which has no `opsz`, so the hero rendered
+    in Inter's TEXT cut scaled up to 46px. Looser, softer, and not the Inter
+    anybody recognises from a site that loads it from Google Fonts — which
+    does serve the axis.
+
+    Nothing outside the font says which file this is. The filename is ours,
+    the CSS is identical either way, and the byte count is a coincidence
+    waiting to be optimised away by somebody trimming 23 KB. The `fvar`
+    table is the only witness.
+    """
+    from fontTools.ttLib import TTFont
+
+    for name in ("inter-latin.woff2", "inter-latin-ext.woff2"):
+        font = TTFont(STATIC / "fonts" / name)
+        axes = {a.axisTag: (a.minValue, a.maxValue) for a in font["fvar"].axes}
+        assert "opsz" in axes, (
+            f"{name} has no optical-size axis — this is the weight-only build, "
+            "and the sign-in headline will render in Inter's text cut"
+        )
+        assert axes["opsz"][1] >= 32, f"{name} opsz does not reach the display size"
+        # Still one file for every weight the panel uses.
+        assert axes.get("wght") == (100.0, 900.0), f"{name} lost its weight range"
+
+
+def test_nothing_disables_optical_sizing() -> None:
+    """`font-optical-sizing: none` would waste the axis silently.
+
+    It is the kind of line that gets added to "stop the font looking
+    different at different sizes" — which is the feature, not a bug.
+    """
+    for page in PAGES:
+        html = (STATIC / page).read_text(encoding="utf-8")
+        assert "font-optical-sizing: none" not in html, f"{page} disables optical sizing"
+
+
+def test_geez_is_not_set_like_latin() -> None:
+    """The other half of the same complaint.
+
+    The hero's `-.025em` tracking, `1.1` leading and `700` weight are tuned
+    for Inter at display size, and all three are wrong for Ethiopic: a Ge'ez
+    character is a whole syllable whose sidebearings are already minimal, so
+    negative tracking crowds it into a grey block, 1.1 leading nearly touches
+    on two lines, and 700 fills the counters in.
+
+    Keyed on `:lang()` rather than the panel's language, because the mock
+    card cycles languages independently of the interface — which is also why
+    both set `lang` from JS.
+    """
+    html = (STATIC / "admin.html").read_text(encoding="utf-8")
+    rule = re.search(
+        r"\.stage-line:lang\(am\)[^{]*\{([^}]*)\}", html, re.S
+    )
+    assert rule, "the Ge'ez headline rule is gone"
+    body = rule.group(1)
+    assert "letter-spacing: normal" in body, "Ge'ez is being tracked negatively again"
+    assert re.search(r"line-height: 1\.[23]", body), "Ge'ez leading is back to Latin's"
+
+    for node in ("stage-line", "mock-thread"):
+        assert re.search(rf'\$\("{node}"\)\.lang\s*=', html), (
+            f"{node} no longer declares its language, so :lang() cannot match"
+        )
+
+
 def test_the_licences_travel_with_the_fonts() -> None:
     """Both are SIL OFL 1.1, which requires the licence to ship alongside.
 
