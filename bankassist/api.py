@@ -627,6 +627,45 @@ def livekit_sdk() -> FileResponse:
     )
 
 
+#: The only font files that exist. A dict rather than a path join, because
+#: `/fonts/{name}` with a name off the wire is a path-traversal route waiting
+#: to be written, and an allowlist cannot be talked into serving `.env`.
+_FONTS = {
+    "inter-latin.woff2",
+    "inter-latin-ext.woff2",
+    "noto-sans-ethiopic.woff2",
+}
+
+
+@app.get("/fonts/{name}")
+def font_file(name: str) -> FileResponse:
+    """Inter and Noto Sans Ethiopic, served from our own origin.
+
+    Same argument as the LiveKit SDK above, and it applies harder here. A
+    Google Fonts tag on a bank's admin panel is a third-party request on a
+    screen that shows customer conversations — one more entry in a security
+    questionnaire, one more origin in a CSP, and a round trip to a European
+    edge before an Addis dispatcher sees text. The files are in the repo,
+    pinned, OFL-licensed with the licences alongside them.
+
+    Split by script on purpose. `unicode-range` in the stylesheet means an
+    English session fetches 48 KB of Latin and never touches the 198 KB of
+    Ge'ez, and an Amharic one fetches the Ge'ez it is about to render. Neither
+    pays for the other.
+
+    Immutable for a release and fetched by every visitor to a bank's site, so
+    it is cached hard and — unlike the pages — it is not `no-store`. Nothing
+    here is tenant data.
+    """
+    if name not in _FONTS:
+        raise HTTPException(status_code=404, detail="No such font")
+    return FileResponse(
+        _STATIC / "fonts" / name,
+        media_type="font/woff2",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
 @app.get("/widget")
 def widget_page() -> FileResponse:
     return FileResponse(_STATIC / "widget.html", media_type="text/html", headers=_NO_STORE)

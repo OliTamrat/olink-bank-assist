@@ -374,7 +374,7 @@ advantage away for the sake of whatever shortcut was taken that afternoon.
 
 ### Where this stands — updated 2026-08-12
 
-**All three string tables are complete: 482 strings × 6 languages, no gaps,
+**All three string tables are complete: 484 strings × 6 languages, no gaps,
 nothing silently left in English.** Swahili (`sw`) is the newest column —
 first-pass drafted, not yet native-reviewed, exactly the status OM/TI/SO
 carry. See ADR-0018.
@@ -383,7 +383,7 @@ carry. See ADR-0018.
 |---|---|---|
 | `strings.json` | 22 | what the assistant says to a customer |
 | `ui_strings.json` | 52 | the widget's own buttons and labels |
-| `admin_strings.json` | 408 | the staff panel, teller console included |
+| `admin_strings.json` | 410 | the staff panel, teller console included |
 
 The widget and the admin panel both got their string tables in August 2026.
 The teller console was the last surface and is done — queue, duty panel,
@@ -432,7 +432,7 @@ appears in no table anywhere.
 
 | | Where it lives | How it gets fixed |
 |---|---|---|
-| **Table text** — buttons, labels, the assistant's fixed templates, empty states, errors | `strings.json`, `ui_strings.json`, `admin_strings.json`; 437 rows in the workbook | A reviewer edits the row. Permanent, diffable, testable. |
+| **Table text** — buttons, labels, the assistant's fixed templates, empty states, errors | `strings.json`, `ui_strings.json`, `admin_strings.json`; 484 rows in the workbook | A reviewer edits the row. Permanent, diffable, testable. |
 | **Generated prose** — the AI Insights brief, every answer written from retrieved documents, the general-guidance replies | Nowhere. Written by Gemini per request, in the customer's language | Only the **prompt** can move it. No row to edit; the same question asked twice produces two different sentences. |
 
 So the review brief has to say which is which. Sheet-by-sheet corrections
@@ -577,6 +577,61 @@ had to be reverted — a bank must recognise the demo as *theirs* on sight.
 Inputs are **16px minimum**: iOS Safari auto-zooms a focused input below that,
 which widens the layout viewport and breaks the whole page, not just the box.
 `overflow-x: hidden` on the container backs that up.
+
+### Typography — vendored, and the order is load-bearing (ADR-0028)
+
+Both pages declare the same stack, and **Inter comes first, Ethiopic second**:
+
+```
+"Inter Variable", Inter, "Noto Sans Ethiopic Variable", "Noto Sans Ethiopic", …
+```
+
+Ethiopic led it for a year, which meant every Latin character in the product —
+labels, metrics, English answers — was drawn with a Ge'ez face's Latin glyphs.
+CSS fallback is **per character**, so putting Inter first costs Amharic
+nothing: Inter declares no Ge'ez range, so ሰላም still resolves to Noto.
+Reordering these looks harmless and is not; `tests/test_fonts.py` asserts it.
+
+The `.woff2` files are **in the repo** and served from `/fonts/*` through an
+allowlist in `api.py` — never a path join, and never Google Fonts. Same
+argument as the vendored LiveKit SDK: the widget runs on a bank's own
+production pages and the admin panel shows customer conversations, so a
+third-party font origin is a CSP entry and a security-review question in
+exchange for nothing. Both faces are SIL OFL 1.1 with the licences committed
+alongside.
+
+They are **variable** (one file covers 100–900) and **split by script**, so
+`unicode-range` decides what downloads: an English session fetches 48 KB of
+Latin and never touches the 198 KB of Ge'ez. Dropping the ranges would put all
+331 KB on every Ethiopian mobile connection.
+
+### The sign-in card plays (ADR-0029)
+
+The mock on the gate is not a still. It asks **one** customer question and
+answers it in **all six languages in turn** — typed in, a pause, the answer
+typed back, the citation chip last — starting at the panel's own language.
+
+Three rules that look like details and are not:
+
+1. **Everything on the card is one language.** The header, the citation chip
+   and both bubbles all read through `inLang()`, never `A()`. `A()` is the
+   *panel's* language; the card is the *customer's*. Mixing them put a
+   Tigrinya conversation under an Amharic header, which is the founder's
+   original complaint reproduced inside the fix for it.
+2. **Timing is per message, not per character.** A Ge'ez character is a whole
+   syllable, so the Amharic answer is a fraction of the English one's length.
+   Fixed ms-per-character makes the same sentence race in one language and
+   crawl in another — on the screen whose job is to show six as one product.
+3. **It must be able to not run.** `mockMayRun()` refuses when signed in, in a
+   hidden tab, below 1024px, or before the string tables land. A login page is
+   the screen most likely to sit open in a background tab all day.
+
+**Six headlines, composed not translated.** `stage_line` in English keeps its
+"front door" metaphor. All five translations had rendered it as a physical
+door (`መግቢያ በር`, `Balbala`, `መእተዊ ማዕጾ`, `Albaabka hore`, `Mlango wa mbele`)
+and the founder was right that it read as nonsense. Each language now says the
+same thing its own way. `tests/test_sign_in_mock.py` fails if the doors come
+back.
 
 ### Deployment
 
@@ -1061,7 +1116,7 @@ Remaining polish, not blockers:
 - [ ] **Linguist review of OM/TI/SO/SW** — the one open language item, and it
       now covers more than wording. `review/Olink_Bank_Assist_language_review.xlsx`
       carries four sheets: the assistant's replies, the phrasebook, the
-      widget's buttons and 408 staff-panel strings. **Sheet 2 matters most.**
+      widget's buttons and 409 staff-panel strings. **Sheet 2 matters most.**
       Every language defect found in a live demo so far was a sentence the
       assistant failed to UNDERSTAND, not a reply worded badly — and the
       Tigrinya, Somali and (as of 2026-08-12, ADR-0018) Swahili classifier

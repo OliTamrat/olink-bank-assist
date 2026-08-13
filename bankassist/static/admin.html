@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bank Assist — Admin</title>
+<!-- Only the Latin file, and only here. The sign-in stage is the first thing
+     anyone sees and it is nearly all type, so a swap-in halfway through the
+     animation is visible. The Ge'ez and Latin-Extended files are left to
+     unicode-range: preloading a 198 KB font every session to serve the
+     sessions that turn out to be Amharic is the opposite of the split.
+     `crossorigin` is required on font preloads even same-origin — without it
+     the browser fetches the file twice. -->
+<link rel="preload" as="font" type="font/woff2" href="/fonts/inter-latin.woff2" crossorigin>
 <style>
 /* ---------------------------------------------------------------- tokens
    The brand hue is the tenant's own primary_color, injected at runtime from
@@ -115,9 +123,50 @@
   --series-8: #e34948;
   --shadow: 0 1px 3px rgba(16, 24, 40, .09), 0 1px 2px rgba(16, 24, 40, .05);
 }
+/* ----------------------------------------------------------------- type
+   Inter for Latin, Noto Sans Ethiopic for Ge'ez, both served from our own
+   origin (`/fonts/*`, allowlisted in api.py) rather than from Google Fonts —
+   a bank's admin panel is not a screen to put a third-party request on.
+
+   Both are variable fonts: one file covers 100-900, so the weights this panel
+   actually uses (400/500/550/600/700) cost nothing extra.
+
+   `unicode-range` is what makes this cheap. The browser fetches a file only
+   when it needs a glyph inside that range, so an English session never pulls
+   the 198 KB of Ge'ez and an Amharic one never pulls Latin Extended.
+
+   ORDER MATTERS in the stack below. Ethiopic was first for years, which meant
+   every Latin character in the panel — every label, every number, every
+   English answer — rendered in a Ge'ez face's Latin glyphs. That is why it
+   read flat. Per-character fallback means listing Inter first costs Amharic
+   nothing: Inter declares no Ge'ez range, so ፩ still resolves to Noto. */
+@font-face {
+  font-family: "Inter Variable"; font-style: normal;
+  font-weight: 100 900; font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,
+                 U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,
+                 U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Inter Variable"; font-style: normal;
+  font-weight: 100 900; font-display: swap;
+  src: url("/fonts/inter-latin-ext.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,
+                 U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,
+                 U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face {
+  font-family: "Noto Sans Ethiopic Variable"; font-style: normal;
+  font-weight: 100 900; font-display: swap;
+  src: url("/fonts/noto-sans-ethiopic.woff2") format("woff2-variations");
+  unicode-range: U+030E,U+1200-1399,U+2D80-2DDE,U+AB01-AB2E,U+1E7E0-1E7E6,
+                 U+1E7E8-1E7EB,U+1E7ED-1E7EE,U+1E7F0-1E7FE;
+}
 * { box-sizing: border-box; margin: 0; }
 body {
-  font-family: "Noto Sans Ethiopic", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: "Inter Variable", Inter, "Noto Sans Ethiopic Variable",
+               "Noto Sans Ethiopic", "Segoe UI", system-ui, -apple-system, sans-serif;
   background: var(--bg); color: var(--ink);
   min-height: 100vh; font-size: 14px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -144,19 +193,54 @@ button { font-family: inherit; }
 .gate-pane {
   display: grid; place-items: center; padding: 24px;
   min-height: 100vh; position: relative; z-index: 1;
+  background:
+    radial-gradient(90% 60% at 50% 0%,
+      color-mix(in srgb, var(--brand) 7%, transparent) 0%, transparent 70%),
+    var(--bg);
 }
 .gate-card {
-  width: 100%; max-width: 408px; background: var(--surface);
-  border: 1px solid var(--line); border-radius: 18px; padding: 30px 30px 26px;
+  width: 100%; max-width: 420px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 22px; padding: 32px 32px 28px;
   box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .25);
+}
+/* Generous fields and a pill button carrying the tenant's own light. The
+   previous card was correct and weightless; this is the half of the brief
+   that fixes "dull" without inventing a second brand colour. */
+.gate-card input, .gate-card select {
+  padding: 13px 15px; border-radius: 12px; font-size: 14.5px;
+  background: var(--surface-2);
+}
+.gate-card .btn.wide {
+  padding: 14px; border-radius: 999px; font-size: 15px; font-weight: 600;
+  box-shadow: 0 10px 30px -8px color-mix(in srgb, var(--brand) 65%, transparent);
+}
+.gate-card .btn.wide:hover {
+  box-shadow: 0 12px 34px -6px color-mix(in srgb, var(--brand) 80%, transparent);
 }
 .gate-head {
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 12px; margin-bottom: 18px;
 }
+/* `appearance: none` is doing the work. A native <select> keeps the platform
+   widget and quietly ignores `background`, so on a dark gate this rendered as
+   a light-grey system control sitting in the corner of the panel — the one
+   element on the screen that looked like it belonged to a different product.
+   The chevron has to be drawn back by hand once the widget is gone; inline as
+   a data URI rather than an icon file, because this stylesheet has no build
+   step and one more network request on the first paint is not worth a glyph. */
 .gate-head .langpick {
-  width: auto; padding: 6px 10px; font-size: 12px; background: var(--surface-2);
+  width: auto; padding: 6px 28px 6px 10px; font-size: 12px;
+  appearance: none; -webkit-appearance: none;
+  background: var(--surface-2);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  cursor: pointer;
 }
+/* The dropdown itself is drawn by the OS and inherits nothing, so the options
+   need their own colours or a dark panel opens a white list. */
+.gate-head .langpick option { background: var(--surface); color: var(--ink); }
 .gate-mark {
   width: 44px; height: 44px; border-radius: 12px; background: var(--brand);
   display: grid; place-items: center; color: var(--on-brand, #fff);
@@ -173,49 +257,204 @@ button { font-family: inherit; }
 }
 .gate-foot span { white-space: nowrap; }
 
-/* --- the stage ----------------------------------------------------- */
+/* --- the stage -----------------------------------------------------
+   One object, not a field of them. The first version drew a lattice of
+   small faint nodes and read as fragmented and dull, which is exactly what
+   it was: many small low-contrast things competing, none of them the
+   subject. This is the opposite — a soft wash of brand light, one large
+   confident line, and a single hero object that IS the product: a real
+   conversation, in Amharic, with a citation on the answer.
+
+   Showing the widget beats any abstraction of it. A prospect looking at
+   this screen sees the thing they would be buying. */
 .gate-stage { display: none; }
 @media (min-width: 1024px) {
-  .gate { grid-template-columns: minmax(420px, 0.86fr) 1fr; }
+  .gate { grid-template-columns: minmax(400px, 0.82fr) 1fr; }
   .gate-stage {
-    display: block; position: relative; overflow: hidden;
-    background:
-      radial-gradient(120% 90% at 78% 18%,
-        color-mix(in srgb, var(--brand) 26%, transparent) 0%, transparent 62%),
-      radial-gradient(90% 70% at 20% 88%,
-        color-mix(in srgb, var(--brand) 12%, transparent) 0%, transparent 60%),
-      var(--side);
-    border-left: 1px solid color-mix(in srgb, var(--brand) 24%, var(--line));
+    display: block; position: relative; overflow: hidden; background: var(--side);
   }
 }
-#signal-field { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.stage-copy {
-  position: absolute; left: 0; right: 0; bottom: 0; padding: 40px 48px 44px;
-  /* The canvas runs behind the words, so the words need their own ground.
-     Without this the type sat on moving particles and became unreadable
-     exactly when the animation was at its most interesting. */
-  background: linear-gradient(to top,
-    color-mix(in srgb, var(--side) 94%, transparent) 0%,
-    color-mix(in srgb, var(--side) 78%, transparent) 55%,
-    transparent 100%);
+
+/* Aurora. Three blurred blooms rather than one gradient: a single ramp
+   reads as a backdrop, overlapping blooms read as light. Two are the
+   tenant's hue and one is rotated off it, which is what stops the whole
+   pane looking like a flat tint of the brand colour. */
+.aurora { position: absolute; inset: -20%; pointer-events: none; }
+.aurora i {
+  position: absolute; display: block; border-radius: 50%;
+  filter: blur(90px); opacity: .55;
+  animation: drift 26s ease-in-out infinite alternate;
 }
+.aurora i:nth-child(1) {
+  width: 46%; height: 52%; top: 2%; right: 6%;
+  background: color-mix(in srgb, var(--brand) 85%, #ffffff);
+}
+.aurora i:nth-child(2) {
+  width: 42%; height: 44%; top: 26%; right: 30%;
+  background: color-mix(in srgb, var(--brand) 62%, #7c5cff);
+  animation-delay: -9s; animation-duration: 32s;
+}
+.aurora i:nth-child(3) {
+  width: 38%; height: 40%; bottom: 8%; right: 2%;
+  background: color-mix(in srgb, var(--brand) 40%, #ff8ab5);
+  opacity: .34; animation-delay: -17s; animation-duration: 38s;
+}
+@keyframes drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-6%, 5%, 0) scale(1.14); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora i { animation: none; }
+}
+
 .stage-eyebrow {
-  font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
-  color: color-mix(in srgb, var(--brand) 62%, var(--ink));
-  margin-bottom: 12px;
+  font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .62);
+}
+.stage-inner {
+  position: relative; height: 100%; display: flex; flex-direction: column;
+  justify-content: center; gap: 30px; padding: 56px 60px;
 }
 .stage-line {
-  font-size: clamp(22px, 2vw, 30px); line-height: 1.28; letter-spacing: -.015em;
-  color: var(--ink); font-weight: 600; max-width: 20ch; margin-bottom: 20px;
+  font-size: clamp(32px, 3vw, 46px); line-height: 1.1; letter-spacing: -.025em;
+  font-weight: 700; color: #fff; max-width: 19ch;
+  text-shadow: 0 2px 30px rgba(0, 0, 0, .45);
 }
-.stage-proof { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.stage-sub {
+  font-size: 15px; line-height: 1.65; color: rgba(255, 255, 255, .8);
+  max-width: 46ch; margin-top: -14px;
+}
+
+/* The hero: the widget itself, tilted. */
+.chatmock { perspective: 1400px; max-width: 430px; }
+.chatmock-inner {
+  transform: rotateY(-19deg) rotateX(7deg) rotate(-1.6deg);
+  transform-origin: left center;
+  background: rgba(10, 12, 18, .72);
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, .13); border-radius: 18px;
+  box-shadow: 0 50px 110px -34px rgba(0, 0, 0, .92), 0 6px 20px rgba(0, 0, 0, .35);
+  padding: 16px; display: grid; gap: 10px;
+}
+.mock-head {
+  display: flex; align-items: center; gap: 9px; padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, .09);
+}
+.mock-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none;
+}
+.mock-head b { font-size: 12.5px; color: #fff; font-weight: 600; }
+.mock-head span { font-size: 11px; color: rgba(255, 255, 255, .5); }
+/* `align-content: end` is what makes it read as a chat: the pair sits on the
+   floor of a reserved box, so a long Amharic answer pushes the question up
+   instead of stretching the card downward. `min-height` is set from JS once
+   the fonts have loaded — see reserveMockHeight(). */
+.mock-thread { display: grid; gap: 10px; align-content: end; }
+.bubble {
+  font-size: 13.5px; line-height: 1.55; padding: 10px 13px; border-radius: 13px;
+  max-width: 86%;
+}
+.bubble.them {
+  background: var(--brand); color: var(--on-brand); justify-self: end;
+  border-bottom-right-radius: 5px;
+}
+.bubble.us {
+  background: rgba(255, 255, 255, .09); color: #eef1f7;
+  border-bottom-left-radius: 5px;
+}
+/* `!important` earns its place exactly here. The browser's own rule for the
+   attribute is `[hidden] { display: none }` — specificity (0,1,0) — so ANY
+   class that sets `display` outranks it, and `.bubble.dots { display: flex }`
+   duly did: the thinking dots stayed on screen underneath the answer they
+   were supposed to precede. `hidden` has one meaning and nothing in a
+   stylesheet should be able to argue with it. */
+[hidden] { display: none !important; }
+
+/* The caret. It marks WHO is acting: on the customer's bubble somebody is
+   typing a question, on the assistant's an answer is being written. Without
+   it the text just appears, which reads as a page repainting rather than a
+   conversation happening. */
+.bubble.typing::after {
+  content: ""; display: inline-block; width: 2px; height: 1em;
+  margin-left: 3px; vertical-align: -2px; background: currentColor;
+  animation: mockcaret 1s steps(1) infinite;
+}
+@keyframes mockcaret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+
+/* The pause between question and answer is the honest part of this. A mock
+   that answered the instant the question landed would be promising something
+   the product does not do — there is a retrieval pass and a model call in
+   there, and they take about this long. */
+.bubble.dots {
+  display: flex; gap: 4px; align-items: center; width: max-content;
+  padding: 13px 14px;
+}
+.bubble.dots i {
+  width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+  opacity: .3; animation: mockdot 1.25s ease-in-out infinite;
+}
+.bubble.dots i:nth-child(2) { animation-delay: .16s; }
+.bubble.dots i:nth-child(3) { animation-delay: .32s; }
+@keyframes mockdot {
+  0%, 62%, 100% { opacity: .28; transform: translateY(0); }
+  31%           { opacity: .95; transform: translateY(-3px); }
+}
+
+.mock-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.mock-chips span {
+  font-size: 10.5px; padding: 3px 8px; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .16); color: rgba(255, 255, 255, .72);
+}
+/* The citation lands LAST, after the answer is written — which is the order
+   that makes the point. An answer with a source attached is the product; an
+   answer alone is a chatbot. */
+#mock-src { opacity: 0; transition: opacity .4s ease; }
+#mock-src.show { opacity: 1; }
+/* Never all the way to zero. The chip carries the language name, so fading
+   it out fully at each turnover left the chip row visibly empty for a beat
+   and shifted "2 sources" across to fill the gap. A nudge is enough to say
+   "this changed". */
+#mock-lang.bump { animation: mockbump .45s ease; }
+@keyframes mockbump {
+  from { opacity: .35; transform: translateY(-3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Six pills, in their own scripts. The claim and the evidence are the same
+   object — a row that says "six languages" in English would be the weaker
+   version of this. The one currently playing lights up, so the row doubles
+   as the mock's progress bar. */
+.langrow { display: flex; flex-wrap: wrap; gap: 8px; }
+.langrow span {
+  font-size: 12px; padding: 5px 12px; border-radius: 999px;
+  background: rgba(255, 255, 255, .08); color: rgba(255, 255, 255, .85);
+  border: 1px solid rgba(255, 255, 255, .1);
+  transition: background .4s ease, border-color .4s ease, color .4s ease;
+}
+.langrow span.on {
+  background: color-mix(in srgb, var(--brand) 60%, transparent);
+  border-color: color-mix(in srgb, var(--brand) 85%, transparent);
+  color: var(--on-brand, #fff);
+}
+
+/* Reduced motion keeps the SUBJECT and drops the movement: the exchange
+   still rotates through all six languages, but each one appears whole
+   instead of being typed, with no caret and no bouncing dots. Removing the
+   rotation entirely would take away the thing the screen is for. */
+@media (prefers-reduced-motion: reduce) {
+  .bubble.typing::after { display: none; }
+  .bubble.dots i { animation: none; opacity: .5; }
+  #mock-src, .langrow span { transition: none; }
+  #mock-lang.bump { animation: none; }
+}
+.stage-proof { display: flex; flex-wrap: wrap; gap: 8px 20px; }
 .stage-proof li {
-  list-style: none; color: var(--side-text); font-size: 12.5px;
+  list-style: none; color: rgba(255, 255, 255, .72); font-size: 12.5px;
   display: flex; align-items: center; gap: 7px;
 }
 .stage-proof li::before {
   content: ""; width: 5px; height: 5px; border-radius: 50%;
-  background: var(--brand); flex: none;
+  background: #fff; opacity: .65; flex: none;
 }
 
 /* --- form polish --------------------------------------------------- */
@@ -1623,11 +1862,62 @@ td.title { color: var(--ink); font-weight: 550; }
        every claim it carries is also written in the footer under the card,
        so a screen reader loses nothing by skipping it. -->
   <div class="gate-stage" id="gate-stage" aria-hidden="true">
-    <canvas id="signal-field"></canvas>
-    <div class="stage-copy">
-      <div class="stage-eyebrow" id="stage-eyebrow">Olink Bank Assist</div>
-      <h2 class="stage-line" id="stage-line">Your bank's front door, in your customer's language.</h2>
-      <ul class="stage-proof" id="stage-proof"></ul>
+    <div class="aurora"><i></i><i></i><i></i></div>
+    <div class="stage-inner">
+      <div class="stage-eyebrow">Olink Bank Assist</div>
+      <h2 class="stage-line" id="stage-line">Your bank’s front door, in your customer’s language.</h2>
+      <p class="stage-sub" id="stage-sub"></p>
+
+      <!-- The hero object is the product, and it PLAYS. One customer
+           question, asked and answered in all six languages in turn: typed
+           in, a pause while the assistant works, the answer typed back, the
+           citation chip landing last.
+
+           Six static screenshots would have claimed the same thing; showing
+           it costs a prospect no reading and leaves nothing to take on
+           trust. The same question every time is deliberate — the claim is
+           not "we have six phrasebooks", it is "the same question is
+           answered in whichever language it arrives in", and six different
+           questions would have blurred that into a feature tour.
+
+           It is still not a live conversation. The text is the string table,
+           not a model call: faking a real exchange on a signed-out screen
+           would mean inventing one that never happened, which is also why
+           the stage still carries no metrics. -->
+      <div class="chatmock">
+        <div class="chatmock-inner">
+          <div class="mock-head">
+            <span class="mock-dot"></span>
+            <b id="mock-name">Assistant</b>
+            <span id="mock-status">online</span>
+          </div>
+          <!-- Bottom-aligned and height-reserved, so the answer grows upward
+               the way a real thread does and the card never jumps between
+               languages. The reserved height is measured at boot from the
+               longest of the six, after the fonts land — measuring Ge'ez in
+               a fallback face would reserve the wrong number. -->
+          <div class="mock-thread" id="mock-thread">
+            <!-- One language across every node, and English because that is
+                 what every other literal in this markup is. This is what
+                 survives if /admin/strings never answers or the animation
+                 never starts, so a mismatch here is a mismatch shipped to
+                 whoever has the worst connection. -->
+            <div class="bubble them" id="mock-question">How do I open an account?</div>
+            <div class="bubble us dots" id="mock-dots" hidden><i></i><i></i><i></i></div>
+            <div class="bubble us" id="mock-answer">To open an account, bring a valid ID
+              and a passport photo to any branch.</div>
+          </div>
+          <div class="mock-chips">
+            <span id="mock-lang">English</span><span id="mock-src">2 sources</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Built from LANGS rather than written out, so a seventh language
+           cannot appear in the product and be missing here. The pill for the
+           language currently playing lights up, which turns the row into the
+           mock's progress bar as well as its own claim. -->
+      <div class="langrow" id="langrow"></div>
     </div>
   </div>
 </div>
@@ -2065,12 +2355,7 @@ function applyBrand(slug) {
     $("side-name").title = b.name || slug;
     $("gate-title").textContent = A("sign_in", "Sign in");
     paintGateCopy();
-    // Restarted, not just repainted. The field caches --brand at start-up so
-    // it is not reading a computed style sixty times a second, which meant it
-    // kept the DEFAULT teal after a purple tenant loaded — a teal field
-    // beside a purple card, on the one screen whose job is to look like this
-    // bank. Only visible by rendering it.
-    startSignalField();
+  
     // Template, not concatenation: "{bank} — assistant administration"
     // only reads correctly in a language that puts them in that order, and
     // three of the six do not.
@@ -2081,257 +2366,307 @@ function applyBrand(slug) {
   }).catch(function () { return null; });
 }
 
-/* --------------------------------------------------------- signal field
-
-   What the sign-in stage draws, and why it draws this and not particles.
-
-   Seven channel nodes on the left are the seven adapters this product
-   actually ships. Conversations travel from them into one assistant node.
-   Most resolve there — a soft ring, and gone. A few carry on to a second
-   node: a person. That is the entire product in one picture, and it is the
-   honest version of "AI-powered" — the alternative was a badge saying so.
-
-   Deliberately carries NO numbers. A percentage on a sign-in screen would
-   be read as this bank's telemetry, and it would be invented. Capability
-   claims belong here; measurements belong on the dashboard, after login,
-   computed from real rows.
-
-   Cheap on purpose: ~26 conversations in flight, one rAF, paused when the
-   tab is hidden, and stopped for good the moment the gate closes. This runs
-   on the machines a branch actually has. */
-
-var signalField = null;
-
-function startSignalField() {
-  var canvas = $("signal-field");
-  if (!canvas || !canvas.getContext) return;
-  var stage = $("gate-stage");
-  // Below 1024px the stage is display:none and has no box to measure.
-  if (!stage || !stage.offsetWidth) return;
-  stopSignalField();
-
-  var ctx = canvas.getContext("2d");
-  var still = window.matchMedia
-    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var brand = getComputedStyle(document.documentElement)
-    .getPropertyValue("--brand").trim() || "#0f766e";
-  var W = 0, H = 0, raf = 0, t = 0;
-
-  // Proper nouns, so they are the same word in every language — the same
-  // rule the channel list follows everywhere else in the product.
-  var CHANNELS = ["Web", "Telegram", "Viber", "WhatsApp", "Messenger", "Instagram", "SMS"];
-  var lanes = [], flows = [];
-
-  function resize() {
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    W = stage.offsetWidth; H = stage.offsetHeight;
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    lanes = CHANNELS.map(function (name, i) {
-      return {
-        name: name,
-        x: W * 0.17,
-        y: H * 0.11 + (H * 0.45) * (i / (CHANNELS.length - 1)),
-        lit: 0
-      };
-    });
-  }
-
-  function hub() { return { x: W * 0.61, y: H * 0.335 }; }
-  function person() { return { x: W * 0.86, y: H * 0.115 }; }
-
-  function spawn() {
-    var lane = lanes[Math.floor(Math.random() * lanes.length)];
-    flows.push({
-      lane: lane,
-      p: 0,
-      // Speed varies so the field never falls into a visible rhythm.
-      speed: 0.0022 + Math.random() * 0.0026,
-      // Most conversations are answered without a person. That ratio is a
-      // design statement about what the product is FOR, not a measurement.
-      escalates: Math.random() < 0.18,
-      stage: "in",
-      ring: 0
-    });
-  }
-
-  function dot(x, y, r, alpha) {
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = mixed(alpha);
-    ctx.fill();
-  }
-
-  function mixed(alpha) {
-    // color-mix is not available on a canvas fill, so the brand hue is
-    // painted with globalAlpha instead of a computed colour string.
-    return brand;
-  }
-
-  function line(a, b, alpha, width) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = brand;
-    ctx.lineWidth = width || 1;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.quadraticCurveTo((a.x + b.x) / 2, a.y, b.x, b.y);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function at(a, b, p) {
-    // Point along the same quadratic the connector is drawn with, so a
-    // travelling conversation rides its own wire rather than floating near it.
-    var cx = (a.x + b.x) / 2, cy = a.y, q = 1 - p;
-    return {
-      x: q * q * a.x + 2 * q * p * cx + p * p * b.x,
-      y: q * q * a.y + 2 * q * p * cy + p * p * b.y
-    };
-  }
-
-  function frame() {
-    t += 1;
-    ctx.clearRect(0, 0, W, H);
-    var h = hub(), pr = person();
-
-    // Resting wires.
-    lanes.forEach(function (l) { line(l, h, 0.16 + l.lit * 0.34, 1.1); });
-    line(h, pr, 0.22, 1.1);
-
-    // Channel nodes.
-    lanes.forEach(function (l) {
-      ctx.save();
-      ctx.globalAlpha = 0.30 + l.lit * 0.6;
-      dot(l.x, l.y, 3.5, 1);
-      ctx.restore();
-      ctx.save();
-      ctx.globalAlpha = 0.58;
-      ctx.fillStyle = "#d7dfec";
-      ctx.font = "500 11px ui-sans-serif, system-ui, sans-serif";
-      ctx.textAlign = "right";
-      ctx.fillText(l.name, l.x - 12, l.y + 3.5);
-      ctx.restore();
-      l.lit *= 0.94;
-    });
-
-    // The assistant, breathing slowly.
-    var pulse = still ? 0.5 : (Math.sin(t / 55) + 1) / 2;
-    ctx.save();
-    ctx.globalAlpha = 0.15 + pulse * 0.11;
-    dot(h.x, h.y, 40 + pulse * 9, 1);
-    ctx.restore();
-    ctx.save();
-    ctx.globalAlpha = 0.95;
-    dot(h.x, h.y, 8.5, 1);
-    ctx.restore();
-
-    // The person.
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    ctx.strokeStyle = brand;
-    ctx.lineWidth = 1.9;
-    ctx.beginPath();
-    ctx.arc(pr.x, pr.y - 5, 5, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(pr.x, pr.y + 13, 11, Math.PI, 0);
-    ctx.stroke();
-    ctx.restore();
-
-    for (var i = flows.length - 1; i >= 0; i--) {
-      var f = flows[i];
-      if (f.stage === "in") {
-        if (!still) f.p += f.speed;
-        var pos = at(f.lane, h, Math.min(f.p, 1));
-        ctx.save();
-        ctx.globalAlpha = 0.85;
-        dot(pos.x, pos.y, 2.6, 1);
-        ctx.restore();
-        if (f.p >= 1) {
-          f.lane.lit = 1;
-          f.stage = f.escalates ? "out" : "resolve";
-          f.p = 0;
-        }
-      } else if (f.stage === "resolve") {
-        // Answered here: a ring outward, then nothing. Most of them.
-        if (!still) f.ring += 0.03;
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, 0.5 - f.ring * 0.5);
-        ctx.strokeStyle = brand;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.arc(h.x, h.y, 10 + f.ring * 34, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-        if (f.ring >= 1) flows.splice(i, 1);
-      } else {
-        if (!still) f.p += f.speed * 1.5;
-        var op = at(h, pr, Math.min(f.p, 1));
-        ctx.save();
-        ctx.globalAlpha = 0.9;
-        dot(op.x, op.y, 2.8, 1);
-        ctx.restore();
-        if (f.p >= 1) flows.splice(i, 1);
-      }
-    }
-
-    if (!still && flows.length < 26 && t % 14 === 0) spawn();
-    raf = window.requestAnimationFrame(frame);
-  }
-
-  resize();
-  // A still field still has to look composed rather than empty.
-  for (var k = 0; k < (still ? 9 : 4); k++) { spawn(); flows[k].p = Math.random(); }
-  frame();
-
-  function onResize() { resize(); }
-  window.addEventListener("resize", onResize);
-  signalField = {
-    stop: function () {
-      window.cancelAnimationFrame(raf);
-      window.removeEventListener("resize", onResize);
-    }
-  };
-}
-
-function stopSignalField() {
-  if (signalField) { signalField.stop(); signalField = null; }
-}
-
 function paintGateCopy() {
   // Every claim here is checkable: seven adapters exist, six string tables
-  // are complete, and answers carry citations. Nothing on this screen is a
-  // number about THIS bank, because before sign-in we have none.
+  // are complete, answers carry citations, a teller is one tap away. Nothing
+  // on this screen is a number about THIS bank, because before sign-in we
+  // have none — and an invented metric on a login page is still invented.
   $("gate-title").textContent = A("sign_in", "Sign in");
   $("slug-label").textContent = A("bank", "Bank");
   $("email-label").textContent = A("email", "Email");
-  $("stage-line").textContent =
-    A("stage_line", "Your bank's front door, in your customer's language.");
-  var proof = [
-    A("proof_channels", "Seven channels, one conversation"),
-    A("proof_languages", "Six languages, engineered"),
-    A("proof_sources", "Answers cited from your own documents"),
-    A("proof_teller", "A real teller, one tap away")
-  ];
-  $("stage-proof").innerHTML =
-    proof.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("");
-  $("gate-foot").innerHTML =
-    "<span>" + esc(A("foot_encrypted", "Encrypted in transit")) + "</span> · " +
-    "<span>" + esc(A("foot_sessions", "Sessions expire after 8 hours")) + "</span> · " +
-    "<span>" + esc(A("foot_audited", "Every action is audited")) + "</span>";
+  $("password-label").textContent = A("password_label", "Password");
+  $("caps-text").textContent = A("caps_lock_on", "Caps Lock is on");
   $("token-label").textContent = A("admin_token", "Admin token");
   $("mfa-label").textContent = A("mfa_code_label", "Authentication code");
   $("mfa-btn").textContent = A("verify", "Verify");
   $("signin-btn").textContent = A("sign_in", "Sign in");
-  // Key deliberately not called "password": `"password": "…"` is the exact
-  // shape a generic-secret scanner matches, and it flagged this file. The
-  // label is the same; the pattern is not.
-  $("password-label").textContent = A("password_label", "Password");
-  $("caps-text").textContent = A("caps_lock_on", "Caps Lock is on");
   $("mfa-hint").textContent = A("mfa_hint",
     "Enter the 6-digit code from your authenticator app, or one of your recovery codes.");
+
+  $("stage-line").textContent =
+    A("stage_line", "Your bank’s front door, in your customer’s language.");
+  $("stage-sub").textContent = A("stage_sub",
+    "Seven channels, six languages, and a real teller one tap away — answering "
+    + "from your bank’s own documents, with the source attached.");
+  // Nothing on the mock card is painted from A() — see paintMockCard. Its
+  // language is the CUSTOMER's, and on this screen that changes every few
+  // seconds while the panel's own language does not.
+  //
+  // Both halves of the exchange come from ONE language table. The first
+  // version hard-coded an Amharic question and read the answer through A(),
+  // so an English panel showed the assistant replying to Amharic in English
+  // — on the sign-in screen, the exact failure this product exists to
+  // prevent, presented as though it were a feature.
+  //
+  // This is the STILL of the mock: what the card shows if the animation
+  // never starts (narrow window, reduced data, a browser that fails on
+  // something below). It is the panel's own language, because that is the
+  // one language the person reading it is known to have.
+  paintMockStill(adminLang);
+  paintLangRow();
+  // Restart rather than start: the language picker repaints the gate, and a
+  // second engine running alongside the first would type two languages into
+  // the same two bubbles.
+  mockRestart();
+  $("gate-foot").innerHTML =
+    "<span>" + esc(A("foot_encrypted", "Encrypted in transit")) + "</span> · " +
+    "<span>" + esc(A("foot_sessions", "Sessions expire after 8 hours")) + "</span> · " +
+    "<span>" + esc(A("foot_audited", "Every action is audited")) + "</span>";
+}
+
+function inLang(lang, key, fallback, vars) {
+  // A() reads the UI language. The mock conversation is not in the UI
+  // language — it is in the CUSTOMER's — so it needs its own reader.
+  var tables = adminUI || (state.me && state.me.ui) || {};
+  var text = ((tables[lang] || {})[key]) || ((tables.en || {})[key]) || fallback || key;
+  if (vars) {
+    Object.keys(vars).forEach(function (name) {
+      text = text.split("{" + name + "}").join(vars[name]);
+    });
+  }
+  return text;
+}
+
+/* ------------------------------------------------------------- the mock
+   The sign-in card asks and answers one customer question in all six
+   languages in turn. Every rule below exists because the alternative is a
+   login page that burns a phone battery, jumps a card around, or types Ge'ez
+   in a fallback face.
+
+   It replaced a single still. The still had to pick ONE language to
+   illustrate a product whose whole claim is six, and whichever it picked was
+   the wrong one for five sixths of the room. */
+
+var MOCK_Q_MS = 950;     // a customer typing
+var MOCK_THINK_MS = 950; // retrieval + a model call, honestly represented
+var MOCK_A_MS = 1650;    // the assistant writing
+var MOCK_HOLD_MS = 2500; // long enough to read before the language turns over
+var MOCK_STILL_MS = 4200; // reduced motion: no typing, so only the hold
+
+// One object per run. Every scheduled callback captures it and bails if it
+// is no longer the current one — which is how a restart mid-type cannot
+// leave two engines writing into the same two bubbles.
+var mockRun = null;
+var mockReserved = false;
+
+function mockReduced() {
+  return !!(window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+function mockScript() {
+  // Starts at the PANEL's language and goes round the ring, so the first
+  // exchange anyone sees is one they can read; the other five then make the
+  // point. The same question throughout is the point — six different
+  // questions would read as a feature tour rather than as one question
+  // arriving in six languages.
+  var start = Math.max(0, LANGS.indexOf(adminLang));
+  return LANGS.map(function (_, i) {
+    var code = LANGS[(start + i) % LANGS.length];
+    return {
+      lang: code,
+      name: LANG_NAME[code] || code,
+      q: inLang(code, "mock_question", "How do I open an account?"),
+      a: inLang(code, "mock_answer",
+        "To open an account, bring a valid ID and a passport photo to any branch.")
+    };
+  });
+}
+
+/* Everything ON the card moves together — the header, the citation chip and
+   both bubbles. They did not at first: the chrome came from A() (the PANEL's
+   language) while the conversation cycled, so a Tigrinya exchange sat under
+   an Amharic "ረዳት" with an Amharic "2 ምንጮች" beneath it. That is the same
+   defect the founder reported one level up, and on the same card. If the
+   customer is speaking Tigrinya, the whole window is Tigrinya. */
+function paintMockCard(lang) {
+  $("mock-name").textContent = inLang(lang, "assistant", "Assistant");
+  $("mock-status").textContent = inLang(lang, "online", "online");
+  $("mock-src").textContent = inLang(lang, "n_sources", "{n} sources", { n: 2 });
+  $("mock-lang").textContent = LANG_NAME[lang] || lang;
+}
+
+function paintMockStill(lang) {
+  paintMockCard(lang);
+  $("mock-question").textContent =
+    inLang(lang, "mock_question", "How do I open an account?");
+  $("mock-answer").textContent = inLang(lang, "mock_answer",
+    "To open an account, bring a valid ID and a passport photo to any branch.");
+  $("mock-dots").hidden = true;
+  $("mock-answer").hidden = false;
+  $("mock-src").classList.add("show");
+}
+
+function paintLangRow() {
+  var row = $("langrow");
+  if (!row || row.childElementCount === LANGS.length) return;
+  row.innerHTML = LANGS.map(function (c) {
+    return '<span data-lang="' + c + '">' + esc(LANG_NAME[c] || c) + "</span>";
+  }).join("");
+}
+
+function markLangPill(code) {
+  var row = $("langrow");
+  if (!row) return;
+  Array.prototype.forEach.call(row.children, function (el) {
+    el.classList.toggle("on", el.getAttribute("data-lang") === code);
+  });
+}
+
+/* The card must not resize between languages, and the six answers are not
+   the same length. Measure the tallest once and hold the box open.
+
+   It has to run AFTER the fonts land: measuring Ge'ez while Noto is still in
+   flight measures a fallback face and reserves the wrong number, which shows
+   up as the card growing a line the first time Amharic plays. */
+function reserveMockHeight() {
+  var thread = $("mock-thread"), q = $("mock-question"), a = $("mock-answer");
+  if (!thread || !thread.getClientRects().length) return false;
+  var keepQ = q.textContent, keepA = a.textContent;
+  var dotsHidden = $("mock-dots").hidden;
+  $("mock-dots").hidden = true;
+  thread.style.minHeight = "0px";
+  var tallest = 0;
+  mockScript().forEach(function (item) {
+    q.textContent = item.q;
+    a.textContent = item.a;
+    tallest = Math.max(tallest, thread.offsetHeight);
+  });
+  thread.style.minHeight = tallest + "px";
+  q.textContent = keepQ;
+  a.textContent = keepA;
+  $("mock-dots").hidden = dotsHidden;
+  mockReserved = true;
+  return true;
+}
+
+/* Per-MESSAGE duration, not per-character. A Ge'ez character carries a whole
+   syllable, so the Amharic answer is a third of the length of the English
+   one; a fixed ms-per-character would make Amharic flash past and English
+   crawl, and the two would not look like the same product. Dividing a target
+   duration by the length is what makes the six feel like one speed.
+
+   The tick rate is fixed instead, so a long string writes several characters
+   per frame rather than scheduling one timer per glyph. */
+function mockType(el, text, duration, next) {
+  var run = mockRun;
+  var chars = Array.from(text);
+  var TICK = 28;
+  var per = Math.max(1, Math.ceil(chars.length / Math.max(1, duration / TICK)));
+  var i = 0;
+  el.textContent = "";
+  el.classList.add("typing");
+  (function tick() {
+    if (mockRun !== run) return;
+    i = Math.min(chars.length, i + per);
+    el.textContent = chars.slice(0, i).join("");
+    if (i >= chars.length) {
+      el.classList.remove("typing");
+      run.timer = setTimeout(next, 0);
+      return;
+    }
+    run.timer = setTimeout(tick, TICK);
+  })();
+}
+
+function mockPlay(idx) {
+  var run = mockRun;
+  if (!run) return;
+  var item = run.script[idx % run.script.length];
+  var q = $("mock-question"), a = $("mock-answer"), dots = $("mock-dots");
+
+  paintMockCard(item.lang);
+  $("mock-lang").classList.remove("bump");
+  void $("mock-lang").offsetWidth;   // restart the animation, not skip it
+  $("mock-lang").classList.add("bump");
+  markLangPill(item.lang);
+  $("mock-src").classList.remove("show");
+
+  function hold() {
+    $("mock-src").classList.add("show");
+    run.timer = setTimeout(function () {
+      if (mockRun === run) mockPlay(idx + 1);
+    }, run.reduced ? MOCK_STILL_MS : MOCK_HOLD_MS);
+  }
+
+  if (run.reduced) {
+    // Same six languages, same order, no movement: the rotation IS the
+    // subject, and dropping it would leave nothing to reduce the motion of.
+    q.textContent = item.q;
+    dots.hidden = true;
+    a.hidden = false;
+    a.textContent = item.a;
+    hold();
+    return;
+  }
+
+  q.textContent = "";
+  a.textContent = "";
+  a.hidden = true;
+  dots.hidden = true;
+  mockType(q, item.q, MOCK_Q_MS, function () {
+    dots.hidden = false;
+    run.timer = setTimeout(function () {
+      if (mockRun !== run) return;
+      dots.hidden = true;
+      a.hidden = false;
+      mockType(a, item.a, MOCK_A_MS, hold);
+    }, MOCK_THINK_MS);
+  });
+}
+
+function mockStop() {
+  if (!mockRun) return;
+  clearTimeout(mockRun.timer);
+  mockRun = null;
+}
+
+/* Four reasons not to run, and each one is a real cost rather than a
+   nicety:
+
+   - signed in: the gate is display:none behind the dashboard, so the timer
+     would type into an invisible card for the whole eight-hour session;
+   - narrow: the stage does not render below 1024px, so on the phone this
+     would be pure battery;
+   - hidden tab: a login page left open in a background tab is the normal
+     case, not the exception;
+   - no string tables yet: it would play six identical English exchanges,
+     which is the opposite of the point. */
+function mockMayRun() {
+  var stage = $("gate-stage");
+  return !!stage
+    && !$("gate").classList.contains("hidden")
+    && !document.hidden
+    && stage.getClientRects().length > 0
+    && !!adminUI;
+}
+
+var mockFontsReady = false;
+
+function mockRestart() {
+  mockStop();
+  if (!mockMayRun()) return;
+  if (!mockFontsReady) {
+    // Waited for once, not per restart. Two callers racing here is fine —
+    // the mockStop() above means the later restart retires the earlier one.
+    warmMockFonts().then(function () { mockFontsReady = true; mockRestart(); });
+    return;
+  }
+  if (!mockReserved && !reserveMockHeight()) return;
+  mockRun = { timer: null, reduced: mockReduced(), script: mockScript() };
+  mockPlay(0);
+}
+
+/* The fonts have to be in before the first frame and before the measure.
+   With font-display: swap an un-warmed Ge'ez face means the first Amharic
+   exchange types in a fallback and then jumps when Noto lands — on the one
+   screen whose entire job is to look like the product works. */
+function warmMockFonts() {
+  if (!document.fonts || !document.fonts.load) return Promise.resolve();
+  return Promise.all([
+    document.fonts.load('400 13.5px "Inter Variable"', "Aa"),
+    document.fonts.load('400 13.5px "Noto Sans Ethiopic Variable"', "ሀ")
+  ]).catch(function () { /* the still is already correct without them */ });
 }
 
 function busy(id, on) {
@@ -2484,6 +2819,10 @@ function signedOut(msg) {
   $("shell").classList.add("hidden");
   $("gate").classList.remove("hidden");
   gateError(msg || "");
+  // The gate is back on screen, so the mock plays again. It was stopped on
+  // the way in and would otherwise stay stopped for the rest of the tab's
+  // life — a sign-out landing on a frozen card.
+  mockRestart();
 }
 
 function signOut() {
@@ -2506,10 +2845,11 @@ function can(perm) {
 }
 
 function enterApp() {
-  // The stage is gone from the screen; it must be gone from the event loop
-  // too. A rAF left running behind a hidden panel is a battery leak nobody
-  // would ever look for.
-  stopSignalField();
+  // First, before the gate is hidden: an animation left running behind a
+  // display:none card would type into nothing for the whole eight-hour
+  // session, which is a timer nobody would ever see and everybody's laptop
+  // would pay for.
+  mockStop();
   $("gate").classList.add("hidden");
   $("shell").classList.remove("hidden");
   applyBrand(state.slug);
@@ -2664,6 +3004,19 @@ function landingPage() {
 loadAdminStrings().then(function () {
   renderNav();
   paintAdminChrome();
+  // The gate too, and it is the one that could not be left out. Before this
+  // line the gate was painted from exactly two places — a bank's brand
+  // resolving, and the language picker changing — so a fresh browser with no
+  // remembered slug painted it from NEITHER and the screen kept whatever the
+  // markup said. That is how the sign-in page came to show an Amharic
+  // question answered in English: the two halves were separate literals in
+  // the HTML and nothing ever replaced them.
+  //
+  // It also has to be here rather than only earlier. `loadPublicBank` calls
+  // paintGateCopy the moment a brand resolves, which can beat this fetch, and
+  // a gate painted before the string tables land is a gate painted in
+  // English whatever the picker says.
+  paintGateCopy();
 });
 
 (function wireAdminLanguage() {
@@ -7101,7 +7454,36 @@ $("signin-btn").onclick = signInWithPassword;
     paintGateCopy();
   };
 })();
-startSignalField();
+
+/* The mock's lifecycle. Everything here is about NOT running: a login page
+   is the screen most likely to be left open in a background tab for a day,
+   and a typewriter on a timer is exactly the thing that shows up in a
+   battery report. */
+(function wireMockLifecycle() {
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) mockStop(); else mockRestart();
+  });
+
+  // The stage does not render below 1024px, and the reserved height is
+  // measured from the rendered width — so both crossing the breakpoint and
+  // resizing within it invalidate the measurement. Debounced, because a
+  // drag fires this continuously and re-measuring six languages per frame
+  // is the one way this could become expensive.
+  var t = null;
+  window.addEventListener("resize", function () {
+    if ($("gate").classList.contains("hidden")) return;
+    clearTimeout(t);
+    mockStop();
+    t = setTimeout(function () { mockReserved = false; mockRestart(); }, 220);
+  });
+
+  // Someone turning motion down while the page is open gets the still
+  // rotation immediately rather than on the next load.
+  if (window.matchMedia) {
+    var mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (mq.addEventListener) mq.addEventListener("change", mockRestart);
+  }
+})();
 watchCapsLock("password", "caps-hint");
 $("mfa-btn").onclick = submitMfaCode;
 // Enter is how anybody types a six-digit code — they are already on the

@@ -37,3 +37,5 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0025 | A referral is not an answer |
 | 0026 | Generated prose is not reviewable text |
 | 0027 | A second factor for admin accounts |
+| 0028 | The typefaces ship with the product |
+| 0029 | The sign-in card plays, and the headline is composed six times |
