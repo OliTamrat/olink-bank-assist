@@ -120,6 +120,14 @@
 [hidden] { display: none !important; }
 html {
   scroll-behavior: smooth;
+  /* Same reason as the sign-in screen — see the long note there. The
+     headline changes language every 3.2s and the document height moves 1–3px
+     with it (the two scripts' line boxes do not resolve to the same height),
+     so any viewport where the page sits near a scrollbar boundary toggles
+     the gutter on a loop. On Windows that is a 15px sideways jump of the
+     whole page. Reserving the gutter costs 15px of width and removes the
+     entire failure mode. */
+  scrollbar-gutter: stable;
   /* THE reason mobile did not match desktop. Mobile browsers "boost" small
      text on pages they judge to be desktop-width, and they do it PER BLOCK
      and by different amounts — so the 10.5px micro-labels were rendering at
@@ -372,6 +380,16 @@ body::after {
 }
 .morph {
   display: inline-block;
+  /* `vertical-align: top` is what stops the page twitching every 3.2s.
+     An inline-block is baseline-aligned by default, so the line box grows to
+     fit the box ABOVE the baseline plus the strut's descent BELOW it — and
+     since Ge'ez and Latin resolve to different fonts at different sizes,
+     each language produced a slightly different line box. Measured: the
+     document height moved 1–3px on every headline change, which on its own
+     is a twitch and next to a scrollbar boundary is a 15px jump.
+     Aligning to the top takes the baseline out of the arithmetic, so the
+     line box is the strut's height for every language. */
+  vertical-align: top;
   transition: opacity .32s ease, transform .32s cubic-bezier(.22,.61,.36,1),
               filter .32s ease;
 }

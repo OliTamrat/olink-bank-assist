@@ -220,6 +220,25 @@
                  U+2212,U+2215,U+FEFF,U+FFFD;
 }
 * { box-sizing: border-box; margin: 0; }
+/* Reserve the scrollbar's width whether or not one is showing.
+   Without this, a page whose height sits within a pixel or two of the
+   viewport toggles its scrollbar on and off, and on Windows — where the
+   scrollbar is a classic 15px gutter rather than the overlay one Linux and
+   macOS draw — every toggle moves the whole layout sideways by 15px. On the
+   sign-in screen the gate is an `fr` grid, so both columns resize and the
+   centred card jumps with them: it reads as the page flickering back and
+   forth between two sizes, which is exactly how it was reported.
+
+   The trigger only has to be a single pixel, and the mock card changes
+   language every few seconds, so it fires on a loop. Reserving the gutter
+   makes the toggle cost nothing instead of trying to guarantee it never
+   happens — a guarantee no content-driven layout can actually keep.
+
+   NOTE FOR ANYONE TRYING TO REPRODUCE THIS IN A SANDBOX: headless Chromium
+   reports a scrollbar width of 0, so the shift is invisible there and every
+   measurement comes back stable. It is a Windows/Edge-class defect and it
+   needs a real desktop browser to see. */
+html { scrollbar-gutter: stable; }
 body {
   font-family:
     /* Latin — ours, identical everywhere */
@@ -255,6 +274,17 @@ button { font-family: inherit; }
    redesign that neutralised the shell made all three prospect demos look
    identical and had to be reverted. */
 .gate { min-height: 100vh; display: grid; grid-template-columns: 1fr; }
+/* The card's `max-width` was never what sized it. `place-items: center` makes
+   a grid item shrink-to-fit, so the wrapper below took its width from its
+   widest unbreakable content — which is the reassurance line under the card,
+   and `.gate-foot span` is `white-space: nowrap`. The card was therefore
+   exactly as wide as "Encrypted in transit · Sessions expire after 8 hours ·
+   Every action is audited" happened to be: 407px, whatever the max-width
+   said, and it would move again the moment that sentence or its translation
+   changed length.
+   Sizing the wrapper puts the width back under our control and keeps the
+   footer line the same width as the card above it. */
+.gate-pane > * { width: 100%; max-width: 448px; }
 .gate-pane {
   display: grid; place-items: center; padding: 24px;
   min-height: 100vh; position: relative; z-index: 1;
@@ -265,7 +295,7 @@ button { font-family: inherit; }
 }
 .gate-card {
   position: relative; overflow: hidden;
-  width: 100%; max-width: 420px; background: var(--surface);
+  width: 100%; background: var(--surface);
   border: 1px solid var(--line); border-radius: 22px; padding: 32px 32px 28px;
   box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .25);
 }
@@ -283,9 +313,19 @@ button { font-family: inherit; }
    previous card was correct and weightless; this is the half of the brief
    that fixes "dull" without inventing a second brand colour. */
 .gate-card input, .gate-card select {
-  padding: 13px 15px; border-radius: 12px; font-size: 14.5px;
+  padding: 13px 15px; border-radius: 12px; font-size: 15.5px;
   background: var(--surface-2);
 }
+/* The card was carrying the panel's ordinary form sizes — a 12.5px label and
+   a 14.5px field — next to a 40px display serif on the stage beside it. Both
+   are defensible on a dense dashboard screen and neither is right here: this
+   is the one screen with a single job and nothing competing for the space,
+   and the contrast against the headline made it read as an afterthought
+   rather than as the thing you came to do.
+
+   Scoped to `.gate-card` deliberately. The 12.5px label is correct in the
+   panel proper, where a form sits inside a table of other things. */
+.gate-card label { font-size: 13px; margin-bottom: 7px; }
 /* 16px MINIMUM on a phone. iOS Safari zooms any focused input below that,
    which widens the layout viewport and breaks the whole page rather than
    just the field — the rule the widget has followed since it shipped, and
@@ -332,8 +372,8 @@ button { font-family: inherit; }
   font-weight: 700; font-size: 17px; letter-spacing: .02em; flex: none;
   box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--brand) 70%, transparent);
 }
-.gate h1 { font-size: 22px; letter-spacing: -.01em; margin-bottom: 5px; }
-.gate .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; line-height: 1.5; }
+.gate h1 { font-size: 27px; letter-spacing: -.012em; margin-bottom: 6px; }
+.gate .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.55; }
 /* Sits under the card rather than inside it: true, quiet, and not something
    anyone needs to read before typing. */
 .gate-foot {
@@ -399,6 +439,40 @@ button { font-family: inherit; }
 .stage-inner {
   position: relative; height: 100%; display: flex; flex-direction: column;
   justify-content: center; gap: 30px; padding: 56px 60px;
+}
+/* A laptop is about 600–660 CSS px tall once the browser's own chrome is
+   taken out, and this stage was built at a size that needs ~730. Measured at
+   1366x640: scrollHeight 724 against clientHeight 640, so the page scrolled
+   and the mock card's chip row was cut in half at the bottom fold — on the
+   screen whose entire job is the first impression.
+
+   That overflow is also what parks the document on the scrollbar boundary,
+   which is the flicker above. Fixing the size fixes both, so this is not
+   only a tidy-up. */
+@media (min-width: 1024px) and (max-height: 780px) {
+  .stage-inner { gap: 20px; padding: 36px 48px; }
+  .stage-line { font-size: clamp(30px, 2.6vw, 40px); }
+  .stage-sub { font-size: 14px; margin-top: -10px; }
+}
+/* The card side needs the same treatment, and it needs it at every width —
+   the stage is hidden below 1024 but the card is always there. Enlarging its
+   type (which is what "the fonts are really tiny" asked for) made it 10px
+   too tall for a 600px viewport, so the two changes have to travel together
+   or the fix for one is a defect in the other. */
+@media (max-height: 700px) {
+  .gate-pane { padding: 14px; }
+  .gate-card { padding: 24px 28px 22px; }
+  .gate .sub { margin-bottom: 18px; }
+  .gate-card input, .gate-card select { padding: 11px 14px; }
+  .gate-card .btn.wide { padding: 12px; }
+  .gate-foot { margin-top: 14px; }
+}
+@media (min-width: 1024px) and (max-height: 660px) {
+  .stage-inner { gap: 16px; padding: 28px 44px; }
+  .stage-line { font-size: clamp(27px, 2.2vw, 34px); }
+  /* Below this the sub is the first thing worth losing: the headline and the
+     playing card both carry the message, and the card is the proof. */
+  .stage-sub { display: none; }
 }
 /* Set in the display serif at weight 500, matching the public page. Playfair
    carries its character in the hairlines, so it is never bolded — and the
