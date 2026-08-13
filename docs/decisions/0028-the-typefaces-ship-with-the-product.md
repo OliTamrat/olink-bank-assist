@@ -189,10 +189,20 @@ saving this arranges. It now lays out a probe carrying both scripts, styled by
 the real stack, and awaits `document.fonts.ready`: whatever the stack actually
 resolves to is what loads, and a system font resolves immediately.
 
-**Known and unresolved:** the Ge'ez headline weight is `600`. Nyala ships only
-Regular and Bold, so on Windows `600` selects **Bold**. If the Amharic hero
-still reads heavy, `500` is the one-line change that picks Regular — it cannot
-be judged from this sandbox, which has no copy of Nyala.
+**The Ge'ez headline weight is `600`, and that is settled** — confirmed on a
+Windows machine by the founder, 2026-08-13, after the change went live.
+
+Worth knowing before anybody adjusts it: **on Nyala this value is binary.**
+Nyala ships only Regular and Bold, so CSS font-matching resolves `600` up to
+**Bold** and `500` down to **Regular** — there is no 500 or 600 in the file
+and nothing lands in between. The choice was Bold, because the English hero is
+Inter at a true 700 and a Regular-weight Amharic beside it would carry
+visibly less presence on a screen whose whole job is to make six languages
+look like one product.
+
+It is **not** binary everywhere: on macOS and Android, where Ge'ez resolves to
+a variable Noto Sans Ethiopic, 500 and 600 are genuinely different weights. So
+a "small" tweak here is one thing on Windows and another elsewhere.
 
 ## References
 
