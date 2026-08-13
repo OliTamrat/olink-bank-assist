@@ -2029,6 +2029,16 @@ td.title { color: var(--ink); font-weight: 550; }
         </div>
       </div>
       <button class="btn wide" id="signin-btn">Sign in</button>
+      <!-- The break-glass route has to be reachable from the FIRST screen.
+           It was only offered inside the MFA step, which you reach by
+           signing in with an email and password — so the credential that
+           exists for when you cannot sign in was behind the door it opens.
+           Somebody who holds the bank's token and not a user account had no
+           way in at all, which is how a routine token login stopped working
+           without anything being removed. -->
+      <div style="margin-top:14px;text-align:center">
+        <button class="linky" id="to-token-pw">Use an admin token instead</button>
+      </div>
     </div>
 
     <div id="mfa-mode" class="hidden">
@@ -2585,6 +2595,13 @@ function paintGateCopy() {
   $("password-label").textContent = A("password_label", "Password");
   $("caps-text").textContent = A("caps_lock_on", "Caps Lock is on");
   $("token-label").textContent = A("admin_token", "Admin token");
+  // Both of these were hardcoded English on a screen that ships in six
+  // languages — the gate is the one page every reader sees before they can
+  // pick a language, so an untranslated string here is the most visible
+  // kind there is.
+  $("to-token-pw").textContent = A("use_admin_token", "Use an admin token instead");
+  $("to-token").textContent = A("use_admin_token", "Use an admin token instead");
+  $("to-pw").textContent = A("sign_in_with_email", "Sign in with email instead");
   $("mfa-label").textContent = A("mfa_code_label", "Authentication code");
   $("mfa-btn").textContent = A("verify", "Verify");
   $("signin-btn").textContent = A("sign_in", "Sign in");
@@ -7524,13 +7541,35 @@ function startMfaEnrolment() {
       '<div class="field"><label>' + esc(A("two_factor_uri")) + "</label>" +
       '<input readonly value="' + esc(enrol.uri) + '" onclick="this.select()"></div>' +
       '<div class="field"><label>' + esc(A("mfa_code_label")) + "</label>" +
-      '<input id="mfa-first" inputmode="numeric" autocomplete="one-time-code" placeholder="000000"></div>' +
+      // `name` and the off-switches matter as much as the type here: this
+      // panel renders directly under the change-password form, and Chromium
+      // will happily drop a saved password into an unnamed text input that
+      // it decides belongs to the same credential group.
+      '<input id="mfa-first" name="totp" inputmode="numeric" maxlength="7" ' +
+      'autocomplete="one-time-code" autocorrect="off" autocapitalize="off" ' +
+      'spellcheck="false" placeholder="000000"></div>' +
       '<div class="rowacts"><button class="btn ghost sm" id="mfa-cancel">' + esc(A("cancel")) + "</button>" +
       '<button class="btn sm" id="mfa-confirm">' + esc(A("two_factor_activate")) + "</button></div>";
     $("mfa-cancel").onclick = loadMfa;
     $("mfa-confirm").onclick = function () {
+      // Strip ALL whitespace, not just the ends. Every authenticator app
+      // prints the code as "123 456" for readability, so a pasted code
+      // carries a space in the middle and `.trim()` leaves it there.
+      var code = $("mfa-first").value.replace(/\s+/g, "");
+      // …and say WHICH thing is wrong before asking the server. Sending an
+      // obviously-invalid value and rendering the server's generic "that
+      // code was not accepted" is how a field that a browser autofilled
+      // with a saved password reads as "two-factor is broken" rather than
+      // "that is not a code". This screen sits under a password form, which
+      // is exactly where autofill goes looking.
+      if (!/^\d{6}$/.test(code)) {
+        setStatus(A("mfa_code_digits", "Enter the 6-digit code from your authenticator app."), "error");
+        $("mfa-first").focus();
+        $("mfa-first").select();
+        return;
+      }
       api("/mfa/activate", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: $("mfa-first").value.trim() }) })
+        body: JSON.stringify({ code: code }) })
         .then(showRecoveryCodes)
         .catch(function (e) { setStatus(e.message, "error"); });
     };
@@ -7726,8 +7765,20 @@ $("mfa-code").addEventListener("keydown", function (e) {
 });
 $("token-btn").onclick = signInWithToken;
 $("signout").onclick = signOut;
-$("to-token").onclick = function () { $("pw-mode").classList.add("hidden"); $("token-mode").classList.remove("hidden"); gateError(""); };
-$("to-pw").onclick = function () { $("token-mode").classList.add("hidden"); $("pw-mode").classList.remove("hidden"); gateError(""); };
+/* Exactly one gate panel at a time. The old pair of handlers each toggled
+   two specific panels, which was correct from the password step and wrong
+   from the MFA step: "use an admin token" there revealed the token panel
+   without hiding the MFA one, so the card showed both. Naming the mode you
+   want, rather than the panels you are flipping, cannot express that state. */
+function gateMode(name) {
+  ["pw-mode", "mfa-mode", "token-mode"].forEach(function (id) {
+    $(id).classList.toggle("hidden", id !== name);
+  });
+  gateError("");
+}
+$("to-token-pw").onclick = function () { gateMode("token-mode"); $("token").focus(); };
+$("to-token").onclick = function () { gateMode("token-mode"); $("token").focus(); };
+$("to-pw").onclick = function () { gateMode("pw-mode"); };
 $("slug").onchange = function () { applyBrand($("slug").value.trim()); };
 ["password", "email"].forEach(function (id) {
   $(id).onkeydown = function (e) { if (e.key === "Enter") signInWithPassword(); };
