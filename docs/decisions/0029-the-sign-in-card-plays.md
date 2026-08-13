@@ -92,9 +92,16 @@ is there to say.
   script each fail a test.
 - The pill row is generated from `LANGS`, so a seventh language cannot ship in
   the product and be missing from the screen that advertises them.
-- **The om/ti/so headlines are my composition, not a native speaker's.** They
-  are unambiguously better than a door, and they are on the list for the
-  linguist review that is already pending.
+- **Amharic and Afaan Oromoo are confirmed; Tigrinya and Somali are not.**
+  The founder — a native speaker of both — read the replacement headlines and
+  confirmed them (2026-08-13). That closes the two that matter most for the
+  pilot, and it is worth recording *which* two, because "the founder approved
+  the headline change" would quietly imply four.
+
+  `ti` (**ባንክኹም ንዓማዊሉ ብቋንቋኦም ይቀበሎም።**) and `so` (**Bangigaagu macaamiishiisa
+  ha ku soo dhaweeyo luqaddooda.**) are still my composition. They are
+  unambiguously better than a door, and they stay on the pending linguist
+  review — the same status the rest of the OM/TI/SO/SW tables carry.
 
 ## References
 

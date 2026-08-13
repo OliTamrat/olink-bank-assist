@@ -633,6 +633,12 @@ and the founder was right that it read as nonsense. Each language now says the
 same thing its own way. `tests/test_sign_in_mock.py` fails if the doors come
 back.
 
+**Confirmed: `am` and `om` only** — read and approved by the founder, a native
+speaker of both, on 2026-08-13. **`ti` and `so` are still uncomposed by a
+native speaker** and stay on the pending linguist review with the rest of the
+OM/TI/SO/SW tables. Do not upgrade that to "the headlines were approved" — two
+of the four were.
+
 ### Deployment
 
 `.github/workflows/deploy.yml`, triggered by `workflow_run` off CI on `main`
