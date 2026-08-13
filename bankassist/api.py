@@ -634,6 +634,11 @@ _FONTS = {
     "inter-latin.woff2",
     "inter-latin-ext.woff2",
     "noto-sans-ethiopic.woff2",
+    # Display serif, public page only. The admin panel and the widget never
+    # ask for it, so nobody who is working pays for it — it loads on the one
+    # surface whose job is to look like something.
+    "playfair-latin.woff2",
+    "playfair-latin-ext.woff2",
 }
 
 
@@ -664,6 +669,24 @@ def font_file(name: str) -> FileResponse:
         media_type="font/woff2",
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+@app.get("/")
+def marketing_site() -> FileResponse:
+    """The public page. Served from this app rather than a separate host,
+    because the thing that sells this product is the product, and the demo on
+    the page is a real `/widget?bank=demo` against a real knowledge base.
+
+    Split across two origins it would be an iframe from somewhere else — a
+    third-party frame on a marketing site, blocked by exactly the kind of
+    corporate proxy a bank's staff sit behind. Same origin, one deploy, and
+    the demo cannot silently drift from the product it is demonstrating.
+
+    `no-store` like the other pages: the copy changes often enough that a
+    cached one is a stale claim, and there is nothing here worth a round trip
+    to avoid.
+    """
+    return FileResponse(_STATIC / "site.html", media_type="text/html", headers=_NO_STORE)
 
 
 @app.get("/widget")
