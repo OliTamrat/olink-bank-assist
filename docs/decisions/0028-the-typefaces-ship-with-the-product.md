@@ -204,6 +204,38 @@ It is **not** binary everywhere: on macOS and Android, where Ge'ez resolves to
 a variable Noto Sans Ethiopic, 500 and 600 are genuinely different weights. So
 a "small" tweak here is one thing on Windows and another elsewhere.
 
+## Ge'ez is not given the Latin display size either (2026-08-13)
+
+The family, the tracking, the leading and the weight were all switched for
+Ethiopic, and the marketing page's headline still did not match the panel's.
+The remaining variable was **size**.
+
+A Ge'ez syllable fills its em box. Latin lowercase fills about half of it. So
+two scripts set at the same px do not read as the same size — the Ge'ez reads
+a third larger, which is what "that Ge'ez font looks different" turns out to
+mean once the family is already identical. The public page's headline rides to
+**68px** for Playfair; the sign-in card's approved maximum is **50px**. The
+same face was therefore doing visibly different things on the two surfaces,
+and no amount of correcting the family would have closed it.
+
+`h1.display:lang(am|ti)` (and the descendant form, for the same reason the
+family rule needs it) now caps Ge'ez at the panel's 50px while the surrounding
+Latin keeps its own. `tests/test_marketing_site.py` asserts the Ge'ez cap is
+below the Latin one rather than asserting the exact clamp, so the curve can be
+tuned without the guard going stale.
+
+**And the three stacks are now tied together.** `site.html` was absent from
+`PAGES` in `tests/test_fonts.py` — every rule in that file, Latin-first
+through no-CDN, had only ever been applied to the panel and the widget. The
+one surface a prospect sees first was the only one free to drift, which is a
+fair part of why this question kept coming back. The public page is in the
+tuple, the body stack is resolved through `var(--sans)` rather than exempted,
+and `test_every_page_asks_for_the_same_geez_font` asserts all three name the
+same Ethiopic faces in the same order. The Latin tail is deliberately not
+compared: the widget ends `-apple-system, BlinkMacSystemFont, …` because it
+runs inside a bank's own page on a customer's phone.
+
+
 ## References
 
 - `bankassist/static/fonts/` (files + OFL licences); the `/fonts/{name}` route

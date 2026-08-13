@@ -155,24 +155,95 @@ def test_geez_never_gets_set_in_the_display_serif() -> None:
     serif falls through to a system face while keeping the serif's tracking
     and leading. It has to switch families, not just relax the spacing.
     """
-    rule = re.search(r"\.display:lang\(am\)[^{]*\{([^}]*)\}", SITE, re.S)
+    # Comments in this file discuss the selector by name, so strip them first
+    # — otherwise the regex matches the prose and asserts against the wrong
+    # block, which is its own way of passing while testing nothing.
+    css = re.sub(r"/\*.*?\*/", "", SITE, flags=re.S)
+
+    rule = re.search(r"\.display:lang\(am\)[^{]*\{([^}]*)\}", css, re.S)
     assert rule, "no Ge'ez rule on the display face"
     body = rule.group(1)
     assert "var(--sans)" in body, "Ge'ez is still being set in the display serif"
     assert "letter-spacing: normal" in body, "Ge'ez is tracked like Latin"
     assert re.search(r"line-height: 1\.[23]", body), "Ge'ez leading is Latin's"
 
+    # …and it must reach DESCENDANTS. The headline's morphing line is a span
+    # inside the heading carrying its own `lang`, so the element-only form
+    # never matched it and the Amharic and Tigrinya lines rendered in
+    # Playfair — which has no Ethiopic at all. The rule looked correct in the
+    # markup, which is why only a computed style in a real browser found it.
+    for descendant in (".display :lang(am)", ".display :lang(ti)"):
+        assert descendant in css, (
+            f"the Ge'ez rule is missing `{descendant}` — a nested element with "
+            "its own lang will render Ge'ez in the display serif"
+        )
 
-def test_the_serif_is_the_public_page_only() -> None:
-    """It is the page's whole voice, and it is 38 KB nobody working should pay.
 
-    The admin panel and the widget are tools people use all day; the serif is
-    for the one surface whose job is to look like something.
+def test_geez_is_not_given_the_latin_headline_size() -> None:
+    """Same face as the panel, and now the same scale relationship too.
+
+    Switching family, tracking and leading was not the whole of it. A Ge'ez
+    syllable fills its em box where Latin lowercase fills about half of it, so
+    the two scripts set at one px never look like one size. The headline rides
+    to 68px for Playfair, which meant the Amharic and Tigrinya lines rendered a
+    third larger than the 50px the sign-in card was approved at — the same
+    typeface, visibly not doing the same thing on the two surfaces.
+
+    The cap is asserted rather than the exact clamp so the curve can be tuned;
+    what must not come back is Ge'ez inheriting the Latin maximum.
+    """
+    css = re.sub(r"/\*.*?\*/", "", SITE, flags=re.S)
+
+    def cap(selector: str) -> float:
+        rule = re.search(rf"{re.escape(selector)}[^{{]*\{{([^}}]*)\}}", css, re.S)
+        assert rule, f"no rule for {selector}"
+        size = re.search(r"font-size:\s*clamp\([^)]*?,\s*([\d.]+)px\s*\)", rule.group(1))
+        assert size, f"{selector} does not cap its font size with a clamp"
+        return float(size.group(1))
+
+    latin_h1 = cap("h1.display {")
+    geez_h1 = cap("h1.display:lang(am)")
+    assert geez_h1 < latin_h1, (
+        f"Ge'ez h1 is capped at {geez_h1}px against Latin's {latin_h1}px — it is "
+        "taking the Latin display size and will read a third too large"
+    )
+    assert geez_h1 <= 50, (
+        f"Ge'ez h1 caps at {geez_h1}px; the sign-in card's approved maximum is 50px"
+    )
+    # …and it must reach the nested span, for exactly the reason the family
+    # rule above does: the morphing line carries its own `lang`.
+    assert "h1.display :lang(am)" in css, (
+        "the Ge'ez size cap is missing its descendant form — the morphing "
+        "headline line is a span inside the heading and would keep 68px"
+    )
+
+
+def test_the_serif_reaches_the_selling_surfaces_and_stops() -> None:
+    """It goes as far as the sign-in screen, and no further.
+
+    The gate is the first thing anybody sees and the only part of the admin
+    panel doing a selling job, so it shares the public page's voice. The
+    dashboard behind it does not — a serif on a table of conversation counts
+    is costume.
+
+    **The widget must never load it.** That runs on customers' phones on
+    Ethiopian mobile connections, where 38 KB is a real cost and a display
+    serif has no job at all. This is the line that matters, and it is the one
+    a future "make it all consistent" pass would cross.
     """
     assert "playfair" in SITE.lower(), "the display serif is gone from the public page"
-    for other in ("admin.html", "widget.html"):
-        text = (STATIC / other).read_text(encoding="utf-8")
-        assert "playfair" not in text.lower(), f"{other} now loads the marketing serif"
+
+    admin = (STATIC / "admin.html").read_text(encoding="utf-8")
+    assert "playfair" in admin.lower(), "the sign-in screen lost the display serif"
+    # …and only the gate uses it. If the dashboard's own type started asking
+    # for the serif, this catches it.
+    assert "stage-line" in admin, "the gate headline rule is gone"
+
+    widget = (STATIC / "widget.html").read_text(encoding="utf-8")
+    assert "playfair" not in widget.lower(), (
+        "the widget now loads the marketing serif — 38 KB onto a customer's "
+        "phone for type that surface never sets"
+    )
 
 
 def test_every_nav_target_exists() -> None:
@@ -181,3 +252,43 @@ def test_every_nav_target_exists() -> None:
     ids = set(re.findall(r'id="([^"]+)"', SITE))
     for href in re.findall(r'href="#([^"]+)"', SITE):
         assert href in ids, f"nav links to #{href}, which does not exist"
+
+
+def test_the_page_opts_out_of_mobile_font_boosting() -> None:
+    """Mobile browsers inflate small text on pages they judge desktop-width,
+    per block and by different amounts.
+
+    Measured on a 390px viewport before this was set: the 10.5px micro-labels
+    rendered at **15px** while the 17px lede stayed 17px. That is not "text a
+    bit large on mobile" — it is the type hierarchy rearranged by the browser,
+    and it was also what pushed a section label past its own column.
+
+    Safe to opt out of only because the layout is genuinely responsive and
+    every size is chosen; nothing here leans on the boost for legibility.
+    """
+    assert re.search(r"text-size-adjust:\s*100%", SITE), (
+        "the page no longer opts out of mobile font boosting — small text will "
+        "be inflated inconsistently and the type hierarchy will not survive"
+    )
+
+
+def test_phone_inputs_cannot_trigger_ios_zoom() -> None:
+    """iOS Safari zooms any focused input under 16px, which widens the layout
+    viewport and breaks the whole page rather than just the field.
+
+    The widget has followed this since it shipped; the sign-in screen had
+    never been held to it, and tapping the email box is the first thing a
+    phone user does there.
+    """
+    for page in ("admin.html", "widget.html"):
+        text = (STATIC / page).read_text(encoding="utf-8")
+        sizes = [
+            float(m)
+            for m in re.findall(
+                r"input[^{}]*\{[^{}]*font-size:\s*([\d.]+)px", text, re.S
+            )
+        ]
+        assert sizes, f"{page} sets no input font-size at all"
+        assert max(sizes) >= 16, (
+            f"{page} has no 16px-or-larger input rule — iOS will zoom on focus"
+        )

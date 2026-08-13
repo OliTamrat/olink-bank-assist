@@ -693,6 +693,24 @@ weights — so a "small" tweak is not the same change on both. This bites at *di
 only: the widget's `-.01em` at 15px is 0.15 of a pixel and was deliberately
 left alone.
 
+**Size is the fourth variable, and it was the last one found.** A Ge'ez
+syllable fills its em box where Latin lowercase fills about half of it, so the
+two scripts at the same px do not read as the same size — Ge'ez reads about a
+third larger. The public page's headline rides to 68px for Playfair, so its
+Amharic and Tigrinya lines towered over the 50px the sign-in card was approved
+at, in **the same face**. That is what "the Ge'ez font looks different" means
+once the family is already identical, and no correction to the family could
+have closed it. `h1.display:lang(am|ti)` caps Ge'ez at the panel's 50px while
+the surrounding Latin keeps its own.
+
+**All three pages are held to one Ge'ez stack.** `site.html` had never been in
+`PAGES` in `tests/test_fonts.py`, so the surface a prospect sees first was the
+only one free to drift — which is a fair part of why this question kept coming
+back. It is in the tuple now (its `var(--sans)` indirection is resolved, not
+exempted), and `test_every_page_asks_for_the_same_geez_font` asserts the three
+name the same Ethiopic faces in the same order. The Latin tail is not compared:
+the widget's `-apple-system, BlinkMacSystemFont, …` is a different problem.
+
 ### The sign-in card plays (ADR-0029)
 
 The mock on the gate is not a still. It asks **one** customer question and

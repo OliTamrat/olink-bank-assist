@@ -12,6 +12,8 @@
      `crossorigin` is required on font preloads even same-origin — without it
      the browser fetches the file twice. -->
 <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-latin.woff2" crossorigin>
+<!-- The gate headline is set in this, and the gate is the first paint. -->
+<link rel="preload" as="font" type="font/woff2" href="/fonts/playfair-latin.woff2" crossorigin>
 <style>
 /* ---------------------------------------------------------------- tokens
    The brand hue is the tenant's own primary_color, injected at runtime from
@@ -200,6 +202,23 @@
   unicode-range: U+030E,U+1200-1399,U+2D80-2DDE,U+AB01-AB2E,U+1E7E0-1E7E6,
                  U+1E7E8-1E7EB,U+1E7ED-1E7EE,U+1E7F0-1E7FE;
 }
+/* The display serif, and it reaches EXACTLY as far as the sign-in screen.
+
+   The gate is the first thing anybody sees and the only part of this panel
+   doing a selling job, so it shares the public page's voice. The dashboard
+   behind it does not: a serif on a table of conversation counts is costume.
+
+   The widget still never loads it. That runs on customers' phones on
+   Ethiopian mobile connections, where 38 KB is a real cost and a display
+   serif has no job at all. A test holds that line. */
+@font-face {
+  font-family: "Playfair Display Variable"; font-style: normal;
+  font-weight: 400 900; font-display: swap;
+  src: url("/fonts/playfair-latin.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,
+                 U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,
+                 U+2212,U+2215,U+FEFF,U+FFFD;
+}
 * { box-sizing: border-box; margin: 0; }
 body {
   font-family:
@@ -245,16 +264,36 @@ button { font-family: inherit; }
     var(--bg);
 }
 .gate-card {
+  position: relative; overflow: hidden;
   width: 100%; max-width: 420px; background: var(--surface);
   border: 1px solid var(--line); border-radius: 22px; padding: 32px 32px 28px;
   box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .25);
 }
+/* One lit corner, the same treatment every card on the public page gets. It
+   is what stops a flat panel reading as a rectangle and starts it reading as
+   a surface with light falling across it — in the tenant's own colour, so it
+   costs nothing to the white-label rule. */
+.gate-card::before {
+  content: ""; position: absolute; width: 220px; height: 220px; border-radius: 50%;
+  right: -80px; top: -110px; filter: blur(60px); pointer-events: none;
+  background: var(--brand); opacity: .16;
+}
+.gate-card > * { position: relative; z-index: 1; }
 /* Generous fields and a pill button carrying the tenant's own light. The
    previous card was correct and weightless; this is the half of the brief
    that fixes "dull" without inventing a second brand colour. */
 .gate-card input, .gate-card select {
   padding: 13px 15px; border-radius: 12px; font-size: 14.5px;
   background: var(--surface-2);
+}
+/* 16px MINIMUM on a phone. iOS Safari zooms any focused input below that,
+   which widens the layout viewport and breaks the whole page rather than
+   just the field — the rule the widget has followed since it shipped, and
+   which the sign-in screen had never been held to. It is the first thing a
+   phone user does here: tap the email box. */
+@media (max-width: 640px) {
+  .gate-card input, .gate-card select { font-size: 16px; }
+  .gate-card { padding: 26px 22px 24px; }
 }
 .gate-card .btn.wide {
   padding: 14px; border-radius: 999px; font-size: 15px; font-weight: 600;
@@ -361,11 +400,33 @@ button { font-family: inherit; }
   position: relative; height: 100%; display: flex; flex-direction: column;
   justify-content: center; gap: 30px; padding: 56px 60px;
 }
+/* Set in the display serif at weight 500, matching the public page. Playfair
+   carries its character in the hairlines, so it is never bolded — and the
+   tracking that suits a 700-weight sans is wrong for it too: a high-contrast
+   serif at 48px needs its own air, not -.025em. */
 .stage-line {
-  font-size: clamp(32px, 3vw, 46px); line-height: 1.1; letter-spacing: -.025em;
-  font-weight: 700; color: #fff; max-width: 19ch;
+  font-family: "Playfair Display Variable", "Iowan Old Style", Georgia, serif;
+  font-size: clamp(34px, 3.2vw, 50px); line-height: 1.1; letter-spacing: -.012em;
+  font-weight: 500; color: #fff; max-width: 17ch;
   text-shadow: 0 2px 30px rgba(0, 0, 0, .45);
 }
+/* Grain and a vignette, the same two layers the public page uses. The grain
+   is not only texture: a large dark area with a soft gradient across it bands
+   visibly in 8-bit colour, and a little noise dithers that away. Inline SVG
+   turbulence — no request, no library. The vignette pulls the eye off the
+   edges and onto the headline. */
+.gate-stage::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  opacity: .05; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.gate-stage::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: radial-gradient(ellipse 76% 64% at 42% 40%,
+              transparent 44%, rgba(0, 0, 0, .5) 100%);
+}
+/* …and the stage content sits above both. */
+.stage-inner { z-index: 2; }
 /* Ge'ez is not Latin and must not be set like it. Three values above are
    tuned for Inter at display size and all three are wrong for Ethiopic:
 
@@ -379,10 +440,17 @@ button { font-family: inherit; }
      weight difference is invisible next to the Latin because the script is
      denser to begin with.
 
+   And now a fourth, which only appeared once the headline moved into the
+   display serif: PLAYFAIR HAS NO ETHIOPIC. A Ge'ez headline in it falls
+   through to a system face while keeping the serif's tracking and leading,
+   so this has to switch FAMILY as well as spacing — exactly as the public
+   page does.
+
    Scoped by `:lang()`, so it follows the text rather than the panel — the
    mock card cycles languages independently of the interface. Both the
    headline and the card set `lang` from JS for exactly this reason. */
 .stage-line:lang(am), .stage-line:lang(ti) {
+  font-family: inherit;
   letter-spacing: normal; line-height: 1.28; font-weight: 600;
 }
 .gate h1:lang(am), .gate h1:lang(ti) { letter-spacing: normal; }

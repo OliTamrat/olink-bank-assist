@@ -112,7 +112,28 @@
            "Times New Roman", serif;
 }
 * { box-sizing: border-box; margin: 0; }
-html { scroll-behavior: smooth; }
+/* The browser's own rule is `[hidden] { display: none }` at specificity
+   (0,1,0), so ANY class that sets `display` outranks it — and `.btn` sets
+   `inline-flex`, which is exactly how the footer's unconfigured call to
+   action stayed on screen after JS hid it. Same defect as the widget's
+   thinking dots. `hidden` has one meaning and no stylesheet gets a vote. */
+[hidden] { display: none !important; }
+html {
+  scroll-behavior: smooth;
+  /* THE reason mobile did not match desktop. Mobile browsers "boost" small
+     text on pages they judge to be desktop-width, and they do it PER BLOCK
+     and by different amounts — so the 10.5px micro-labels were rendering at
+     15px while the 17px lede stayed 17px. That is not a page with slightly
+     large text; it is a page whose type hierarchy has been rearranged by the
+     browser, which is exactly what "doesn't look as good as the web version"
+     looks like. The inflated micro-label was also what overflowed its column.
+
+     Opting out is safe here because the layout is genuinely responsive and
+     nothing relies on the boost for legibility — every size below is chosen,
+     and the contrast ramp is measured. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
   font-family: var(--sans);
@@ -131,11 +152,31 @@ a { color: inherit; }
 }
 /* Ge'ez is never set in the serif — Playfair has no Ethiopic, and the
    fallback would be a system face wearing the serif's tracking and leading.
-   Same rule as the panel: normal tracking, more leading. */
-.display:lang(am), .display:lang(ti) {
+   Same rule as the panel: normal tracking, more leading.
+
+   THE DESCENDANT SELECTOR IS NOT OPTIONAL. `:lang()` matches the element
+   whose language it is, and the headline's morphing line is a SPAN inside
+   the `.display` heading with its own `lang` — so `.display:lang(am)` alone
+   never matched it and the Amharic and Tigrinya lines rendered in Playfair,
+   which has no Ethiopic at all. Caught by reading computed styles in a
+   browser; invisible in the markup, because the rule was right there and
+   looked like it applied. */
+.display:lang(am), .display:lang(ti),
+.display :lang(am), .display :lang(ti) {
   font-family: var(--sans); font-weight: 600;
-  letter-spacing: normal; line-height: 1.3;
+  letter-spacing: normal; line-height: 1.28;
 }
+/* …and Ge'ez does not take the same PX as Latin either.
+   A Ge'ez syllable fills its em box; Latin lowercase fills about half of it,
+   which is why the two scripts set at one size never look like one size. The
+   headline rode to 68px, so the Amharic and Tigrinya lines rendered a third
+   larger than the 50px the sign-in card was approved at — the same face,
+   doing something visibly different from what it does in the panel. This is
+   the dashboard's cap, and the surrounding Latin keeps its own. */
+h1.display:lang(am), h1.display:lang(ti),
+h1.display :lang(am), h1.display :lang(ti) { font-size: clamp(32px, 3.4vw, 50px); }
+h2.display:lang(am), h2.display:lang(ti),
+h2.display :lang(am), h2.display :lang(ti) { font-size: clamp(26px, 2.9vw, 42px); }
 /* Capped at 68px, not 82. At 82 the three lines filled a 900px viewport on
    their own and pushed the live demo — the thing the headline is promising —
    entirely below the fold. The drama is in the face, not the size. */
@@ -158,6 +199,19 @@ h2.display { font-size: clamp(30px, 4.1vw, 54px); }
 section { position: relative; padding: 128px 0; }
 section + section { border-top: 1px solid var(--line); }
 @media (max-width: 760px) { section { padding: 82px 0; } }
+/* ============================================================== reveal
+   Sections rise a little as they enter. Applied by JS adding `.reveal`, so a
+   browser that never runs the script shows everything — the content is never
+   hidden by CSS alone, which is how scroll animations turn into blank pages.
+   Also why the transition is on `.reveal` and not on the element itself. */
+.reveal { opacity: 0; transform: translateY(18px); }
+.reveal.in {
+  opacity: 1; transform: none;
+  transition: opacity .7s cubic-bezier(.22,.61,.36,1), transform .7s cubic-bezier(.22,.61,.36,1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .reveal.in { opacity: 1; transform: none; transition: none; }
+}
 .center { text-align: center; }
 .center .lede { margin-left: auto; margin-right: auto; }
 /* A centred display line set across the full 1180px reads as a banner rather
@@ -184,12 +238,21 @@ section + section { border-top: 1px solid var(--line); }
 .wrap { position: relative; z-index: 1; }
 
 /* ================================================================== nav */
+/* Transparent over the hero, and it materialises once you leave it. A bar
+   that is already opaque at scroll-0 puts a hard horizontal line across the
+   top of the composition and costs the hero its full height for nothing. */
 .nav {
   position: sticky; top: 0; z-index: 60; height: 64px;
+  background: transparent; border-bottom: 1px solid transparent;
+  transition: background .28s ease, border-color .28s ease,
+              backdrop-filter .28s ease;
+}
+.nav.stuck {
   background: color-mix(in srgb, var(--bg) 78%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%);
-  border-bottom: 1px solid var(--line);
+  border-bottom-color: var(--line);
 }
+@media (prefers-reduced-motion: reduce) { .nav { transition: none; } }
 .nav .wrap { display: flex; align-items: center; height: 100%; gap: 18px; }
 .brand {
   display: flex; align-items: center; gap: 9px; text-decoration: none;
@@ -201,13 +264,34 @@ section + section { border-top: 1px solid var(--line); }
   display: grid; place-items: center; color: #04211d; font-size: 11px; font-weight: 800;
 }
 .nav .links { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+/* Scroll-spy. The pill is a single element that slides between the links
+   rather than a class toggled on each one — one moving object reads as
+   deliberate where six fading backgrounds read as flicker. Sits behind the
+   links, positioned from JS. */
+.nav .links { position: relative; }
+.nav .pipe {
+  position: absolute; z-index: 0; top: 50%; left: 0; height: 32px; width: 0;
+  transform: translateY(-50%); border-radius: 999px; opacity: 0;
+  background: var(--card-2); border: 1px solid var(--line);
+  transition: transform .34s cubic-bezier(.22,.61,.36,1), width .34s cubic-bezier(.22,.61,.36,1),
+              opacity .24s ease;
+}
+@media (prefers-reduced-motion: reduce) { .nav .pipe { transition: opacity .2s ease; } }
 .nav .links a {
+  position: relative; z-index: 1;
   font-size: 13.5px; color: var(--muted); text-decoration: none;
-  padding: 8px 13px; border-radius: 8px; white-space: nowrap; transition: color .18s;
+  padding: 8px 13px; border-radius: 8px; white-space: nowrap; transition: color .22s;
 }
 .nav .links a:hover { color: var(--ink); }
+.nav .links a.here { color: var(--ink); }
 @media (max-width: 900px) { .nav .links a.sm-hide { display: none; } }
-@media (max-width: 430px) { .brand .wm { display: none; } .nav .wrap { gap: 10px; padding: 0 16px; } }
+/* Scoped to the NAV. The footer uses the same `.brand` component and has a
+   whole column to itself, so hiding the wordmark there left a lone 25px mark
+   floating above the description with nothing naming the product. */
+@media (max-width: 430px) {
+  .nav .brand .wm { display: none; }
+  .nav .wrap { gap: 10px; padding: 0 16px; }
+}
 
 /* =============================================================== buttons */
 .btn {
@@ -231,7 +315,41 @@ section + section { border-top: 1px solid var(--line); }
 /* `text-align: center` centres the TEXT inside each block; it does not
    centre the blocks. The lede and the button row both sat left of the
    headline until they were given auto margins of their own. */
+/* ============================================================== texture
+   The blooms alone left the hero reading as flat colour. Three cheap layers
+   fix that, and none of them is decoration for its own sake:
+
+   GRAIN. Every reference in this genre has film grain, and it is why their
+   gradients look photographic rather than like a CSS gradient. It also does
+   real work: 8-bit gradients across a large dark area band visibly, and a
+   little noise dithers the banding away. One inline SVG turbulence, fixed to
+   the viewport, pointer-events none — no request, no library.
+
+   VIGNETTE. Darkens the corners so the eye lands on the headline instead of
+   wandering to the edges of a very wide dark rectangle.
+
+   SPOTLIGHT. A soft pool of brand light sitting directly behind the display
+   type, which is what makes the headline feel lit rather than pasted on. */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 200; pointer-events: none;
+  opacity: .045; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) { body::after { opacity: .03; } }
+
 .hero { padding: 92px 0 104px; text-align: center; }
+.hero::after {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(ellipse 78% 62% at 50% 34%,
+              transparent 42%, rgba(0,0,0,.6) 100%);
+}
+.hero .wrap::before {
+  content: ""; position: absolute; left: 50%; top: 34px; z-index: -1;
+  width: min(980px, 96vw); height: 380px; transform: translateX(-50%);
+  border-radius: 50%; pointer-events: none; filter: blur(30px);
+  background: radial-gradient(closest-side,
+              color-mix(in srgb, var(--brand) 20%, transparent), transparent 72%);
+}
 .hero .lede { margin-left: auto; margin-right: auto; }
 .hero .cta-row { justify-content: center; }
 .pill {
@@ -244,17 +362,78 @@ section + section { border-top: 1px solid var(--line); }
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 20%, transparent);
 }
 .hero h1 { max-width: 15ch; margin: 0 auto; }
+
+/* ------------------------------------------------------- the morph line
+   Its own block so the swap recentres instead of reflowing the sentence
+   above it, and a min-height so a short language (Luqaddooda) and a long one
+   (Afaan isaaniitiin) do not bounce the page. */
+.morph-line {
+  display: block; min-height: 1.1em; margin-top: .06em;
+}
+.morph {
+  display: inline-block;
+  transition: opacity .32s ease, transform .32s cubic-bezier(.22,.61,.36,1),
+              filter .32s ease;
+}
+.morph.out { opacity: 0; transform: translateY(-14px); filter: blur(6px); }
+.morph em { font-style: italic; color: var(--brand); }
+/* Ge'ez never in the serif — Playfair has no Ethiopic. `lang` is set on the
+   span as it changes, so `.display:lang()` above catches it. */
+
+.langpicker {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 7px;
+  margin-top: 26px;
+}
+.langpicker button {
+  font-family: var(--sans); font-size: 12px; cursor: pointer;
+  padding: 7px 13px; border-radius: 999px; color: var(--muted);
+  background: transparent; border: 1px solid transparent;
+  transition: color .2s, background .2s, border-color .2s;
+}
+.langpicker button:hover { color: var(--ink); background: var(--card-2); }
+.langpicker button.on {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  border-color: color-mix(in srgb, var(--brand) 42%, transparent);
+}
+.langpicker button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .morph { transition: none; }
+  .morph.out { opacity: 1; transform: none; filter: none; }
+}
 .hero .lede { font-size: 18px; max-width: 54ch; }
 /* One word in the serif's italic, because the reference does exactly this —
    a single emphasised phrase is what stops a big headline reading flat. */
 .hero em { font-style: italic; color: var(--brand); }
 
 .stage { margin-top: 58px; position: relative; }
+/* A pool of light under the panel, so it reads as an object standing on a
+   surface rather than a rectangle pasted onto the page. Deliberately NOT a
+   float animation: this is an iframe somebody is going to click into and
+   type in, and moving a target under the cursor is hostile. */
+.stage::before {
+  content: ""; position: absolute; left: 50%; bottom: 26px; z-index: 0;
+  width: min(720px, 92vw); height: 220px; transform: translateX(-50%);
+  border-radius: 50%; filter: blur(60px); pointer-events: none;
+  background: radial-gradient(closest-side,
+              color-mix(in srgb, var(--brand) 26%, transparent), transparent 70%);
+}
 .stage-inner {
+  position: relative; z-index: 1;
   max-width: 480px; margin: 0 auto; border-radius: 22px; overflow: hidden;
   border: 1px solid var(--line-2); background: #0b0e13;
   box-shadow: 0 80px 140px -50px rgba(0,0,0,.95), 0 10px 40px rgba(0,0,0,.6);
   height: 600px;
+}
+/* Rim light along the top edge — one hairline, the same trick a rendered
+   product shot uses to separate an object from its background. */
+.stage-inner::after {
+  content: ""; position: absolute; inset: 0; border-radius: 22px; z-index: 2;
+  pointer-events: none; padding: 1px;
+  background: linear-gradient(180deg,
+              color-mix(in srgb, var(--brand) 55%, transparent), transparent 42%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
 }
 .stage-inner iframe { width: 100%; height: 100%; border: 0; display: block; }
 .stage-cap {
@@ -304,7 +483,10 @@ section + section { border-top: 1px solid var(--line); }
 .tile p { font-size: 14px; color: var(--muted); margin-top: 9px; }
 .tile .num { font-size: 60px; }
 .tile .sub { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
-.tile .bottom { margin-top: auto; }
+/* `margin-top: auto` pushes to the floor of a FIXED-height tile and does
+   nothing at all once the tile is auto-height — which is every tile on a
+   phone. The padding is what guarantees the gap in both cases. */
+.tile .bottom { margin-top: auto; padding-top: 14px; }
 /* The lit corner. Each tile gets one soft bloom bleeding in from an edge —
    this is the reference's signature and it is what makes flat cards read as
    surfaces with light falling across them. */
@@ -408,15 +590,101 @@ section + section { border-top: 1px solid var(--line); }
 }
 .note b { color: var(--ink); }
 
-/* =============================================================== footer */
-footer { border-top: 1px solid var(--line); padding: 54px 0 70px; font-size: 13.5px; color: var(--faint); }
-footer .wrap { display: grid; gap: 22px; }
-.disc {
-  padding: 18px 20px; border-radius: 13px; background: var(--card);
-  border: 1px solid var(--line); line-height: 1.62; max-width: 80ch;
+/* ============================================================== mobile
+   One block rather than a `@media` beside every rule, because the phone
+   layout is a set of related decisions and reading them together is how it
+   stays coherent. Everything here is a size or a hide — no new components.
+
+   The desktop sizes are tuned for a 1180px measure. Carried unchanged onto a
+   390px screen they produce a nine-line lede and a headline with more air
+   above it than content in it: correct, and not good. */
+@media (max-width: 640px) {
+  section { padding: 68px 0; }
+  .wrap { padding: 0 20px; }
+
+  .hero { padding: 40px 0 76px; }
+  .pill { margin-bottom: 22px; font-size: 11.5px; }
+  .hero .lede { font-size: 15.5px; }
+  .lede { font-size: 15.5px; }
+
+  /* The picker is six items; at 12px they took two ragged rows. Smaller and
+     tighter fits five plus one, which reads as a row rather than a wrap. */
+  .langpicker { gap: 5px; margin-top: 20px; }
+  .langpicker button { font-size: 11.5px; padding: 6px 10px; }
+
+  /* 600px of demo panel on an 844px screen leaves no room for the page
+     around it, and the widget scrolls internally anyway. */
+  .stage { margin-top: 38px; }
+  .stage-inner { height: 500px; border-radius: 18px; }
+
+  /* Uppercase at .18em is a desktop-width device. On a phone it is what
+     pushes a section label past its own column. */
+  .tag { letter-spacing: .12em; font-size: 10px; }
+
+  .bento { gap: 12px; margin-top: 36px; }
+  /* Auto height: the fixed row height left short tiles half empty once they
+     were one per row. */
+  .tile { min-height: 0; padding: 22px; }
+  .tile .num { font-size: 48px; }
+  .tile p, .card p, .rule p { font-size: 13.5px; }
+  .chips span { font-size: 11.5px; padding: 5px 9px; }
+
+  .rules { margin-top: 36px; }
+  .rule { padding: 22px 0; }
+  .rule .n { font-size: 22px; }
+  .rule h3 { font-size: 16px; }
+
+  .plans, .price-grid { margin-top: 36px; }
+  .plan { padding: 24px; }
+  .plan .who { min-height: 0; }
+  .note { padding: 20px; font-size: 14px; }
+
+  /* Full-width, stacked. Two centred pills of different lengths sitting one
+     above the other read as a mistake; two equal blocks read as a choice —
+     and they are a much larger tap target on the screen where that matters. */
+  .btn { padding: 14px 20px; font-size: 12px; }
+  .cta-row { gap: 10px; flex-direction: column; align-items: stretch; }
+  .cta-row .btn { justify-content: center; }
+
+  .f-top { padding-bottom: 34px; gap: 28px; }
+  footer { padding: 56px 0 36px; }
 }
-.foot-end { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
-.foot-end .sp { margin-left: auto; }
+/* The Gantt's axis labels describe horizontal positions. Below the breakpoint
+   the bars are a stacked list with no horizontal meaning left, so the axis is
+   four words describing nothing — and the `NOW` marker is already hidden for
+   the same reason. */
+@media (max-width: 760px) { .axis { display: none; } }
+
+/* =============================================================== footer
+   Carries the same light the hero does — one bloom behind it — so the page
+   closes the way it opened instead of falling off a cliff into a grey bar. */
+footer { position: relative; overflow: hidden; border-top: 1px solid var(--line); padding: 78px 0 44px; }
+footer .glow i { opacity: .16; }
+.f-top {
+  display: grid; grid-template-columns: 1.5fr 1fr 1fr 1.2fr; gap: 40px;
+  padding-bottom: 46px; border-bottom: 1px solid var(--line);
+}
+@media (max-width: 900px) { .f-top { grid-template-columns: 1fr 1fr; gap: 34px; } }
+@media (max-width: 560px) { .f-top { grid-template-columns: 1fr; } }
+.f-brand .brand { font-size: 16px; margin-bottom: 14px; }
+.f-brand p { font-size: 14px; color: var(--muted); max-width: 34ch; }
+.f-col h4 {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 16px;
+}
+.f-col a, .f-col span {
+  display: block; font-size: 14px; color: var(--body);
+  text-decoration: none; padding: 5px 0; transition: color .18s;
+}
+.f-col a:hover { color: var(--ink); }
+.f-cta p { font-size: 14px; color: var(--muted); margin-bottom: 16px; }
+.f-bottom {
+  display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center;
+  padding-top: 26px; font-size: 13px; color: var(--faint);
+}
+.f-bottom .sp { margin-left: auto; }
+.f-bottom a { text-decoration: none; }
+.f-bottom a:hover { color: var(--body); }
 </style>
 </head>
 <body>
@@ -425,6 +693,7 @@ footer .wrap { display: grid; gap: 22px; }
   <div class="wrap">
     <a class="brand" href="#top"><span class="mk">BA</span><span class="wm">Olink Bank&nbsp;Assist</span></a>
     <div class="links">
+      <span class="pipe" id="pipe" aria-hidden="true"></span>
       <a class="sm-hide" href="#demo">Live demo</a>
       <a class="sm-hide" href="#languages">Languages</a>
       <a class="sm-hide" href="#safety">Safety</a>
@@ -439,7 +708,15 @@ footer .wrap { display: grid; gap: 22px; }
   <div class="glow"><i class="a"></i><i class="b"></i><i class="c"></i></div>
   <div class="wrap">
     <div class="pill"><span class="dot"></span> Live demo running on this page</div>
-    <h1 class="display">Your customers already message you. In <em>their</em> language.</h1>
+    <!-- The headline finishes in a different language every few seconds, in
+         that language's own script — and the row below lets a visitor drive
+         it. The claim and the demonstration are the same object, which is the
+         only kind of hero animation worth the bytes. -->
+    <h1 class="display">
+      Your customers already message you.
+      <span class="morph-line"><span class="morph" id="morph" lang="en">In <em>their</em> language.</span></span>
+    </h1>
+    <div class="langpicker" id="langpicker" role="group" aria-label="Show the headline in another language"></div>
     <p class="lede">
       An AI assistant for banks and microfinance institutions that answers from
       your own documents — in Amharic, Afaan&nbsp;Oromoo, Tigrinya, Somali,
@@ -510,7 +787,9 @@ footer .wrap { display: grid; gap: 22px; }
         </div>
       </div>
 
-      <div class="tile h2 lit-deep">
+      <!-- Anchored: the channels story lives inside the bento rather than in
+           its own section, and the footer links to it by name. -->
+      <div class="tile h2 lit-deep" id="channels">
         <div class="num">7</div>
         <div class="sub">Channels, one conversation.</div>
         <div class="chips" style="margin-top:18px">
@@ -693,18 +972,43 @@ footer .wrap { display: grid; gap: 22px; }
   </div>
 </section>
 
-<footer>
+<footer id="contact">
+  <div class="glow"><i class="a"></i><i class="c"></i></div>
   <div class="wrap">
-    <div class="disc">
-      <strong>About the demo on this page:</strong> it answers from the knowledge
-      base of a fictional institution created for demonstration. Every figure in
-      it is illustrative. No real bank's content, branding or customer data
-      appears anywhere on this site, and nothing here should be read as claiming
-      a relationship with any named institution.
+    <div class="f-top">
+      <div class="f-brand">
+        <a class="brand" href="#top"><span class="mk">BA</span><span class="wm">Olink Bank&nbsp;Assist</span></a>
+        <p>An AI assistant for banks and microfinance institutions, answering
+           from their own documents in six languages — with a real teller one
+           tap away.</p>
+      </div>
+
+      <div class="f-col">
+        <h4>Product</h4>
+        <a href="#demo">Live demo</a>
+        <a href="#channels">Channels</a>
+        <a href="#languages">Languages</a>
+        <a href="#safety">Safety</a>
+      </div>
+
+      <div class="f-col">
+        <h4>Company</h4>
+        <a href="#roadmap">Roadmap</a>
+        <a href="#pricing">Pricing</a>
+        <a href="/admin">Staff sign in</a>
+      </div>
+
+      <div class="f-col f-cta">
+        <h4>Talk to us</h4>
+        <p>Thirty minutes, with your own published FAQ loaded, so you are
+           looking at your content rather than ours.</p>
+        <a class="btn btn-solid" data-contact data-contact-primary href="#contact">Book a walkthrough</a>
+      </div>
     </div>
-    <div class="foot-end">
-      <span>© <span id="yr">2026</span> Olink Technologies. Olink Bank Assist.</span>
-      <a class="sp" href="/admin">Staff sign in</a>
+
+    <div class="f-bottom">
+      <span>© <span id="yr">2026</span> Olink Technologies</span>
+      <span class="sp">Olink Bank Assist</span>
     </div>
   </div>
 </footer>
@@ -719,22 +1023,253 @@ var SITE = {
   domain: ""                  // TODO before launch — sets canonical + OG URLs
 };
 
+/* Every call to action goes somewhere. The previous version stripped the href
+   when no address was configured and marked the button `data-pending`, which
+   was honest and read as broken — a greyed-out primary button is the first
+   thing a visitor clicks and the first thing they conclude is unfinished.
+   "Honest" is not worth much if the page looks abandoned.
+
+   So: with an address, the buttons are real mailto links, pre-addressed and
+   pre-subjected. Without one they scroll to the footer's contact block, which
+   is a normal thing for a big CTA to do — and the footer's own button, which
+   would otherwise scroll to itself, is the single place that steps aside
+   until there is somewhere for it to point. */
 (function wireContact() {
-  var links = document.querySelectorAll("[data-contact]");
   var subject = encodeURIComponent("Olink Bank Assist — walkthrough");
   var body = encodeURIComponent(
     "Institution:\nChannels we care about:\nRough monthly conversation volume:\n"
   );
-  Array.prototype.forEach.call(links, function (a) {
-    if (!SITE.contactEmail) {
-      a.setAttribute("data-pending", "1");
-      a.setAttribute("aria-disabled", "true");
-      a.setAttribute("title", "Contact address not configured yet");
-      a.removeAttribute("href");
+  var mailto = SITE.contactEmail
+    ? "mailto:" + SITE.contactEmail + "?subject=" + subject + "&body=" + body
+    : "";
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-contact]"), function (a) {
+    if (mailto) { a.href = mailto; return; }
+    if (a.hasAttribute("data-contact-primary")) {
+      // The one in the footer's own contact column. Nothing to point at yet,
+      // and a button that scrolls to itself is worse than no button.
+      a.hidden = true;
       return;
     }
-    a.href = "mailto:" + SITE.contactEmail + "?subject=" + subject + "&body=" + body;
+    a.href = "#contact";
   });
+})();
+
+/* ------------------------------------------------------- the headline
+   The last line of the headline finishes in a different language every few
+   seconds, in that language's own script, and a row of buttons lets a
+   visitor drive it.
+
+   This is the one piece of hero animation worth its bytes, because the claim
+   and the demonstration are the same object: the sentence says the assistant
+   answers in the customer's language, and then it does. A particle field
+   would have been easier and would have said nothing.
+
+   The phrases are short and standard rather than composed — "in their
+   language" in each. Amharic and Afaan Oromoo are native-reviewed; Tigrinya,
+   Somali and Swahili carry the same first-pass status as the rest of those
+   tables (see the linguist runbook's ledger). */
+(function headline() {
+  var el = document.getElementById("morph");
+  var picker = document.getElementById("langpicker");
+  if (!el || !picker) return;
+
+  var LINES = [
+    { code: "en", name: "English",      html: 'In <em>their</em> language.' },
+    { code: "am", name: "አማርኛ",         html: "በቋንቋቸው።" },
+    { code: "om", name: "Afaan Oromoo", html: "Afaan isaaniitiin." },
+    { code: "ti", name: "ትግርኛ",         html: "ብቋንቋኦም።" },
+    { code: "so", name: "Soomaali",     html: "Luqaddooda." },
+    { code: "sw", name: "Kiswahili",    html: "Kwa lugha yao." }
+  ];
+  var reduced = window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var at = 0, timer = null, driving = false;
+
+  var buttons = LINES.map(function (line, i) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = line.name;
+    b.setAttribute("lang", line.code);
+    b.addEventListener("click", function () {
+      // A visitor who picks a language has taken over. Stop cycling rather
+      // than fighting them for control of the headline three seconds later.
+      driving = true;
+      clearTimeout(timer);
+      show(i);
+    });
+    picker.appendChild(b);
+    return b;
+  });
+
+  function paint(i) {
+    var line = LINES[i];
+    el.innerHTML = line.html;
+    el.lang = line.code;          // `.display:lang()` keeps Ge'ez out of the serif
+    buttons.forEach(function (b, n) { b.classList.toggle("on", n === i); });
+    at = i;
+  }
+
+  function show(i) {
+    if (i === at && el.innerHTML) { paint(i); return; }
+    if (reduced) { paint(i); return; }
+    el.classList.add("out");
+    setTimeout(function () {
+      paint(i);
+      // Next frame, so the browser paints the incoming state before the
+      // class comes off and the transition actually runs.
+      window.requestAnimationFrame(function () { el.classList.remove("out"); });
+    }, 320);
+  }
+
+  function tick() {
+    if (driving) return;
+    show((at + 1) % LINES.length);
+    timer = setTimeout(tick, 3200);
+  }
+
+  paint(0);
+  if (!reduced) timer = setTimeout(tick, 2600);
+  // A tab nobody is looking at does not need a headline animation.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) clearTimeout(timer);
+    else if (!driving && !reduced) timer = setTimeout(tick, 2600);
+  });
+})();
+
+/* Light that follows the pointer. The hero's spotlight drifts a little with
+   the cursor — a few percent, nowhere near 1:1, because a glow that tracks
+   exactly reads as a gimmick while one that lags reads as depth. Pointer
+   only: no touch handler, since there is no cursor to follow and the
+   listener would just cost scroll performance on a phone. */
+(function pointerLight() {
+  var hero = document.getElementById("top");
+  if (!hero || !window.matchMedia || !window.matchMedia("(pointer: fine)").matches) return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var blooms = hero.querySelectorAll(".glow i");
+  var queued = false, mx = 0, my = 0;
+  hero.addEventListener("pointermove", function (e) {
+    var r = hero.getBoundingClientRect();
+    mx = (e.clientX - r.left) / r.width - .5;
+    my = (e.clientY - r.top) / r.height - .5;
+    if (queued) return;
+    queued = true;
+    window.requestAnimationFrame(function () {
+      queued = false;
+      Array.prototype.forEach.call(blooms, function (b, i) {
+        var depth = (i + 1) * 14;
+        b.style.translate = (mx * depth) + "px " + (my * depth * .6) + "px";
+      });
+    });
+  }, { passive: true });
+})();
+
+/* ------------------------------------------------------------- navbar
+   Two behaviours, both about telling you where you are.
+
+   STUCK: the bar is transparent over the hero and materialises once you
+   leave it, so the composition is not cut by a hard line at scroll-0.
+
+   SCROLL-SPY: one pill slides between the links rather than six backgrounds
+   fading in and out — a single moving object reads as deliberate where six
+   independent fades read as flicker. Position is measured from the DOM, so
+   it stays correct when the wordmark drops at 430px and the links reflow. */
+(function navbar() {
+  var nav = document.querySelector(".nav");
+  var pipe = document.getElementById("pipe");
+  if (!nav || !pipe) return;
+
+  var links = Array.prototype.filter.call(
+    nav.querySelectorAll(".links a"),
+    function (a) { return (a.getAttribute("href") || "").charAt(0) === "#"; });
+  var sections = links.map(function (a) {
+    return document.getElementById(a.getAttribute("href").slice(1));
+  });
+
+  function move(a) {
+    // `offsetWidth === 0` means the link is display:none — which is the case
+    // for every section link below 900px. Positioning the pill on one of
+    // those left a 2px sliver of its own border floating in the navbar.
+    if (!a || !a.offsetWidth) { pipe.style.opacity = "0"; return; }
+    pipe.style.width = a.offsetWidth + "px";
+    pipe.style.transform = "translate(" + a.offsetLeft + "px, -50%)";
+    pipe.style.opacity = "1";
+  }
+
+  var queued = false;
+  function update() {
+    queued = false;
+    nav.classList.toggle("stuck", window.scrollY > 24);
+
+    // The section whose top is nearest above the reading line.
+    var line = window.innerHeight * 0.34, best = -1, bestTop = -Infinity;
+    sections.forEach(function (s, i) {
+      if (!s) return;
+      var top = s.getBoundingClientRect().top;
+      if (top <= line && top > bestTop) { bestTop = top; best = i; }
+    });
+    links.forEach(function (a, i) { a.classList.toggle("here", i === best); });
+    move(best === -1 ? null : links[best]);
+  }
+  function onScroll() {
+    if (queued) return;
+    queued = true;
+    window.requestAnimationFrame(update);
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll);
+  update();
+})();
+
+/* Scroll reveal. The class is added by script rather than sitting in the
+   markup, so the page is fully readable if this never runs — a scroll
+   animation that hides content by default is how a site becomes a blank
+   screen for anyone whose JS failed.
+
+   Only the sections below the fold: revealing the hero would mean fading in
+   the first thing a visitor sees, which reads as a slow page rather than a
+   considered one. Unobserved once shown — nothing keeps running. */
+(function reveal() {
+  var reduced = window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced) return;
+
+  var pending = Array.prototype.slice.call(document.querySelectorAll("section, footer"));
+  pending.forEach(function (el) { el.classList.add("reveal"); });
+
+  /* Position, not intersection.
+     IntersectionObserver was the obvious tool and it is the wrong one here.
+     It fires when an element ENTERS the viewport, so a jump — an anchor link
+     in the nav, a restored scroll position, a fragment in the URL — skips
+     every section it flies past, and those stay invisible forever. This page
+     is mostly anchor links, so that is the normal case rather than an edge
+     one, and it was caught by scrolling to the bottom and back up.
+
+     The rule that cannot fail: if a section's top has passed the fold, it is
+     visible. Anything scrolled past is shown whether it was ever "entered"
+     or not. rAF-throttled and it unhooks itself once everything is out. */
+  var queued = false;
+  function sweep() {
+    queued = false;
+    var line = window.innerHeight * 0.92;
+    pending = pending.filter(function (el) {
+      if (el.getBoundingClientRect().top >= line) return true;
+      el.classList.add("in");
+      return false;
+    });
+    if (!pending.length) {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    }
+  }
+  function onScroll() {
+    if (queued) return;
+    queued = true;
+    window.requestAnimationFrame(sweep);
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll);
+  sweep();
 })();
 
 // Stamped rather than hard-coded, so a footer year cannot go stale in a file
