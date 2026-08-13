@@ -395,6 +395,33 @@ translation; `test_the_fayda_name_is_never_translated` pins that it survives.
 English only. That is the one remaining gap and it is content, not plumbing —
 see "Curated answers" below for how it gets closed.
 
+### Two kinds of non-English text, and only one is reviewable
+
+**A linguist reviewing the workbook cannot fix everything the product says,
+and briefing one as though they can is how a review gets blamed for a defect
+it never had access to.** The founder found an Afaan Oromoo grammar and
+word-choice error on the AI Insights page (2026-08-12) — in a sentence that
+appears in no table anywhere.
+
+| | Where it lives | How it gets fixed |
+|---|---|---|
+| **Table text** — buttons, labels, the assistant's fixed templates, empty states, errors | `strings.json`, `ui_strings.json`, `admin_strings.json`; 437 rows in the workbook | A reviewer edits the row. Permanent, diffable, testable. |
+| **Generated prose** — the AI Insights brief, every answer written from retrieved documents, the general-guidance replies | Nowhere. Written by Gemini per request, in the customer's language | Only the **prompt** can move it. No row to edit; the same question asked twice produces two different sentences. |
+
+So the review brief has to say which is which. Sheet-by-sheet corrections
+land in the tables; anything a reviewer flags on a *generated* sentence is
+feedback on the **prompt**, and the fix is an instruction, not a
+translation.
+
+The instruction both generating prompts now carry (`_SYSTEM_PROMPT` rule 3,
+`_INSIGHTS_PROMPT`): **compose in the language rather than translating an
+English sentence into it** — everyday spoken register, short sentences,
+common words over literary ones, proper nouns left alone. That is the
+standard mitigation for calqued output and it is the only lever there is.
+It reduces the defect rate; it does not make a native reviewer optional,
+and a bank manager reading a fluent-looking wrong sentence in a management
+brief is worse served than by an obviously broken one.
+
 ## Shipped 2026-08-10/11 — one long session, seven changes
 
 Recorded because five of the seven were found by *using* the product rather

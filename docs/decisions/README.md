@@ -35,3 +35,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0023 | A broken thing is a question, not a grievance |
 | 0024 | Understanding a question the customer could not write well |
 | 0025 | A referral is not an answer |
+| 0026 | Generated prose is not reviewable text |
