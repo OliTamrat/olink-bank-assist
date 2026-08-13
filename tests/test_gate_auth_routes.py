@@ -108,3 +108,39 @@ def test_the_code_is_normalised_and_checked_before_it_is_sent() -> None:
         "the enrolment code is no longer checked for six digits before POSTing"
     )
     assert 'A("mfa_code_digits"' in enrol, "the specific error message is gone"
+
+
+def test_account_is_not_offered_to_a_session_that_has_no_account() -> None:
+    """`perm` and `needsUser` are different questions.
+
+    `perm: null` means "no capability required", which is right — nobody
+    grants you your own password. But the break-glass token is not a person,
+    so there is no "your" anything to manage, and offering the page anyway is
+    what ejected an operator from the whole shell on one click.
+    """
+    entry = re.search(r'\{ id: "account".*?\}', ADMIN, re.S)
+    assert entry, "the Account nav entry is gone"
+    assert "needsUser: true" in entry.group(0), (
+        "Account no longer declares that it needs a person, so a token "
+        "session will be offered a page it cannot open"
+    )
+
+
+def test_every_nav_filter_asks_both_questions() -> None:
+    """Three separate places decide what a session may open — the nav, the
+    landing-page choice and `go()`. The bug reached the user through one of
+    them, so a helper wired into two of the three would leave it in place.
+
+    Counted rather than parametrised: the property is about how many call
+    sites exist, and a parametrised version would just run one assertion three
+    times over an argument it never used.
+    """
+    assert re.search(r"^function mayOpen\(", ADMIN, re.M), "the helper is gone"
+    call_sites = len(re.findall(r"mayOpen\b", ADMIN)) - 1  # minus the definition
+    assert call_sites >= 3, (
+        f"mayOpen is used at {call_sites} call sites, not 3 — a nav filter is "
+        "still deciding on the permission alone"
+    )
+    assert not re.search(r"filter\(function \(p\) \{ return can\(p\.perm\); \}\)", ADMIN), (
+        "a nav filter still checks the permission without checking needsUser"
+    )
