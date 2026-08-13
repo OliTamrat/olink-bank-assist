@@ -1343,10 +1343,43 @@ def current_user(
     return admin_auth.resolve(db, request.cookies.get(admin_auth.COOKIE_NAME))
 
 
-def require_user(user: User | None = Depends(current_user)) -> User:
-    if user is None:
-        raise HTTPException(status_code=401, detail="Not signed in")
-    return user
+def require_user(
+    slug: str,
+    user: User | None = Depends(current_user),
+    x_admin_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+) -> User:
+    """The signed-in PERSON, and 401 only when there really is no session.
+
+    The break-glass token authenticates a caller without making it anybody:
+    `TOKEN_ACTOR` exists precisely because the token is not attributable. So a
+    token session reaching a route that needs a person is not "not signed in"
+    — it is signed in as something that has no password of its own and no
+    second factor of its own to manage.
+
+    Answering 401 there was a real fault, not a wording quibble. The panel
+    treats 401 as an expired session and signs the operator out of the whole
+    shell, so a token login followed by one click on Account ejected them —
+    with a token that was still perfectly valid. 403 is the honest status and
+    the panel already handles it by showing the message and staying put.
+    """
+    if user is not None:
+        return user
+    bank = db.execute(select(Bank).where(Bank.slug == slug)).scalar_one_or_none()
+    if (
+        x_admin_token
+        and bank is not None
+        and hmac.compare_digest(x_admin_token, bank.admin_token)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "The admin token is not a person, so it has no account settings "
+                "of its own. Sign in with your email to manage your password or "
+                "two-factor authentication."
+            ),
+        )
+    raise HTTPException(status_code=401, detail="Not signed in")
 
 
 @app.post("/admin/api/{slug}/login")

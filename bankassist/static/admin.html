@@ -2354,7 +2354,12 @@ var PAGES = [
   // change their own password, and would not have been able to protect
   // their own account with MFA either. Found by rendering the page as an
   // operator rather than by reading the diff.
-  { id: "account", key: "nav_account",    label: "Account",       perm: null,                 load: loadAccount }
+  // …and `needsUser`, which is a different question from `perm`. `perm: null`
+  // means "no capability required", which is right: nobody grants you your
+  // own password. But the break-glass token is not a person at all, so there
+  // is no "your" anything to manage — and offering the page anyway is how a
+  // token login plus one click ejected the operator from the whole shell.
+  { id: "account", key: "nav_account",    label: "Account",       perm: null, needsUser: true, load: loadAccount }
 ];
 
 var ICONS = {
@@ -3094,6 +3099,27 @@ function can(perm) {
   return (state.me.permissions || []).indexOf(perm) > -1;
 }
 
+/* Whether a page may be opened at all, which is TWO questions and only one of
+   them is a permission.
+
+   `can()` answers "does this identity hold the capability", and for the
+   break-glass token the answer is deliberately yes to everything. But some
+   pages are about *you* rather than about the bank, and the token is not a
+   person — `TOKEN_ACTOR` exists precisely because it is not attributable.
+   Account is the only such page today.
+
+   Asking both questions in one helper matters because three separate places
+   filter this list — the nav, the landing-page choice and `go()` — and the
+   defect this closes was a page reachable from one of them: a token login
+   plus a single click on Account signed the operator out of the whole shell,
+   because the server answered 401 and the panel reads 401 as an expired
+   session. Both halves are fixed; this is the half that stops it being
+   offered in the first place. */
+function mayOpen(page) {
+  if (page.needsUser && !state.me) return false;
+  return can(page.perm);
+}
+
 function enterApp() {
   // First, before the gate is hidden: an animation left running behind a
   // display:none card would type into nothing for the whole eight-hour
@@ -3241,7 +3267,7 @@ function landingPage() {
   var order = manages
     ? ["dashboard", "handoffs"]
     : ["handoffs", "dashboard"];
-  var allowed = PAGES.filter(function (p) { return can(p.perm); });
+  var allowed = PAGES.filter(mayOpen);
   for (var i = 0; i < order.length; i++) {
     var hit = allowed.filter(function (p) { return p.id === order[i]; })[0];
     if (hit) return hit.id;
@@ -3334,7 +3360,7 @@ function paintAdminChrome() {
 }
 
 function renderNav() {
-  $("nav").innerHTML = PAGES.filter(function (p) { return can(p.perm); }).map(function (p) {
+  $("nav").innerHTML = PAGES.filter(mayOpen).map(function (p) {
     var item = '<button class="navitem" id="nav-' + p.id + '" data-page="' + p.id + '">' +
       icon(p.id) + '<span class="label">' + esc(A(p.key, p.label)) + "</span>" +
       (p.badge ? '<span class="badge hidden" id="badge-' + p.id + '"></span>' : "") +
@@ -3407,7 +3433,7 @@ function loadChannelNav() {
 
 function go(id) {
   var page = PAGES.filter(function (p) { return p.id === id; })[0];
-  if (!page || !can(page.perm)) return;
+  if (!page || !mayOpen(page)) return;
   state.page = id;
   markNav();
   var chan = state.page === "channels" && state.channel

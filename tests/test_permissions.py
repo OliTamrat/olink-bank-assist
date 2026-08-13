@@ -501,3 +501,43 @@ def test_the_new_permissions_are_in_the_registry() -> None:
     admin panel, and one the exported matrix silently omits."""
     assert permissions.Perm.TELLER_SERVE in permissions.ALL
     assert permissions.Perm.SESSIONS_READ in permissions.ALL
+
+
+def test_a_token_session_is_refused_account_pages_without_being_signed_out(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """403, not 401 — and the difference is a whole shell.
+
+    The break-glass token authenticates a caller without making it anybody:
+    TOKEN_ACTOR exists precisely because it is not attributable. A token
+    session reaching a route that needs a person is therefore not "not signed
+    in"; it is signed in as something with no password and no second factor of
+    its own to manage.
+
+    Answering 401 was a real fault rather than a wording quibble. The panel
+    treats 401 as an expired session and signs the operator out of everything,
+    so a token login followed by one click on Account ejected them — holding a
+    token that was still perfectly valid.
+    """
+    token = demo_bank.admin_token
+    r = client.get("/admin/api/demo/mfa", headers={"X-Admin-Token": token})
+    assert r.status_code == 403, (
+        f"a valid token got {r.status_code} on a person-only route; 401 makes "
+        "the panel sign the operator out of the whole shell"
+    )
+    assert "not a person" in r.json()["detail"]
+
+
+def test_no_session_at_all_is_still_401(client: TestClient, demo_bank: Any) -> None:
+    """The 403 above must not swallow the genuine expired-session case, which
+    is the one where signing out IS the right response."""
+    assert client.get("/admin/api/demo/mfa").status_code == 401
+
+
+def test_a_wrong_token_does_not_earn_the_friendlier_refusal(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The 403 is for a caller who really did authenticate. Anything else
+    stays 401, so this cannot become a way to probe which routes exist."""
+    r = client.get("/admin/api/demo/mfa", headers={"X-Admin-Token": "not-the-token"})
+    assert r.status_code == 401
