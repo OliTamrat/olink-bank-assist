@@ -118,7 +118,22 @@
    action stayed on screen after JS hid it. Same defect as the widget's
    thinking dots. `hidden` has one meaning and no stylesheet gets a vote. */
 [hidden] { display: none !important; }
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  /* THE reason mobile did not match desktop. Mobile browsers "boost" small
+     text on pages they judge to be desktop-width, and they do it PER BLOCK
+     and by different amounts — so the 10.5px micro-labels were rendering at
+     15px while the 17px lede stayed 17px. That is not a page with slightly
+     large text; it is a page whose type hierarchy has been rearranged by the
+     browser, which is exactly what "doesn't look as good as the web version"
+     looks like. The inflated micro-label was also what overflowed its column.
+
+     Opting out is safe here because the layout is genuinely responsive and
+     nothing relies on the boost for legibility — every size below is chosen,
+     and the contrast ramp is measured. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
   font-family: var(--sans);
@@ -259,7 +274,13 @@ section + section { border-top: 1px solid var(--line); }
 .nav .links a:hover { color: var(--ink); }
 .nav .links a.here { color: var(--ink); }
 @media (max-width: 900px) { .nav .links a.sm-hide { display: none; } }
-@media (max-width: 430px) { .brand .wm { display: none; } .nav .wrap { gap: 10px; padding: 0 16px; } }
+/* Scoped to the NAV. The footer uses the same `.brand` component and has a
+   whole column to itself, so hiding the wordmark there left a lone 25px mark
+   floating above the description with nothing naming the product. */
+@media (max-width: 430px) {
+  .nav .brand .wm { display: none; }
+  .nav .wrap { gap: 10px; padding: 0 16px; }
+}
 
 /* =============================================================== buttons */
 .btn {
@@ -451,7 +472,10 @@ body::after {
 .tile p { font-size: 14px; color: var(--muted); margin-top: 9px; }
 .tile .num { font-size: 60px; }
 .tile .sub { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
-.tile .bottom { margin-top: auto; }
+/* `margin-top: auto` pushes to the floor of a FIXED-height tile and does
+   nothing at all once the tile is auto-height — which is every tile on a
+   phone. The padding is what guarantees the gap in both cases. */
+.tile .bottom { margin-top: auto; padding-top: 14px; }
 /* The lit corner. Each tile gets one soft bloom bleeding in from an edge —
    this is the reference's signature and it is what makes flat cards read as
    surfaces with light falling across them. */
@@ -555,7 +579,71 @@ body::after {
 }
 .note b { color: var(--ink); }
 
-/* =============================================================== footer */
+/* ============================================================== mobile
+   One block rather than a `@media` beside every rule, because the phone
+   layout is a set of related decisions and reading them together is how it
+   stays coherent. Everything here is a size or a hide — no new components.
+
+   The desktop sizes are tuned for a 1180px measure. Carried unchanged onto a
+   390px screen they produce a nine-line lede and a headline with more air
+   above it than content in it: correct, and not good. */
+@media (max-width: 640px) {
+  section { padding: 68px 0; }
+  .wrap { padding: 0 20px; }
+
+  .hero { padding: 40px 0 76px; }
+  .pill { margin-bottom: 22px; font-size: 11.5px; }
+  .hero .lede { font-size: 15.5px; }
+  .lede { font-size: 15.5px; }
+
+  /* The picker is six items; at 12px they took two ragged rows. Smaller and
+     tighter fits five plus one, which reads as a row rather than a wrap. */
+  .langpicker { gap: 5px; margin-top: 20px; }
+  .langpicker button { font-size: 11.5px; padding: 6px 10px; }
+
+  /* 600px of demo panel on an 844px screen leaves no room for the page
+     around it, and the widget scrolls internally anyway. */
+  .stage { margin-top: 38px; }
+  .stage-inner { height: 500px; border-radius: 18px; }
+
+  /* Uppercase at .18em is a desktop-width device. On a phone it is what
+     pushes a section label past its own column. */
+  .tag { letter-spacing: .12em; font-size: 10px; }
+
+  .bento { gap: 12px; margin-top: 36px; }
+  /* Auto height: the fixed row height left short tiles half empty once they
+     were one per row. */
+  .tile { min-height: 0; padding: 22px; }
+  .tile .num { font-size: 48px; }
+  .tile p, .card p, .rule p { font-size: 13.5px; }
+  .chips span { font-size: 11.5px; padding: 5px 9px; }
+
+  .rules { margin-top: 36px; }
+  .rule { padding: 22px 0; }
+  .rule .n { font-size: 22px; }
+  .rule h3 { font-size: 16px; }
+
+  .plans, .price-grid { margin-top: 36px; }
+  .plan { padding: 24px; }
+  .plan .who { min-height: 0; }
+  .note { padding: 20px; font-size: 14px; }
+
+  /* Full-width, stacked. Two centred pills of different lengths sitting one
+     above the other read as a mistake; two equal blocks read as a choice —
+     and they are a much larger tap target on the screen where that matters. */
+  .btn { padding: 14px 20px; font-size: 12px; }
+  .cta-row { gap: 10px; flex-direction: column; align-items: stretch; }
+  .cta-row .btn { justify-content: center; }
+
+  .f-top { padding-bottom: 34px; gap: 28px; }
+  footer { padding: 56px 0 36px; }
+}
+/* The Gantt's axis labels describe horizontal positions. Below the breakpoint
+   the bars are a stacked list with no horizontal meaning left, so the axis is
+   four words describing nothing — and the `NOW` marker is already hidden for
+   the same reason. */
+@media (max-width: 760px) { .axis { display: none; } }
+
 /* =============================================================== footer
    Carries the same light the hero does — one bloom behind it — so the page
    closes the way it opened instead of falling off a cliff into a grey bar. */
@@ -1088,7 +1176,10 @@ var SITE = {
   });
 
   function move(a) {
-    if (!a) { pipe.style.opacity = "0"; return; }
+    // `offsetWidth === 0` means the link is display:none — which is the case
+    // for every section link below 900px. Positioning the pill on one of
+    // those left a 2px sliver of its own border floating in the navbar.
+    if (!a || !a.offsetWidth) { pipe.style.opacity = "0"; return; }
     pipe.style.width = a.offsetWidth + "px";
     pipe.style.transform = "translate(" + a.offsetLeft + "px, -50%)";
     pipe.style.opacity = "1";

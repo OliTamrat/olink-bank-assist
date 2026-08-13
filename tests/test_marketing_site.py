@@ -213,3 +213,43 @@ def test_every_nav_target_exists() -> None:
     ids = set(re.findall(r'id="([^"]+)"', SITE))
     for href in re.findall(r'href="#([^"]+)"', SITE):
         assert href in ids, f"nav links to #{href}, which does not exist"
+
+
+def test_the_page_opts_out_of_mobile_font_boosting() -> None:
+    """Mobile browsers inflate small text on pages they judge desktop-width,
+    per block and by different amounts.
+
+    Measured on a 390px viewport before this was set: the 10.5px micro-labels
+    rendered at **15px** while the 17px lede stayed 17px. That is not "text a
+    bit large on mobile" — it is the type hierarchy rearranged by the browser,
+    and it was also what pushed a section label past its own column.
+
+    Safe to opt out of only because the layout is genuinely responsive and
+    every size is chosen; nothing here leans on the boost for legibility.
+    """
+    assert re.search(r"text-size-adjust:\s*100%", SITE), (
+        "the page no longer opts out of mobile font boosting — small text will "
+        "be inflated inconsistently and the type hierarchy will not survive"
+    )
+
+
+def test_phone_inputs_cannot_trigger_ios_zoom() -> None:
+    """iOS Safari zooms any focused input under 16px, which widens the layout
+    viewport and breaks the whole page rather than just the field.
+
+    The widget has followed this since it shipped; the sign-in screen had
+    never been held to it, and tapping the email box is the first thing a
+    phone user does there.
+    """
+    for page in ("admin.html", "widget.html"):
+        text = (STATIC / page).read_text(encoding="utf-8")
+        sizes = [
+            float(m)
+            for m in re.findall(
+                r"input[^{}]*\{[^{}]*font-size:\s*([\d.]+)px", text, re.S
+            )
+        ]
+        assert sizes, f"{page} sets no input font-size at all"
+        assert max(sizes) >= 16, (
+            f"{page} has no 16px-or-larger input rule — iOS will zoom on focus"
+        )

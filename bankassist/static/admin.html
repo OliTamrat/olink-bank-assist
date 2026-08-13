@@ -286,6 +286,15 @@ button { font-family: inherit; }
   padding: 13px 15px; border-radius: 12px; font-size: 14.5px;
   background: var(--surface-2);
 }
+/* 16px MINIMUM on a phone. iOS Safari zooms any focused input below that,
+   which widens the layout viewport and breaks the whole page rather than
+   just the field — the rule the widget has followed since it shipped, and
+   which the sign-in screen had never been held to. It is the first thing a
+   phone user does here: tap the email box. */
+@media (max-width: 640px) {
+  .gate-card input, .gate-card select { font-size: 16px; }
+  .gate-card { padding: 26px 22px 24px; }
+}
 .gate-card .btn.wide {
   padding: 14px; border-radius: 999px; font-size: 15px; font-weight: 600;
   box-shadow: 0 10px 30px -8px color-mix(in srgb, var(--brand) 65%, transparent);
