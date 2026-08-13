@@ -1,8 +1,9 @@
-# Linguist review — the five-language workbook
+# Linguist review — the six-language workbook
 
-Every string ships in en/am/om/ti/so, drafted by the agent and reviewed by a
-native speaker afterwards — the multilingual rule is "draft, ship, review",
-never "wait". The review artefact is
+Every string ships in en/am/om/ti/so/sw, drafted by the agent and reviewed by
+a native speaker afterwards — the multilingual rule is "draft, ship, review",
+never "wait". (Swahili joined in ADR-0018; this page said "five" for a while
+after it did.) The review artefact is
 `review/Olink_Bank_Assist_language_review.xlsx`, built by
 `scripts/build_review_workbook.py` from the string tables and
 `review/strings.tsv`.
@@ -19,6 +20,20 @@ never "wait". The review artefact is
 
 Colour code: yellow = please edit, pink = nothing supplied, grey = leave
 alone.
+
+## What has actually been confirmed
+
+The whole point of "draft, ship, review" is that shipped text is not the same
+as reviewed text. This is the ledger of the difference, and it should be
+narrowed by adding rows, never by rounding up.
+
+| Date | What | Languages | By |
+|---|---|---|---|
+| 2026-08-13 | `stage_line` — the sign-in headline (ADR-0029) | **am, om** | founder, native speaker of both |
+
+Everything else in am/om/ti/so/sw is agent-drafted and unreviewed, including
+`ti` and `so` of the row above. When writing about this anywhere, name the
+languages: "the headline was approved" reads as four when it was two.
 
 ## Rules
 
