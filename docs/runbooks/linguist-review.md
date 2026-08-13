@@ -30,6 +30,7 @@ narrowed by adding rows, never by rounding up.
 | Date | What | Languages | By |
 |---|---|---|---|
 | 2026-08-13 | `stage_line` — the sign-in headline (ADR-0029) | **am, om** | founder, native speaker of both |
+| 2026-08-13 | Ge'ez rendering on the sign-in screen — face, tracking, leading, weight (ADR-0028) | **am** | founder, on Windows/Nyala, after deploy |
 
 Everything else in am/om/ti/so/sw is agent-drafted and unreviewed, including
 `ti` and `so` of the row above. When writing about this anywhere, name the

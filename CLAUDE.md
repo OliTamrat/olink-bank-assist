@@ -636,7 +636,11 @@ script whose characters are whole syllables with already-minimal sidebearings;
 `1.1` leading nearly touches; `700` fills the counters in. Ethiopic headlines
 are `letter-spacing: normal; line-height: 1.28; font-weight: 600`, keyed on
 **`:lang()`** so it follows the text rather than the panel — the mock card
-cycles languages independently of the interface. This bites at *display* size
+cycles languages independently of the interface. The `600` is confirmed on
+Windows (founder, 2026-08-13) and **binary there**: Nyala has only Regular and
+Bold, so `600` resolves to Bold and `500` to Regular, with nothing between.
+On macOS/Android, where Ge'ez is a variable Noto, they are genuinely different
+weights — so a "small" tweak is not the same change on both. This bites at *display* size
 only: the widget's `-.01em` at 15px is 0.15 of a pixel and was deliberately
 left alone.
 
