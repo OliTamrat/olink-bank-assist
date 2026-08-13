@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -88,6 +89,11 @@ class Bank(Base):
     # guidance rather than the bank's official information. Per-tenant because a
     # compliance-conservative bank will want it off.
     allow_general_knowledge: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Every admin of this tenant must hold a second factor. Default false:
+    # turning it on for a bank whose staff have not enrolled locks all of
+    # them out at once, so it is a deliberate switch, never a migration
+    # default.
+    require_mfa: Mapped[bool] = mapped_column(Boolean, default=False)
     # Whether this tenant offers live sessions with a human teller.
     #
     # Defaults OFF, unlike the flag above. The feature needs a named person
@@ -476,6 +482,33 @@ class UserCredential(Base):
     verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # The highest TOTP step this credential has already spent — what makes a
+    # one-time password one-time. Null means none spent yet; 0 is a real step
+    # number, so it cannot double as "never".
+    last_used_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class RecoveryCode(Base):
+    """One single-use code for somebody who has lost their authenticator.
+
+    A row per code rather than a list on the credential: the credential table
+    is unique on (user_id, kind) and a person holds ten of these at once.
+    Spent rows are kept rather than deleted, so "three codes left" is
+    answerable and so support can tell a code that was never issued from one
+    already used.
+    """
+
+    __tablename__ = "recovery_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    # SHA-256 hex of the normalised code. Shown once at generation and never
+    # recoverable from here — the same rule the password hash follows.
+    code_hash: Mapped[str] = mapped_column(String(64), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -498,6 +531,10 @@ class AdminSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # The password was right and the second factor has not been given yet.
+    # `admin_auth.resolve` returns None while this is true, so a route that
+    # never heard of MFA still cannot be reached with a half-finished login.
+    pending_mfa: Mapped[bool] = mapped_column(Boolean, default=False)
     # Recorded so a person can be shown their own sessions and recognise one
     # they did not start. Not used for authorization: both are client-supplied
     # and trivially forged.

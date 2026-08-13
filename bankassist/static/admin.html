@@ -967,6 +967,16 @@ td.title { color: var(--ink); font-weight: 550; }
 .hours.days { flex: 1; height: auto; min-height: 230px; }
 .hours.days .hlab { overflow: visible; white-space: nowrap; }
 .statline.drill { cursor: pointer; }
+
+/* Recovery codes, shown exactly once. Monospace and generously spaced
+   because the job is transcription onto paper by somebody who has just been
+   told they will not see these again. */
+.codegrid { display: grid; gap: 8px; margin: 8px 0;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.codegrid code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px; letter-spacing: .06em; padding: 8px 10px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  text-align: center; color: var(--ink); }
 .statline.drill:hover span { color: var(--brand); }
 .statline b.warm { color: var(--warn); }
 /* Desk teams — the roster grouped the way the work arrives. A desk with no
@@ -1447,6 +1457,19 @@ td.title { color: var(--ink); font-weight: 550; }
         <input id="password" type="password" autocomplete="current-password">
       </div>
       <button class="btn wide" id="signin-btn">Sign in</button>
+    </div>
+
+    <div id="mfa-mode" class="hidden">
+      <div class="field">
+        <label for="mfa-code" id="mfa-label">Authentication code</label>
+        <!-- inputmode numeric brings up the digit pad on a phone, and
+             one-time-code lets iOS and Android offer the code from the
+             notification instead of making somebody switch apps. -->
+        <input id="mfa-code" inputmode="numeric" autocomplete="one-time-code"
+               placeholder="000000" maxlength="32">
+      </div>
+      <button class="btn wide" id="mfa-btn">Verify</button>
+      <p class="muted sm" id="mfa-hint">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
       <div style="margin-top:14px;text-align:center">
         <button class="linky" id="to-token">Use an admin token instead</button>
       </div>
@@ -1676,7 +1699,14 @@ var PAGES = [
   // preference — and burying it meant the answer to "can we do WhatsApp" was
   // three clicks deep behind a gear icon.
   { id: "channels", key: "nav_channels",  label: "Channels",      perm: "integrations.manage",load: loadChannels, kids: true },
-  { id: "settings", key: "nav_settings",  label: "Settings",      perm: "integrations.manage",load: loadSettings }
+  { id: "settings", key: "nav_settings",  label: "Settings",      perm: "integrations.manage",load: loadSettings },
+  // No `perm`, deliberately. Your own password and your own second factor
+  // are not capabilities somebody grants you, and both used to sit on
+  // Settings behind `integrations.manage` — which meant a teller could not
+  // change their own password, and would not have been able to protect
+  // their own account with MFA either. Found by rendering the page as an
+  // operator rather than by reading the diff.
+  { id: "account", key: "nav_account",    label: "Account",       perm: null,                 load: loadAccount }
 ];
 
 var ICONS = {
@@ -1686,6 +1716,7 @@ var ICONS = {
   handoffs:  '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-4.6A8.4 8.4 0 1 1 21 11.5z"/>',
   convos:    '<path d="M8 10h8M8 14h5M21 12a9 9 0 1 1-3.2-6.9"/><circle cx="19" cy="5" r="2"/>',
   docs:      '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5M8 13h8M8 17h5"/>',
+  account:   '<circle cx="12" cy="8" r="3.4"/><path d="M5 20a7 7 0 0 1 14 0"/>',
   gaps:      '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M11 8v3M11 14h.01"/>',
   audit:     '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/><path d="M8 12l2.5 2.5L16 9"/>',
   teller:    '<path d="M15 10l5-3v10l-5-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/>',
@@ -1909,12 +1940,77 @@ function signInWithPassword() {
     if (!r.ok) throw new Error("That email and password did not match.");
     return r.json();
   }).then(function (me) {
+    $("password").value = "";
+    if (me && me.mfa_required) {
+      // The password was right and nobody is signed in yet. The cookie now
+      // holds a PENDING session, which resolves to nobody on the server, so
+      // there is nothing to guard on this side — swapping the panel is
+      // presentation, not access control.
+      state.slug = slug;
+      localStorage.setItem("ba_slug", slug);
+      showMfaStep();
+      return;
+    }
     state.slug = slug; state.token = ""; state.me = me;
     localStorage.setItem("ba_slug", slug);
-    $("password").value = "";
     enterApp();
   }).catch(function (e) { gateError(e.message); })
     .then(function () { $("signin-btn").disabled = false; });
+}
+
+function showMfaStep() {
+  gateError("");
+  $("pw-mode").classList.add("hidden");
+  // Hidden here, not because it would bypass this challenge — the admin
+  // token is a separate, per-bank break-glass credential and always has
+  // been — but because offering "use a token instead" to somebody halfway
+  // through a password login reads as a way around the second factor, and
+  // an escape hatch that looks like a shortcut will be treated as one.
+  if ($("to-token")) $("to-token").classList.add("hidden");
+  $("mfa-mode").classList.remove("hidden");
+  $("gate-title").textContent = A("mfa_title", "Two-factor authentication");
+  $("mfa-label").textContent = A("mfa_code_label", "Authentication code");
+  $("mfa-hint").textContent = A("mfa_hint",
+    "Enter the 6-digit code from your authenticator app, or one of your recovery codes.");
+  $("mfa-btn").textContent = A("verify", "Verify");
+  $("mfa-code").value = "";
+  $("mfa-code").focus();
+}
+
+function resetGate() {
+  // Called when the panel returns to the sign-in screen, so a cancelled or
+  // expired challenge does not leave the token link hidden for good.
+  $("mfa-mode").classList.add("hidden");
+  $("pw-mode").classList.remove("hidden");
+  if ($("to-token")) $("to-token").classList.remove("hidden");
+}
+
+function submitMfaCode() {
+  var code = $("mfa-code").value.trim();
+  if (!code) { gateError(A("mfa_code_required", "Enter the code from your app.")); return; }
+  gateError("");
+  $("mfa-btn").disabled = true;
+  fetch("/admin/api/" + encodeURIComponent(state.slug) + "/login/mfa", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: code })
+  }).then(function (r) {
+    if (r.status === 429) throw new Error(A("too_many_attempts", "Too many attempts. Please wait a moment."));
+    // 401 covers a wrong code and an expired challenge alike. Distinguishing
+    // them would tell an attacker whether the password half had landed.
+    if (!r.ok) throw new Error(A("mfa_code_bad", "That code was not accepted."));
+    return r.json();
+  }).then(function (me) {
+    state.token = ""; state.me = me;
+    if (me.recovery_codes_remaining != null) {
+      // Somebody who just spent a one-shot code is exactly the person who
+      // should be told how many are left.
+      setStatus(A("mfa_recovery_used", "Recovery code used. {n} left.")
+        .replace("{n}", me.recovery_codes_remaining), "ok");
+    }
+    enterApp();
+  }).catch(function (e) { gateError(e.message); })
+    .then(function () { $("mfa-btn").disabled = false; });
 }
 
 function signInWithToken() {
@@ -1956,6 +2052,12 @@ function signOut() {
 }
 
 function can(perm) {
+  // A null permission means "everyone", not "nobody". The Account page is
+  // the case: your own password and your own second factor are not
+  // capabilities somebody grants you, so gating them at all is the bug.
+  // Without this line the page silently would not open — `go()` returns
+  // early on a false `can`, which looks identical to a broken handler.
+  if (perm == null) return true;
   // The break-glass token holds everything, exactly as the server treats it.
   if (!state.me) return true;
   return (state.me.permissions || []).indexOf(perm) > -1;
@@ -6289,13 +6391,7 @@ function renderSettings(cfg) {
     (hw.has_secret ? '<div class="meta" style="margin-bottom:10px">' +
       esc(A("signing_secret_set")) + "</div>" : "") +
     '<button class="btn sm" id="hw-save">' + esc(A("save")) + "</button></div>" +
-    (state.me ? '<div class="panel"><h3>' + esc(A("your_password")) + "</h3>" +
-      '<div class="grid2"><div class="field"><label>' + esc(A("current_password")) +
-        '</label><input id="pw-old" type="password"></div>' +
-      '<div class="field"><label>' + esc(A("new_password_12")) +
-        '</label><input id="pw-new" type="password"></div></div>' +
-      '<div class="meta" style="margin-bottom:12px">' + esc(A("password_change_help")) + "</div>" +
-      '<button class="btn sm" id="pw-save">' + esc(A("change_password")) + "</button></div>" : "");
+    "";
 
   $("hw-save").onclick = function () {
     api("/handoff-webhook", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -6323,14 +6419,141 @@ function renderSettings(cfg) {
       .then(function () { setStatus(A("branding_saved"), "ok"); applyBrand(state.slug); loadSettings(); })
       .catch(function (e) { setStatus(e.message, "error"); });
   };
-  if ($("pw-save")) {
-    $("pw-save").onclick = function () {
-      api("/me/password", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ current_password: $("pw-old").value, new_password: $("pw-new").value }) })
-        .then(function () { setStatus(A("password_changed"), "ok"); $("pw-old").value = ""; $("pw-new").value = ""; })
+}
+
+/* ---------------------------------------------------------- account */
+
+function loadAccount() {
+  // Everything on this page is about YOU rather than about the bank, which
+  // is why it carries no permission: a teller must be able to change their
+  // own password and turn on their own second factor.
+  $("main").innerHTML =
+    '<div class="panel"><h3>' + esc(A("your_password")) + "</h3>" +
+    '<div class="grid2"><div class="field"><label>' + esc(A("current_password")) +
+      '</label><input id="pw-old" type="password" autocomplete="current-password"></div>' +
+    '<div class="field"><label>' + esc(A("new_password_12")) +
+      '</label><input id="pw-new" type="password" autocomplete="new-password"></div></div>' +
+    '<div class="meta" style="margin-bottom:12px">' + esc(A("password_change_help")) + "</div>" +
+    '<button class="btn sm" id="pw-save">' + esc(A("change_password")) + "</button></div>" +
+    '<div class="panel"><h3>' + esc(A("two_factor")) + "</h3>" +
+    '<div id="mfa-panel"><div class="meta">' + esc(A("loading")) + "</div></div></div>";
+
+  $("pw-save").onclick = function () {
+    api("/me/password", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: $("pw-old").value, new_password: $("pw-new").value }) })
+      .then(function () { setStatus(A("password_changed"), "ok"); $("pw-old").value = ""; $("pw-new").value = ""; })
+      .catch(function (e) { setStatus(e.message, "error"); });
+  };
+  loadMfa();
+}
+
+/* ------------------------------------------------------- two-factor */
+
+function loadMfa() {
+  api("/mfa").then(renderMfa).catch(function (e) {
+    $("mfa-panel").innerHTML = '<div class="meta">' + esc(e.message) + "</div>";
+  });
+}
+
+function renderMfa(st) {
+  var host = $("mfa-panel");
+  if (!st.enabled) {
+    host.innerHTML =
+      '<div class="meta" style="margin-bottom:12px">' + esc(A("two_factor_help")) + "</div>" +
+      (st.required ? '<div class="meta" style="margin-bottom:12px"><span class="pill sev-act">' +
+        esc(A("two_factor_required")) + "</span></div>" : "") +
+      '<button class="btn sm" id="mfa-start">' + esc(A("two_factor_turn_on")) + "</button>";
+    $("mfa-start").onclick = startMfaEnrolment;
+    return;
+  }
+  host.innerHTML =
+    '<div class="statline"><span class="pill sev-good">' + esc(A("two_factor_on")) + "</span>" +
+    '<span class="meta">' +
+      esc(A("recovery_codes_left", "{n} recovery codes left").replace("{n}", st.recovery_codes_remaining)) +
+    "</span></div>" +
+    (st.required
+      ? '<div class="meta" style="margin-top:12px">' + esc(A("two_factor_required")) + "</div>"
+      : '<div class="rowacts" style="margin-top:12px">' +
+        '<button class="btn ghost sm danger" id="mfa-off">' + esc(A("two_factor_turn_off")) + "</button></div>");
+  if ($("mfa-off")) $("mfa-off").onclick = confirmMfaOff;
+}
+
+function startMfaEnrolment() {
+  api("/mfa/enroll", { method: "POST" }).then(function (enrol) {
+    // The secret is shown as text as well as encoded in the URI: a desktop
+    // browser has no camera, and an admin panel is used on a laptop more
+    // often than on a phone. Making the QR the only route would mean
+    // photographing your own screen from another device.
+    var host = $("mfa-panel");
+    host.innerHTML =
+      '<div class="meta" style="margin-bottom:12px">' + esc(A("two_factor_scan_help")) + "</div>" +
+      '<div class="field"><label>' + esc(A("two_factor_secret")) + "</label>" +
+      '<input readonly value="' + esc(enrol.secret) + '" onclick="this.select()"></div>' +
+      '<div class="field"><label>' + esc(A("two_factor_uri")) + "</label>" +
+      '<input readonly value="' + esc(enrol.uri) + '" onclick="this.select()"></div>' +
+      '<div class="field"><label>' + esc(A("mfa_code_label")) + "</label>" +
+      '<input id="mfa-first" inputmode="numeric" autocomplete="one-time-code" placeholder="000000"></div>' +
+      '<div class="rowacts"><button class="btn ghost sm" id="mfa-cancel">' + esc(A("cancel")) + "</button>" +
+      '<button class="btn sm" id="mfa-confirm">' + esc(A("two_factor_activate")) + "</button></div>";
+    $("mfa-cancel").onclick = loadMfa;
+    $("mfa-confirm").onclick = function () {
+      api("/mfa/activate", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: $("mfa-first").value.trim() }) })
+        .then(showRecoveryCodes)
         .catch(function (e) { setStatus(e.message, "error"); });
     };
-  }
+    $("mfa-first").focus();
+  }).catch(function (e) { setStatus(e.message, "error"); });
+}
+
+function showRecoveryCodes(result) {
+  // Shown once, and said so plainly. They are hashed on the server, so this
+  // render is the only moment they exist in readable form anywhere.
+  setStatus(A("two_factor_enabled"), "ok");
+  $("mfa-panel").innerHTML =
+    '<div class="meta" style="margin-bottom:12px"><strong>' + esc(A("recovery_codes")) + "</strong> — " +
+      esc(A("recovery_codes_help")) + "</div>" +
+    '<div class="codegrid">' +
+      result.recovery_codes.map(function (c) { return "<code>" + esc(c) + "</code>"; }).join("") +
+    "</div>" +
+    '<div class="rowacts" style="margin-top:12px">' +
+      '<button class="btn ghost sm" id="rc-copy">' + esc(A("copy")) + "</button>" +
+      '<button class="btn sm" id="rc-done">' + esc(A("saved_them")) + "</button></div>";
+  $("rc-copy").onclick = function () {
+    navigator.clipboard.writeText(result.recovery_codes.join("\n"))
+      .then(function () { setStatus(A("copied"), "ok"); })
+      .catch(function () { setStatus(A("copy_failed"), "error"); });
+  };
+  $("rc-done").onclick = loadMfa;
+}
+
+function confirmMfaOff() {
+  // Themed, like every other confirmation in this panel — and it asks for the
+  // password rather than a yes/no, because a borrowed unlocked laptop must
+  // not be enough to remove somebody's second factor.
+  var host = document.createElement("div");
+  host.className = "modal-overlay";
+  host.innerHTML =
+    '<div class="modal-card" role="dialog" aria-modal="true">' +
+    "<p class=\"confirm-msg\">" + esc(A("two_factor_off_confirm")) + "</p>" +
+    '<div class="field"><input id="mfa-off-pw" type="password" autocomplete="current-password"></div>' +
+    '<div class="rowacts" style="margin-top:14px;justify-content:flex-end;gap:8px">' +
+    '<button class="btn ghost sm" data-c-cancel>' + esc(A("cancel")) + "</button>" +
+    '<button class="btn sm danger" data-c-ok>' + esc(A("two_factor_turn_off")) + "</button>" +
+    "</div></div>";
+  function close() { host.remove(); document.removeEventListener("keydown", onKey); }
+  function onKey(e) { if (e.key === "Escape") close(); }
+  host.addEventListener("click", function (e) { if (e.target === host) close(); });
+  document.addEventListener("keydown", onKey);
+  host.querySelector("[data-c-cancel]").onclick = close;
+  host.querySelector("[data-c-ok]").onclick = function () {
+    api("/mfa/disable", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: host.querySelector("#mfa-off-pw").value }) })
+      .then(function () { close(); setStatus(A("two_factor_disabled"), "ok"); loadMfa(); })
+      .catch(function (e) { setStatus(e.message, "error"); });
+  };
+  document.body.appendChild(host);
+  host.querySelector("#mfa-off-pw").focus();
 }
 
 /* ------------------------------------------------------------ theme
@@ -6417,6 +6640,12 @@ setInterval(renderStamp, 60000);
 setInterval(refreshBadge, 60000);
 $("slug").value = state.slug;
 $("signin-btn").onclick = signInWithPassword;
+$("mfa-btn").onclick = submitMfaCode;
+// Enter is how anybody types a six-digit code — they are already on the
+// keypad and will not reach for the mouse.
+$("mfa-code").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") submitMfaCode();
+});
 $("token-btn").onclick = signInWithToken;
 $("signout").onclick = signOut;
 $("to-token").onclick = function () { $("pw-mode").classList.add("hidden"); $("token-mode").classList.remove("hidden"); gateError(""); };

@@ -47,6 +47,7 @@ from . import (
     sms,
     telegram,
     teller,
+    totp,
     verification,
     viber,
 )
@@ -67,6 +68,7 @@ from .models import (
     Faq,
     Handoff,
     Message,
+    RecoveryCode,
     Role,
     TellerSession,
     User,
@@ -1183,6 +1185,18 @@ class LoginIn(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class MfaCodeIn(BaseModel):
+    # Long enough for a spaced six-digit code or a hyphenated recovery code,
+    # short enough that nothing large reaches the verifier.
+    code: str = Field(min_length=1, max_length=32)
+
+
+class MfaDisableIn(BaseModel):
+    # Removing a second factor is a security-relevant act, so it costs the
+    # password again — a borrowed unlocked laptop must not be enough.
+    password: str = Field(min_length=1, max_length=1024)
+
+
 class CreateUserIn(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=passwords.MIN_LENGTH, max_length=1024)
@@ -1325,9 +1339,28 @@ def login(
     if credential is not None and passwords.needs_rehash(credential.secret_hash):
         credential.secret_hash = passwords.hash_password(payload.password)
 
+    # A verified second factor turns this into the first half of a login.
+    # The session is issued either way — it is the thing that carries the
+    # half-authenticated state — but a pending one resolves to nobody, so
+    # nothing in the product is reachable with it.
+    second_factor = _verified_totp(db, user)
+    pending = second_factor is not None
     token, _session = admin_auth.issue(
-        db, user, ip=client_ip, user_agent=request.headers.get("user-agent")
+        db, user, ip=client_ip,
+        user_agent=request.headers.get("user-agent"), pending_mfa=pending,
     )
+    if pending:
+        db.commit()
+        _set_session_cookie(response, token)
+        log_event(
+            logger, "admin_login_mfa_required",
+            bank=slug, user=user.email, client_ip=client_ip,
+        )
+        # Deliberately not `_identity`. Nobody is signed in yet, and returning
+        # the permission list here would hand a half-authenticated caller the
+        # shape of the account before its second factor.
+        return {"mfa_required": True}
+
     user.last_login_at = datetime.now(UTC)
     _audit(db, bank, "admin_login", "user", user.id, {"email": user.email},
            actor=user.id)
@@ -1336,6 +1369,161 @@ def login(
     _set_session_cookie(response, token)
     log_event(logger, "admin_login", bank=slug, user=user.email, client_ip=client_ip)
     return _identity(db, user)
+
+
+def _own_bank(db: Session, slug: str, user: User) -> Bank:
+    """The signed-in person's own tenant, refusing a slug that is not theirs.
+
+    The session cookie already says who this is, so the slug in the path is
+    only ever a claim. Checking it means a user of one bank cannot act
+    against another bank's URL — the multi-tenant rule this codebase asserts
+    everywhere else, applied to the routes where the tenant comes from the
+    person rather than a token.
+    """
+    bank = db.get(Bank, user.bank_id)
+    if bank is None or bank.slug != slug:
+        raise HTTPException(status_code=404, detail="Not found")
+    return bank
+
+
+def _verified_totp(db: Session, user: User) -> UserCredential | None:
+    """This user's ACTIVATED authenticator, if they have one.
+
+    `verified_at` is the whole point of the check. Enrolment writes the
+    credential row before the first code is proved, so an un-verified row
+    means somebody scanned a QR and walked away — treating that as a second
+    factor would lock them out of their own account with a secret nothing
+    holds.
+    """
+    return db.execute(
+        select(UserCredential).where(
+            UserCredential.user_id == user.id,
+            UserCredential.kind == "totp",
+            UserCredential.verified_at.is_not(None),
+        )
+    ).scalar_one_or_none()
+
+
+def _mfa_rate_limit(request: Request, key: str) -> None:
+    """The second factor gets the same rate limit as the first.
+
+    Six digits is a million possibilities, which sounds large and is not:
+    unlimited attempts against a 30-second window plus drift is a few hours of
+    work. The limiter is what turns TOTP from theatre into a control, and it
+    is the same limiter the password path uses so an attacker cannot spend one
+    budget to avoid the other.
+    """
+    limiter: SlidingWindowLimiter = request.app.state.admin_auth_limiter
+    if not limiter.allow(key):
+        raise HTTPException(
+            status_code=429, detail="Too many failed attempts, please slow down"
+        )
+
+
+@app.post("/admin/api/{slug}/login/mfa")
+def login_mfa(
+    slug: str,
+    payload: MfaCodeIn,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Second step of a login: a TOTP code, or a recovery code.
+
+    One endpoint for both because the caller is a person who has lost their
+    phone or has it in their hand, and asking them to pick the right form
+    first is friction at the worst moment. Which one they gave is decided by
+    what verifies, never by what the request claims.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    session = admin_auth.pending_session(db, request.cookies.get(admin_auth.COOKIE_NAME))
+    if session is None:
+        # Expired, already completed, revoked, or never existed — all the
+        # same answer, for the same reason the login route gives one message.
+        raise HTTPException(status_code=401, detail="Sign in again")
+    _mfa_rate_limit(request, f"mfa:{slug}:{client_ip}")
+
+    user = db.get(User, session.user_id)
+    bank = db.get(Bank, user.bank_id) if user is not None else None
+    if user is None or bank is None or not user.is_active:
+        raise HTTPException(status_code=401, detail="Sign in again")
+
+    credential = _verified_totp(db, user)
+    used_recovery = False
+    step = (
+        totp.verify(
+            credential.secret_hash,
+            payload.code,
+            now=time.time(),
+            last_used_step=credential.last_used_step,
+        )
+        if credential is not None
+        else None
+    )
+    if step is not None and credential is not None:
+        # Spending the step is what makes the code one-time. Written before
+        # the session is promoted so a crash between the two costs a code
+        # rather than leaving one replayable.
+        credential.last_used_step = step
+    else:
+        used_recovery = _spend_recovery_code(db, user, payload.code)
+        if not used_recovery:
+            log_event(
+                logger, "admin_mfa_failed",
+                bank=slug, user=user.email, client_ip=client_ip,
+            )
+            db.commit()
+            raise HTTPException(status_code=401, detail="That code was not accepted")
+
+    admin_auth.complete_mfa(session)
+    user.last_login_at = datetime.now(UTC)
+    _audit(
+        db, bank, "admin_login", "user", user.id,
+        {"email": user.email, "second_factor": "recovery" if used_recovery else "totp"},
+        actor=user.id,
+    )
+    db.commit()
+    log_event(
+        logger, "admin_login",
+        bank=slug, user=user.email, client_ip=client_ip,
+        second_factor="recovery" if used_recovery else "totp",
+    )
+    identity = _identity(db, user)
+    if used_recovery:
+        # Said out loud, because a recovery code is a one-shot and somebody
+        # who has just spent one is exactly the person who should re-enrol.
+        identity["recovery_codes_remaining"] = _recovery_codes_remaining(db, user)
+    return identity
+
+
+def _spend_recovery_code(db: Session, user: User, code: str) -> bool:
+    """Consume an unused recovery code. True if one matched.
+
+    Looked up by hash rather than compared in a loop: ten rows is nothing, but
+    the shape of "iterate and compare" is how a timing signal gets written by
+    accident, and the index makes this both faster and boring.
+    """
+    row = db.execute(
+        select(RecoveryCode).where(
+            RecoveryCode.user_id == user.id,
+            RecoveryCode.code_hash == totp.hash_recovery_code(code),
+            RecoveryCode.used_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return False
+    row.used_at = datetime.now(UTC)
+    return True
+
+
+def _recovery_codes_remaining(db: Session, user: User) -> int:
+    return int(
+        db.execute(
+            select(func.count())
+            .select_from(RecoveryCode)
+            .where(RecoveryCode.user_id == user.id, RecoveryCode.used_at.is_(None))
+        ).scalar_one()
+    )
 
 
 @app.post("/admin/api/{slug}/logout")
@@ -1356,6 +1544,173 @@ def logout(
         db.commit()
     response.delete_cookie(admin_auth.COOKIE_NAME, path="/admin")
     return {"signed_out": True}
+
+
+@app.get("/admin/api/{slug}/mfa")
+def mfa_status(
+    slug: str, user: User = Depends(require_user), db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Whether this person holds a second factor, and whether they must.
+
+    `required` is the tenant's policy, not this person's state — the panel
+    uses it to say "your bank requires this" rather than offering it as a
+    preference somebody can decline.
+    """
+    bank = _own_bank(db, slug, user)
+    return {
+        "enabled": _verified_totp(db, user) is not None,
+        "required": bank.require_mfa,
+        "recovery_codes_remaining": _recovery_codes_remaining(db, user),
+    }
+
+
+@app.post("/admin/api/{slug}/mfa/enroll")
+def mfa_enroll(
+    slug: str, user: User = Depends(require_user), db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Start enrolment: a fresh secret and the URI an app scans.
+
+    The credential row is written now but left UNVERIFIED, and that ordering
+    is the safety property. If it counted as a second factor immediately,
+    somebody who closed the tab between scanning and typing their first code
+    would be locked out of their own account by a secret nothing holds.
+
+    Re-enrolling replaces the pending secret rather than adding a second one —
+    the unique constraint on (user_id, kind) enforces that at the schema, and
+    a person who scanned a stale QR should simply be able to start again.
+    """
+    bank = _own_bank(db, slug, user)
+    if _verified_totp(db, user) is not None:
+        # Turning it off is a separate, password-gated act. Silently issuing
+        # a new secret here would be a way to swap somebody's second factor
+        # from a session that borrowed their laptop.
+        raise HTTPException(
+            status_code=409, detail="Two-factor is already on for this account"
+        )
+    secret = totp.generate_secret()
+    existing = db.execute(
+        select(UserCredential).where(
+            UserCredential.user_id == user.id, UserCredential.kind == "totp"
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.secret_hash = secret
+        existing.last_used_step = None
+    else:
+        db.add(UserCredential(user_id=user.id, kind="totp", secret_hash=secret))
+    db.commit()
+    return {
+        "secret": secret,
+        "uri": totp.provisioning_uri(
+            secret, account=user.email, issuer=bank.display_name
+        ),
+    }
+
+
+@app.post("/admin/api/{slug}/mfa/activate")
+def mfa_activate(
+    slug: str,
+    payload: MfaCodeIn,
+    request: Request,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Prove the app was set up, then switch the factor on.
+
+    Requiring a working code before activation is what stops a mistyped or
+    half-scanned secret becoming a lockout. Recovery codes are returned here
+    and **only** here — they are hashed on the way in, so this response is the
+    single moment they exist in readable form.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    bank = _own_bank(db, slug, user)
+    _mfa_rate_limit(request, f"mfa-activate:{slug}:{client_ip}")
+
+    credential = db.execute(
+        select(UserCredential).where(
+            UserCredential.user_id == user.id, UserCredential.kind == "totp"
+        )
+    ).scalar_one_or_none()
+    if credential is None:
+        raise HTTPException(status_code=409, detail="Start enrolment first")
+    if credential.verified_at is not None:
+        raise HTTPException(
+            status_code=409, detail="Two-factor is already on for this account"
+        )
+
+    step = totp.verify(
+        credential.secret_hash, payload.code, now=time.time(), last_used_step=None
+    )
+    if step is None:
+        raise HTTPException(status_code=400, detail="That code was not accepted")
+
+    credential.verified_at = datetime.now(UTC)
+    credential.last_used_step = step
+    codes = totp.generate_recovery_codes()
+    for code in codes:
+        db.add(
+            RecoveryCode(user_id=user.id, code_hash=totp.hash_recovery_code(code))
+        )
+    _audit(db, bank, "admin_mfa_enabled", "user", user.id, {"email": user.email},
+           actor=user.id)
+    db.commit()
+    log_event(logger, "admin_mfa_enabled", bank=slug, user=user.email)
+    return {"enabled": True, "recovery_codes": codes}
+
+
+@app.post("/admin/api/{slug}/mfa/disable")
+def mfa_disable(
+    slug: str,
+    payload: MfaDisableIn,
+    request: Request,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """Turn the second factor off. Costs the password again.
+
+    A signed-in session is not enough: the session may be a borrowed unlocked
+    laptop, and removing a second factor from one is exactly the move that
+    turns a moment of physical access into a lasting one.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    bank = _own_bank(db, slug, user)
+    _mfa_rate_limit(request, f"mfa-disable:{slug}:{client_ip}")
+
+    if bank.require_mfa:
+        # The tenant's policy outranks the individual's preference, and
+        # saying so is more useful than a bare 403.
+        raise HTTPException(
+            status_code=403,
+            detail="Your bank requires two-factor authentication",
+        )
+    password = db.execute(
+        select(UserCredential).where(
+            UserCredential.user_id == user.id, UserCredential.kind == "password"
+        )
+    ).scalar_one_or_none()
+    if not passwords.verify_password(
+        password.secret_hash if password else None, payload.password
+    ):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    credential = db.execute(
+        select(UserCredential).where(
+            UserCredential.user_id == user.id, UserCredential.kind == "totp"
+        )
+    ).scalar_one_or_none()
+    if credential is not None:
+        db.delete(credential)
+    # Recovery codes are for the factor being removed; leaving them would
+    # leave ten working bypasses for an authenticator nobody holds.
+    for row in db.execute(
+        select(RecoveryCode).where(RecoveryCode.user_id == user.id)
+    ).scalars():
+        db.delete(row)
+    _audit(db, bank, "admin_mfa_disabled", "user", user.id, {"email": user.email},
+           actor=user.id)
+    db.commit()
+    log_event(logger, "admin_mfa_disabled", bank=slug, user=user.email)
+    return {"enabled": False}
 
 
 @app.get("/admin/strings")
