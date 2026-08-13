@@ -154,7 +154,13 @@ def test_each_face_is_range_gated(page: str) -> None:
     """
     html = (STATIC / page).read_text(encoding="utf-8")
     faces = re.findall(r"@font-face \{(.*?)\}", html, re.S)
-    assert len(faces) == len(_FONTS), f"{page} declares {len(faces)} faces"
+    # Not "every page declares every font". The display serif is loaded by
+    # the public page alone — the admin panel and the widget never ask for
+    # it, so nobody doing their job pays 38 KB for our marketing. What must
+    # hold on every page is that whatever it DOES declare is range-gated and
+    # non-blocking.
+    assert faces, f"{page} declares no faces at all"
+    assert len(faces) <= len(_FONTS), f"{page} declares {len(faces)} faces"
     for face in faces:
         assert "unicode-range" in face, f"an @font-face in {page} is not range-gated"
         # Fallback text has to be readable while the file is in flight; a

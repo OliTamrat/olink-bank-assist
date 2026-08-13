@@ -25,8 +25,7 @@
     --accent: var(--brand);
     --on-brand: #ffffff;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
+  :root[data-theme="dark"] {
       --accent: color-mix(in srgb, var(--brand) 45%, #ffffff);
       --bg: #0c0d10;
       --surface: #141619;
@@ -37,7 +36,6 @@
       --text-3: #6f7787;
       --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.6);
     }
-  }
 
   /* ------------------------------------------------------------- type
      Same two families as the admin panel, same reasoning (see admin.html):
@@ -217,9 +215,7 @@
     border-bottom: 1px solid #fde68a;
     padding: 8px 18px; display: none;
   }
-  @media (prefers-color-scheme: dark) {
-    .disclaimer { color: #fcd34d; background: #231b09; border-bottom-color: #3f2f0a; }
-  }
+  :root[data-theme="dark"] .disclaimer { color: #fcd34d; background: #231b09; border-bottom-color: #3f2f0a; }
 
   /* ---------------------------------------------------------- chat */
   #chat {
@@ -288,10 +284,8 @@
   .chip svg { width: 11px; height: 11px; opacity: .75; }
   .chip.guard { color: #b45309; background: #fffbeb; border-color: #fde68a; }
   .chip.human { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
-  @media (prefers-color-scheme: dark) {
-    .chip.guard { color: #fbbf24; background: #241b08; border-color: #3f2f0a; }
-    .chip.human { color: #93c5fd; background: #101a2e; border-color: #1e3a5f; }
-  }
+  :root[data-theme="dark"] .chip.guard { color: #fbbf24; background: #241b08; border-color: #3f2f0a; }
+  :root[data-theme="dark"] .chip.human { color: #93c5fd; background: #101a2e; border-color: #1e3a5f; }
   .chip.src { cursor: pointer; }
   .chip.src:hover { border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); color: var(--text); }
 
@@ -451,10 +445,8 @@
   .can .row.yes svg { color: #16a34a; }
   .can .row.no  svg { color: #b45309; }
   .can .row.no  { color: var(--text-2); }
-  @media (prefers-color-scheme: dark) {
-    .can .row.yes svg { color: #4ade80; }
-    .can .row.no  svg { color: #fbbf24; }
-  }
+  :root[data-theme="dark"] .can .row.yes svg { color: #4ade80; }
+  :root[data-theme="dark"] .can .row.no  svg { color: #fbbf24; }
   .can .hd {
     font-size: 11px; font-weight: 650; letter-spacing: .05em;
     text-transform: uppercase; color: var(--text-3); margin-top: 4px;
@@ -716,6 +708,28 @@
     .meta, .cites, .suggest, .teller-offer { margin-left: 0; }
   }
 </style>
+<script>
+/* Theme, decided in the head and before first paint.
+
+   The dark palette used to be reachable only through `prefers-color-scheme`,
+   which is the visitor's operating system and nothing the embedding page can
+   influence — so a bank with a dark website got a white panel bolted onto it
+   for every visitor running a light OS, and so did our own marketing page.
+   The declarations did not change; they moved off the media query onto
+   `:root[data-theme="dark"]`, and this is what chooses.
+
+   `?theme=dark` or `?theme=light` if the embedder asked; otherwise the
+   visitor's own preference, which is exactly the behaviour that was there
+   before. In the head rather than with the rest of the script at the bottom,
+   because a panel that paints light and then corrects itself is worse than
+   one that was simply light. */
+(function () {
+  var want = new URLSearchParams(location.search).get("theme");
+  var dark = want === "dark" || (want !== "light" && window.matchMedia
+    && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  if (dark) document.documentElement.setAttribute("data-theme", "dark");
+})();
+</script>
 </head>
 <body>
 
@@ -792,6 +806,7 @@
 (function () {
   var params = new URLSearchParams(location.search);
   var slug = params.get("bank") || "demo";
+
   var api = location.origin;
   var conversationId = null;
   var chat = document.getElementById("chat");

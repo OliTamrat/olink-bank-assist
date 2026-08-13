@@ -70,6 +70,54 @@ calls to action carry `data-pending` and say so rather than opening a blank
 mail window addressed to nobody. There is no canonical tag and no Open Graph
 URL yet for the same reason.
 
+## Revised 2026-08-13 — the type pairing is the design
+
+The first build of this page set everything in Inter. The founder's verdict:
+*"the same old boring (static) design"*, with a reference site attached — a
+dark, editorial fintech page — and the instruction to be inspired by it.
+
+He was right, and the cause was not the colours or the spacing. **A page with
+one neutral sans has no voice.** What the reference does before anything else
+is set an editorial serif at display size against a workhorse sans at text
+size, and the contrast between the two *is* the character. No amount of
+gradient work substitutes for it.
+
+- **Playfair Display** is vendored for this page and no other — high stroke
+  contrast, fine hairlines, ball terminals. It appears only at display sizes
+  and on numerals; at 15px its hairlines vanish and it is a worse Inter. Set
+  at weight 500 rather than bold, because bolding thickens exactly the thin
+  strokes worth having. 38 KB, on the one surface whose job is to look like
+  something — the admin panel and the widget never request it, and a test
+  asserts they never do.
+- **Colour arrives only as light**, never as fill: three blurred blooms, one
+  deliberately off-hue (warm) because an all-teal page reads as a product
+  screenshot rather than a photograph of something lit. Each bento tile gets
+  one bloom bleeding in from an edge, which is what makes a flat card read as
+  a surface.
+- **A bento grid**, not a card row. Mixed weights — a wide explainer, numerals
+  set in the serif, a full-height feature — because a uniform grid of equal
+  cards is the specific thing that made the first version read as a template.
+- **The roadmap is a real Gantt of the real phases**, with an honest `NOW`
+  marker and Phase 1 marked shipped. It says on the page that no bank has
+  signed a pilot, because a roadmap that hid that would be the first thing
+  worth distrusting.
+- **Ge'ez is never set in the serif.** Playfair has no Ethiopic, so an Amharic
+  headline would fall through to a system face while keeping the serif's
+  tracking and leading. `.display:lang(am|ti)` switches family as well as
+  spacing — a new failure mode that only exists once a display serif is in
+  play, and a test covers it.
+
+**The widget gained a theme it should always have had.** Its dark palette was
+reachable only through `prefers-color-scheme` — the visitor's operating
+system, which an embedding page cannot influence. So a bank with a dark
+website got a white panel bolted onto it for every visitor running a light
+OS, and so did this page: a white slab in the middle of a near-black hero.
+The declarations did not change; they moved off the media query onto
+`:root[data-theme="dark"]`, and `?theme=dark|light` now chooses, defaulting to
+the visitor's preference exactly as before. Decided in the `<head>` rather
+than with the rest of the script, because a panel that paints light and then
+corrects itself is worse than one that was simply light.
+
 ## Consequences
 
 - **The largest risk on this page is naming a prospect.** CBE, Dashen and

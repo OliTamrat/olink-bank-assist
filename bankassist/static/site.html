@@ -5,21 +5,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Olink Bank Assist — your customers already message you, in their own language</title>
 <meta name="description" content="An AI assistant for Ethiopian banks and microfinance institutions. Answers from your own documents in six languages, across seven channels, with a real teller one tap away.">
-<!-- No canonical, no Open Graph URL, no sitemap yet: the domain is not
-     decided. Adding them now would ship a URL that has to be found and
-     corrected later, and a wrong canonical is worse than none. See the
-     SITE block in the script below — two values set this page live. -->
-<!-- Inline as a data URI rather than a file: it costs no request at all, and
-     a public page whose browser tab shows the generic globe looks unfinished
-     in exactly the place a prospect leaves it open. -->
+<!-- No canonical and no Open Graph URL: the domain is not decided. A wrong
+     canonical is worse than none. See the SITE block at the end of the file —
+     two values set this page live. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Cpath d='M9 21V11h3.4c2.2 0 3.4 1 3.4 2.6 0 1.1-.6 1.9-1.6 2.2 1.2.2 2 1.1 2 2.4 0 1.8-1.3 2.8-3.6 2.8H9zm2.2-5.9h1c.9 0 1.4-.4 1.4-1.1s-.5-1.1-1.4-1.1h-1v2.2zm0 4.1h1.2c1 0 1.6-.4 1.6-1.2s-.6-1.2-1.6-1.2h-1.2v2.4zM18 21l3.2-10h2.6L27 21h-2.3l-.6-2h-3.2l-.6 2H18zm3.4-3.8h2.2l-1.1-3.6-1.1 3.6z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preload" as="font" type="font/woff2" href="/fonts/playfair-latin.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-latin.woff2" crossorigin>
 <style>
-/* Type: the product's own stack, and for the same reasons — see the long
-   note in admin.html. Inter carries its optical-size axis, so the display
-   sizes on this page get Inter's display cut. Ge'ez resolves to the reader's
-   own system face; our copy is last, and on a machine that has an Ethiopic
-   font it is never fetched. Nothing here reaches a third-party origin. */
+/* ================================================================= type
+   TWO FAMILIES, AND THE PAIRING IS THE DESIGN.
+
+   The first version of this page set everything in Inter, and the founder's
+   verdict was that it looked like every other page. He was right, and the
+   cause was not the colours or the spacing — it was that a page with one
+   neutral sans has no voice. What the reference he sent does, before
+   anything else, is put an editorial serif at display size against a
+   workhorse sans at text size. The contrast between the two IS the
+   character; remove it and no amount of gradient work puts it back.
+
+   Playfair Display is the serif: high stroke contrast, fine hairlines, ball
+   terminals — a face with an opinion, which is the point. It appears ONLY at
+   display sizes and on numerals, because at 15px its hairlines disappear and
+   it becomes a worse Inter.
+
+   It is loaded on this page and nowhere else. The admin panel and the widget
+   never request it, so nobody doing their job pays 38 KB for our marketing.
+
+   Ge'ez keeps the reader's own system face, as everywhere else — Playfair
+   has no Ethiopic and must never be asked to fake it. */
+@font-face {
+  font-family: "Playfair Display Variable"; font-style: normal;
+  font-weight: 400 900; font-display: swap;
+  src: url("/fonts/playfair-latin.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,
+                 U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,
+                 U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Playfair Display Variable"; font-style: normal;
+  font-weight: 400 900; font-display: swap;
+  src: url("/fonts/playfair-latin-ext.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,
+                 U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,
+                 U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
 @font-face {
   font-family: "Inter Variable"; font-style: normal;
   font-weight: 100 900; font-display: swap;
@@ -45,224 +74,332 @@
 }
 
 :root {
-  --bg: #07090d;
-  --surface: #0e1218;
-  --surface-2: #141922;
-  --line: rgba(255, 255, 255, .10);
-  --line-2: rgba(255, 255, 255, .16);
-  --ink: #f4f7fb;
-  --body: #c3ccda;
-  --muted: #8e9aad;
-  --faint: #6b7688;
-  --brand: #14b8a6;
+  --bg: #060709;
+  --ink: #f6f8fb;
+  --body: #b9c2d0;
+  --muted: #8a94a5;
+  --faint: #626c7d;
+  --line: rgba(255,255,255,.085);
+  --line-2: rgba(255,255,255,.15);
+  --card: rgba(255,255,255,.026);
+  --card-2: rgba(255,255,255,.045);
+  --brand: #2dd4bf;
   --brand-deep: #0f766e;
-  --ok: #34d399;
-  --warn: #f5b544;
-  --maxw: 1140px;
+  --warm: #f0873f;
+  --violet: #8b7bff;
+  --maxw: 1180px;
+  --sans: "Inter Variable", Inter, Nyala, "Abyssinica SIL",
+          "Noto Sans Ethiopic", Ebrima, "Noto Sans Ethiopic Variable",
+          "Segoe UI", system-ui, -apple-system, sans-serif;
+  --serif: "Playfair Display Variable", "Iowan Old Style", Georgia,
+           "Times New Roman", serif;
 }
 * { box-sizing: border-box; margin: 0; }
 html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
-  font-family:
-    "Inter Variable", Inter,
-    Nyala, "Abyssinica SIL", "Noto Sans Ethiopic", Ebrima,
-    "Noto Sans Ethiopic Variable",
-    "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--sans);
   background: var(--bg); color: var(--body);
-  font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  font-size: 16px; line-height: 1.62; -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
 a { color: inherit; }
-h1, h2, h3 { color: var(--ink); line-height: 1.12; letter-spacing: -.025em; }
-/* Ge'ez takes none of that tracking — same rule as the panel, same reason:
-   a Ge'ez character is a whole syllable whose sidebearings are already
-   minimal, so negative tracking crowds it into a block. */
-h1:lang(am), h2:lang(am), h3:lang(am),
-h1:lang(ti), h2:lang(ti), h3:lang(ti) {
-  letter-spacing: normal; line-height: 1.28; font-weight: 600;
-}
-.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
-section { padding: 96px 0; border-top: 1px solid var(--line); }
-@media (max-width: 760px) { section { padding: 64px 0; } }
 
-/* ---------------------------------------------------------------- nav */
+/* The display voice. `font-weight: 500` rather than bold: Playfair's whole
+   character is in its thin strokes, and bolding it thickens exactly the
+   hairlines that make it worth having. */
+.display {
+  font-family: var(--serif); font-weight: 500; color: var(--ink);
+  line-height: 1.08; letter-spacing: -.015em;
+}
+/* Ge'ez is never set in the serif — Playfair has no Ethiopic, and the
+   fallback would be a system face wearing the serif's tracking and leading.
+   Same rule as the panel: normal tracking, more leading. */
+.display:lang(am), .display:lang(ti) {
+  font-family: var(--sans); font-weight: 600;
+  letter-spacing: normal; line-height: 1.3;
+}
+/* Capped at 68px, not 82. At 82 the three lines filled a 900px viewport on
+   their own and pushed the live demo — the thing the headline is promising —
+   entirely below the fold. The drama is in the face, not the size. */
+h1.display { font-size: clamp(38px, 5vw, 68px); }
+h2.display { font-size: clamp(30px, 4.1vw, 54px); }
+.num {
+  font-family: var(--serif); font-weight: 500; color: var(--ink);
+  line-height: 1; letter-spacing: -.02em; font-variant-numeric: lining-nums;
+}
+
+/* Micro-label. Uppercase, letterspaced, small — the reference uses this
+   everywhere and it is what stops a dark page reading as a wall. */
+.tag {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--faint);
+}
+.tag.brand { color: var(--brand); }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 26px; }
+section { position: relative; padding: 128px 0; }
+section + section { border-top: 1px solid var(--line); }
+@media (max-width: 760px) { section { padding: 82px 0; } }
+.center { text-align: center; }
+.center .lede { margin-left: auto; margin-right: auto; }
+/* A centred display line set across the full 1180px reads as a banner rather
+   than a sentence. Held to a measure so it breaks where the meaning does. */
+.center h2.display { max-width: 22ch; margin-left: auto; margin-right: auto; }
+.lede { font-size: 17px; color: var(--muted); max-width: 58ch; margin-top: 20px; }
+
+/* ================================================================ light
+   Colour only ever arrives as light in this palette — never as a fill. Three
+   blurred blooms, one warm, sitting behind the content rather than on it.
+   The warm one is doing a specific job: an all-teal page reads as a product
+   screenshot, and one off-hue bloom is what makes it read as a photograph of
+   something lit. */
+.glow { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.glow i {
+  position: absolute; display: block; border-radius: 50%; filter: blur(110px);
+  animation: drift 40s ease-in-out infinite alternate;
+}
+.glow .a { width: 52%; height: 62%; left: 26%;  top: -22%; background: var(--brand-deep); opacity: .42; }
+.glow .b { width: 40%; height: 48%; left: -8%;  top: 26%;  background: var(--brand);      opacity: .13; animation-delay: -13s; }
+.glow .c { width: 44%; height: 52%; left: 62%;  top: 44%;  background: var(--warm);       opacity: .13; animation-delay: -25s; }
+@keyframes drift { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(-4%,4%,0) scale(1.18); } }
+@media (prefers-reduced-motion: reduce) { .glow i { animation: none; } }
+.wrap { position: relative; z-index: 1; }
+
+/* ================================================================== nav */
 .nav {
-  position: sticky; top: 0; z-index: 50;
-  background: color-mix(in srgb, var(--bg) 86%, transparent);
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  position: sticky; top: 0; z-index: 60; height: 64px;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%);
   border-bottom: 1px solid var(--line);
 }
-.nav .wrap { display: flex; align-items: center; gap: 22px; height: 62px; }
-/* `nowrap` on both halves. Without it a 390px viewport broke "Olink Bank
-   Assist" across two lines and "Sign in" across two more, turning a 62px bar
-   into a 120px block of wrapped fragments — on the first thing a prospect
-   sees, on the device most of them will see it on. */
+.nav .wrap { display: flex; align-items: center; height: 100%; gap: 18px; }
 .brand {
-  display: flex; align-items: center; gap: 10px; font-weight: 650;
-  color: var(--ink); text-decoration: none; white-space: nowrap;
+  display: flex; align-items: center; gap: 9px; text-decoration: none;
+  color: var(--ink); white-space: nowrap; font-weight: 600; font-size: 15px;
 }
 .brand .mk {
-  width: 28px; height: 28px; border-radius: 8px; flex: none;
-  background: linear-gradient(140deg, var(--brand), var(--brand-deep));
-  display: grid; place-items: center; color: #04211d; font-size: 13px; font-weight: 800;
+  width: 25px; height: 25px; border-radius: 7px; flex: none;
+  background: linear-gradient(145deg, var(--brand), var(--brand-deep));
+  display: grid; place-items: center; color: #04211d; font-size: 11px; font-weight: 800;
 }
-.nav nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
-.nav nav a {
-  font-size: 14px; color: var(--body); text-decoration: none;
-  padding: 8px 12px; border-radius: 8px; white-space: nowrap;
+.nav .links { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.nav .links a {
+  font-size: 13.5px; color: var(--muted); text-decoration: none;
+  padding: 8px 13px; border-radius: 8px; white-space: nowrap; transition: color .18s;
 }
-.nav nav a:hover { color: var(--ink); background: var(--surface-2); }
-@media (max-width: 860px) { .nav nav a.hide-sm { display: none; } }
-@media (max-width: 430px) {
-  /* The mark alone carries it below this. Two nowrap halves still do not fit
-     a 390px viewport, and a truncated wordmark reads worse than none. */
-  .brand span.wm { display: none; }
-  .nav .wrap { gap: 12px; padding: 0 18px; }
-}
+.nav .links a:hover { color: var(--ink); }
+@media (max-width: 900px) { .nav .links a.sm-hide { display: none; } }
+@media (max-width: 430px) { .brand .wm { display: none; } .nav .wrap { gap: 10px; padding: 0 16px; } }
 
-/* -------------------------------------------------------------- hero */
-.hero { position: relative; padding: 92px 0 96px; border-top: 0; overflow: hidden; }
-.aurora { position: absolute; inset: -20% -10% auto -10%; height: 150%; z-index: 0; pointer-events: none; }
-.aurora i {
-  position: absolute; display: block; border-radius: 50%; filter: blur(90px);
-  animation: drift 34s ease-in-out infinite alternate;
-}
-.aurora i:nth-child(1) { width: 46%; height: 52%; left: 44%; top: -6%;  background: var(--brand);      opacity: .26; }
-.aurora i:nth-child(2) { width: 40%; height: 46%; left: 8%;  top: 12%;  background: var(--brand-deep); opacity: .22; animation-delay: -11s; }
-.aurora i:nth-child(3) { width: 34%; height: 40%; left: 62%; top: 34%;  background: #7c5cff;          opacity: .18; animation-delay: -20s; }
-@keyframes drift { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(-5%,4%,0) scale(1.16); } }
-@media (prefers-reduced-motion: reduce) { .aurora i { animation: none; } }
-
-.hero .wrap { position: relative; z-index: 1; display: grid; gap: 52px; grid-template-columns: 1.02fr .98fr; align-items: center; }
-@media (max-width: 980px) { .hero .wrap { grid-template-columns: 1fr; gap: 40px; } }
-.eyebrow {
-  font-size: 11.5px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--brand); margin-bottom: 18px;
-}
-h1 { font-size: clamp(34px, 4.6vw, 60px); font-weight: 700; }
-.hero p.lede { font-size: 18px; margin-top: 22px; max-width: 46ch; color: var(--body); }
-.cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+/* =============================================================== buttons */
 .btn {
-  display: inline-flex; align-items: center; gap: 9px; cursor: pointer;
-  padding: 13px 22px; border-radius: 999px; font-size: 15px; font-weight: 600;
-  font-family: inherit; text-decoration: none; border: 1px solid transparent;
-  transition: transform .14s ease, background .2s ease;
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  font-family: var(--sans); font-size: 13px; font-weight: 650;
+  letter-spacing: .06em; text-transform: uppercase;
+  padding: 13px 24px; border-radius: 999px; text-decoration: none;
+  border: 1px solid transparent; transition: transform .16s ease, background .2s ease;
 }
 .btn:hover { transform: translateY(-1px); }
-.btn-primary { background: var(--brand); color: #04211d; box-shadow: 0 12px 34px -10px var(--brand); }
-.btn-ghost { background: transparent; color: var(--ink); border-color: var(--line-2); }
-.btn-ghost:hover { background: var(--surface-2); }
-.btn[data-pending="1"] { opacity: .55; cursor: not-allowed; transform: none; }
+.btn-solid { background: #f2f5f8; color: #0a0d12; }
+.btn-solid:hover { background: #fff; }
+.btn-line { border-color: var(--line-2); color: var(--ink); }
+.btn-line:hover { background: var(--card-2); }
+.btn-sm { padding: 9px 16px; font-size: 11px; }
+.btn[data-pending="1"] { opacity: .45; cursor: not-allowed; transform: none; }
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+.center .cta-row { justify-content: center; }
 
-/* the live product, sitting in the page */
-.demo { position: relative; }
-.demo-frame {
-  position: relative; border-radius: 20px; overflow: hidden;
-  border: 1px solid var(--line-2); background: var(--surface);
-  box-shadow: 0 50px 110px -40px rgba(0,0,0,.95), 0 8px 26px rgba(0,0,0,.45);
-  height: 590px;
+/* ================================================================= hero */
+/* `text-align: center` centres the TEXT inside each block; it does not
+   centre the blocks. The lede and the button row both sat left of the
+   headline until they were given auto margins of their own. */
+.hero { padding: 92px 0 104px; text-align: center; }
+.hero .lede { margin-left: auto; margin-right: auto; }
+.hero .cta-row { justify-content: center; }
+.pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 15px; border-radius: 999px; font-size: 12px; color: var(--body);
+  background: var(--card); border: 1px solid var(--line-2); margin-bottom: 30px;
 }
-.demo-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
-/* Constrained to the frame it captions, and the dot pinned to the first line
-   rather than centred against a two-line paragraph. */
-.demo-cap {
-  display: grid; grid-template-columns: 9px 1fr; gap: 9px;
-  align-items: start; margin-top: 14px;
-  font-size: 12.5px; line-height: 1.5; color: var(--faint);
+.pill .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--brand);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 20%, transparent);
 }
-.demo-cap .live-dot { margin-top: 5px; }
-.live-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent);
+.hero h1 { max-width: 15ch; margin: 0 auto; }
+.hero .lede { font-size: 18px; max-width: 54ch; }
+/* One word in the serif's italic, because the reference does exactly this —
+   a single emphasised phrase is what stops a big headline reading flat. */
+.hero em { font-style: italic; color: var(--brand); }
+
+.stage { margin-top: 58px; position: relative; }
+.stage-inner {
+  max-width: 480px; margin: 0 auto; border-radius: 22px; overflow: hidden;
+  border: 1px solid var(--line-2); background: #0b0e13;
+  box-shadow: 0 80px 140px -50px rgba(0,0,0,.95), 0 10px 40px rgba(0,0,0,.6);
+  height: 600px;
+}
+.stage-inner iframe { width: 100%; height: 100%; border: 0; display: block; }
+.stage-cap {
+  display: inline-grid; grid-template-columns: 8px 1fr; gap: 9px; text-align: left;
+  align-items: start; margin-top: 18px; font-size: 12.5px; color: var(--faint);
+  max-width: 46ch;
+}
+.stage-cap .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); margin-top: 6px; }
+
+/* ================================================================ strip */
+.strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+@media (max-width: 860px) { .strip { grid-template-columns: 1fr; } }
+.strip > div { padding: 30px 30px 30px 0; border-right: 1px solid var(--line); }
+.strip > div:last-child { border-right: 0; }
+@media (max-width: 860px) {
+  .strip > div { border-right: 0; border-bottom: 1px solid var(--line); padding: 26px 0; }
+  .strip > div:last-child { border-bottom: 0; }
+}
+.strip h3 { font-size: 15.5px; font-weight: 650; color: var(--ink); margin: 14px 0 7px; }
+.strip p { font-size: 14px; color: var(--muted); }
+.gl {
+  width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--card-2); border: 1px solid var(--line); color: var(--brand); font-size: 14px;
 }
 
-/* ------------------------------------------------------------ shared */
-.kicker {
-  font-size: 11.5px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase;
-  color: var(--brand); margin-bottom: 14px;
+/* ================================================================ bento
+   Mixed weights on one grid: a wide explainer, two numerals set in the
+   serif, a full-height feature. A uniform card grid is the thing that made
+   the first version read as a template. */
+.bento {
+  display: grid; gap: 14px; margin-top: 56px;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 186px;
 }
-h2 { font-size: clamp(27px, 3.1vw, 40px); font-weight: 700; }
-.sec-lede { font-size: 17px; margin-top: 16px; max-width: 62ch; color: var(--body); }
-.grid { display: grid; gap: 18px; margin-top: 44px; }
-.g3 { grid-template-columns: repeat(3, 1fr); }
-.g2 { grid-template-columns: repeat(2, 1fr); }
-@media (max-width: 900px) { .g3, .g2 { grid-template-columns: 1fr; } }
-.card {
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: 16px; padding: 24px;
+@media (max-width: 980px) { .bento { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .bento { grid-template-columns: 1fr; grid-auto-rows: auto; } }
+.tile {
+  position: relative; overflow: hidden; border-radius: 18px; padding: 26px;
+  background: var(--card); border: 1px solid var(--line);
+  display: flex; flex-direction: column;
 }
-.card h3 { font-size: 17px; font-weight: 650; margin-bottom: 9px; letter-spacing: -.01em; }
-.card p { font-size: 14.5px; color: var(--muted); line-height: 1.62; }
-.card .ic {
-  width: 34px; height: 34px; border-radius: 10px; margin-bottom: 15px;
-  display: grid; place-items: center; font-size: 15px;
-  background: color-mix(in srgb, var(--brand) 15%, transparent);
-  color: var(--brand); border: 1px solid color-mix(in srgb, var(--brand) 26%, transparent);
+@media (max-width: 640px) { .tile { min-height: 178px; } }
+.tile.w2 { grid-column: span 2; }
+.tile.h2 { grid-row: span 2; }
+@media (max-width: 640px) { .tile.w2, .tile.h2 { grid-column: auto; grid-row: auto; } }
+.tile h3 { font-size: 16px; font-weight: 650; color: var(--ink); letter-spacing: -.01em; }
+.tile p { font-size: 14px; color: var(--muted); margin-top: 9px; }
+.tile .num { font-size: 60px; }
+.tile .sub { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
+.tile .bottom { margin-top: auto; }
+/* The lit corner. Each tile gets one soft bloom bleeding in from an edge —
+   this is the reference's signature and it is what makes flat cards read as
+   surfaces with light falling across them. */
+.tile::after {
+  content: ""; position: absolute; width: 190px; height: 190px; border-radius: 50%;
+  filter: blur(58px); opacity: .5; pointer-events: none; z-index: 0;
 }
+.tile > * { position: relative; z-index: 1; }
+.tile.lit-teal::after  { background: var(--brand);      right: -60px; bottom: -70px; opacity: .22; }
+.tile.lit-warm::after  { background: var(--warm);       right: -70px; bottom: -80px; opacity: .20; }
+.tile.lit-viol::after  { background: var(--violet);     left: -70px;  bottom: -80px; opacity: .20; }
+.tile.lit-deep::after  { background: var(--brand-deep); right: -50px; top: -70px;    opacity: .40; }
 
-/* channels */
-.chan { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 40px; }
-.chan span {
-  font-size: 14px; padding: 9px 16px; border-radius: 999px;
-  background: var(--surface); border: 1px solid var(--line); color: var(--body);
+.chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+.chips span {
+  font-size: 12px; padding: 6px 11px; border-radius: 999px;
+  background: var(--card-2); border: 1px solid var(--line); color: var(--body);
 }
-.chan span.first {
-  background: color-mix(in srgb, var(--brand) 16%, transparent);
-  border-color: color-mix(in srgb, var(--brand) 40%, transparent);
+.chips span.on {
+  background: color-mix(in srgb, var(--brand) 17%, transparent);
+  border-color: color-mix(in srgb, var(--brand) 42%, transparent);
   color: var(--ink); font-weight: 600;
 }
+.arrow { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink); text-decoration: none; }
 
-/* languages */
-.langs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 36px; }
-.langs span {
-  font-size: 15px; padding: 10px 18px; border-radius: 12px;
-  background: var(--surface); border: 1px solid var(--line); color: var(--ink);
+/* =============================================================== rules */
+.rules { margin-top: 54px; border-top: 1px solid var(--line); }
+.rule {
+  display: grid; grid-template-columns: 76px 1fr 1.15fr; gap: 26px;
+  padding: 30px 0; border-bottom: 1px solid var(--line); align-items: start;
 }
-.langs span small { display: block; font-size: 11.5px; color: var(--faint); margin-top: 2px; letter-spacing: .04em; }
-
-/* safety list */
-.rules { margin-top: 40px; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
-.rule { display: grid; grid-template-columns: 28px 1fr; gap: 16px; padding: 22px 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
-.rule:last-child { border-bottom: 0; }
-.rule .n { font-size: 12.5px; font-weight: 700; color: var(--brand); padding-top: 2px; font-variant-numeric: tabular-nums; }
-.rule h3 { font-size: 16px; font-weight: 650; margin-bottom: 6px; letter-spacing: -.01em; }
+@media (max-width: 860px) { .rule { grid-template-columns: 1fr; gap: 10px; } }
+.rule .n { font-family: var(--serif); font-size: 30px; color: var(--brand); line-height: 1; }
+.rule h3 { font-size: 18px; font-weight: 600; color: var(--ink); letter-spacing: -.012em; line-height: 1.32; }
 .rule p { font-size: 14.5px; color: var(--muted); }
 
-/* pricing */
-.price-grid { display: grid; gap: 18px; grid-template-columns: repeat(3, 1fr); margin-top: 44px; }
-@media (max-width: 900px) { .price-grid { grid-template-columns: 1fr; } }
-.price {
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: 18px; padding: 28px; display: flex; flex-direction: column;
+/* ============================================================== roadmap
+   A real Gantt of the real roadmap, with an honest NOW marker. Widths are
+   set in CSS custom properties per row so the bars can be read and edited
+   as data rather than as pixel values. */
+.gantt { margin-top: 54px; position: relative; }
+.gantt-rows { display: grid; gap: 10px; }
+.grow { display: grid; grid-template-columns: 1fr; }
+.bar {
+  /* Defaults, so a bar whose inline offsets are missing degrades to a plain
+     full-width untinted row rather than collapsing to `width: auto`. The
+     per-row values are set inline because they are DATA — where a phase
+     starts and how long it runs — and reading them next to the phase name is
+     the point. */
+  --from: 0%; --w: 100%; --tint: transparent;
+  grid-column: 1; border-radius: 11px; padding: 14px 18px;
+  border: 1px solid var(--line-2); background: var(--card-2);
+  margin-left: var(--from); width: var(--w); min-width: 190px;
+  position: relative; overflow: hidden;
 }
-.price.mid { border-color: color-mix(in srgb, var(--brand) 45%, transparent); background: var(--surface-2); }
-.price h3 { font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
-.price .who { font-size: 13.5px; color: var(--faint); margin-top: 6px; }
-.price ul { list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 11px; }
-.price li { font-size: 14.5px; color: var(--body); display: grid; grid-template-columns: 17px 1fr; gap: 10px; align-items: start; }
-.price li::before { content: "—"; color: var(--brand); font-weight: 700; }
-.shape {
-  margin-top: 40px; padding: 22px 24px; border-radius: 14px;
-  background: color-mix(in srgb, var(--warn) 9%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent);
-  font-size: 14.5px; color: var(--body);
+.bar::after {
+  content: ""; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, var(--tint) 130%);
 }
-.shape b { color: var(--ink); }
+.bar > * { position: relative; z-index: 1; }
+.bar b { display: block; font-size: 14.5px; font-weight: 620; color: var(--ink); }
+.bar span { font-size: 12.5px; color: var(--muted); }
+.bar.done { border-color: color-mix(in srgb, var(--brand) 45%, transparent); }
+.bar.done b::after {
+  content: "✓ shipped"; float: right; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--brand);
+}
+@media (max-width: 760px) { .bar { margin-left: 0 !important; width: auto !important; } }
+.axis {
+  display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 16px;
+  border-top: 1px solid var(--line); padding-top: 12px;
+}
+.axis span { font-size: 11px; color: var(--faint); letter-spacing: .12em; text-transform: uppercase; }
+.nowline {
+  position: absolute; top: 0; bottom: 46px; left: 26.5%; width: 1px;
+  background: linear-gradient(180deg, transparent, var(--brand), transparent);
+}
+.nowline::after {
+  content: "NOW"; position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+  font-size: 9.5px; font-weight: 700; letter-spacing: .18em; color: var(--brand);
+}
+@media (max-width: 760px) { .nowline { display: none; } }
 
-/* close */
-.close { text-align: center; }
-.close h2 { max-width: 20ch; margin: 0 auto; }
-.close .sec-lede { margin: 18px auto 0; text-align: center; }
-.close .cta-row { justify-content: center; }
-
-footer { border-top: 1px solid var(--line); padding: 44px 0 60px; color: var(--faint); font-size: 13.5px; }
-footer .wrap { display: grid; gap: 18px; }
-footer .disc {
-  padding: 16px 18px; border-radius: 12px; background: var(--surface);
-  border: 1px solid var(--line); line-height: 1.6; max-width: 78ch;
+/* ============================================================== pricing */
+.plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 54px; }
+@media (max-width: 900px) { .plans { grid-template-columns: 1fr; } }
+.plan {
+  position: relative; overflow: hidden; border-radius: 18px; padding: 30px;
+  background: var(--card); border: 1px solid var(--line); display: flex; flex-direction: column;
 }
-footer a { color: var(--muted); }
+.plan.feature { background: var(--card-2); border-color: color-mix(in srgb, var(--brand) 34%, transparent); }
+.plan h3 { font-family: var(--serif); font-weight: 500; font-size: 30px; color: var(--ink); line-height: 1; }
+.plan .who { font-size: 13px; color: var(--faint); margin-top: 11px; min-height: 40px; }
+.plan ul { list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 12px; }
+.plan li { font-size: 14px; color: var(--body); display: grid; grid-template-columns: 15px 1fr; gap: 10px; }
+.plan li::before { content: "+"; color: var(--brand); font-weight: 700; }
+.note {
+  margin-top: 34px; padding: 24px 26px; border-radius: 14px;
+  background: var(--card); border: 1px solid var(--line-2);
+  font-size: 15px; color: var(--body); max-width: 78ch;
+}
+.note b { color: var(--ink); }
+
+/* =============================================================== footer */
+footer { border-top: 1px solid var(--line); padding: 54px 0 70px; font-size: 13.5px; color: var(--faint); }
+footer .wrap { display: grid; gap: 22px; }
+.disc {
+  padding: 18px 20px; border-radius: 13px; background: var(--card);
+  border: 1px solid var(--line); line-height: 1.62; max-width: 80ch;
+}
+.foot-end { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.foot-end .sp { margin-left: auto; }
 </style>
 </head>
 <body>
@@ -270,267 +407,229 @@ footer a { color: var(--muted); }
 <header class="nav">
   <div class="wrap">
     <a class="brand" href="#top"><span class="mk">BA</span><span class="wm">Olink Bank&nbsp;Assist</span></a>
-    <nav>
-      <a class="hide-sm" href="#demo">Live demo</a>
-      <a class="hide-sm" href="#languages">Languages</a>
-      <a class="hide-sm" href="#safety">Safety</a>
+    <div class="links">
+      <a class="sm-hide" href="#demo">Live demo</a>
+      <a class="sm-hide" href="#languages">Languages</a>
+      <a class="sm-hide" href="#safety">Safety</a>
+      <a class="sm-hide" href="#roadmap">Roadmap</a>
       <a href="#pricing">Pricing</a>
-      <a href="/admin">Sign in</a>
-    </nav>
+      <a class="btn btn-line btn-sm" href="/admin">Sign in</a>
+    </div>
   </div>
 </header>
 
 <div id="top" class="hero">
-  <div class="aurora"><i></i><i></i><i></i></div>
+  <div class="glow"><i class="a"></i><i class="b"></i><i class="c"></i></div>
   <div class="wrap">
-    <div>
-      <div class="eyebrow">Olink Technologies</div>
-      <h1>Your customers already message you. In their own language.</h1>
-      <p class="lede">
-        An AI assistant for banks and microfinance institutions that answers from
-        <strong>your own documents</strong> — in Amharic, Afaan&nbsp;Oromoo, Tigrinya,
-        Somali, Swahili and English — across the channels your customers already
-        have on the phone they already own. When it cannot answer, or must not, a
-        real teller takes over inside the same conversation.
-      </p>
-      <div class="cta-row">
-        <a class="btn btn-primary" href="#demo">Try it now</a>
-        <a class="btn btn-ghost" data-contact href="#pricing">Book a walkthrough</a>
-      </div>
+    <div class="pill"><span class="dot"></span> Live demo running on this page</div>
+    <h1 class="display">Your customers already message you. In <em>their</em> language.</h1>
+    <p class="lede">
+      An AI assistant for banks and microfinance institutions that answers from
+      your own documents — in Amharic, Afaan&nbsp;Oromoo, Tigrinya, Somali,
+      Swahili and English — across the channels they already have on the phone
+      they already own. When it cannot answer, or must not, a real teller takes
+      over inside the same conversation.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-solid" href="#demo">Try the live demo</a>
+      <a class="btn btn-line" data-contact href="#pricing">Book a walkthrough</a>
     </div>
 
-    <div class="demo" id="demo">
-      <div class="demo-frame">
+    <div class="stage" id="demo">
+      <div class="stage-inner">
         <!-- The product itself, not a picture of it. Same widget a bank
              embeds, same origin, pointed at the fictional demo tenant. -->
-        <iframe src="/widget?bank=demo" title="Live demo of the assistant"
+        <iframe src="/widget?bank=demo&amp;theme=dark" title="Live demo of the assistant"
                 loading="lazy" referrerpolicy="same-origin"></iframe>
       </div>
-      <p class="demo-cap">
-        <span class="live-dot"></span>
-        This is the running product, not a video. Ask it something — and switch
-        language inside the chat.
+      <p class="stage-cap">
+        <span class="dot"></span>
+        <span>This is the running product, not a video. Ask it something — and
+        switch language inside the chat.</span>
       </p>
     </div>
   </div>
 </div>
 
-<section id="channels">
+<section>
   <div class="wrap">
-    <div class="kicker">Seven channels, one conversation</div>
-    <h2>Meet customers where they already are.</h2>
-    <p class="sec-lede">
-      Every channel below is a built adapter, not a roadmap item. The conversation
-      is the same conversation across all of them — a customer who starts on
-      Telegram and finishes on the website does not repeat themselves, and neither
-      does the teller who picks it up.
-    </p>
-    <div class="chan">
-      <span class="first">Telegram</span>
-      <span>Website widget</span>
-      <span>WhatsApp</span>
-      <span>Facebook Messenger</span>
-      <span>Instagram Direct</span>
-      <span>Viber</span>
-      <span>SMS</span>
+    <div class="strip">
+      <div>
+        <div class="gl">◈</div>
+        <h3>Answers with the source attached</h3>
+        <p>Every substantive answer carries the passage it came from. No source, no answer.</p>
+      </div>
+      <div>
+        <div class="gl">◎</div>
+        <h3>A teller one tap away</h3>
+        <p>The handoff carries the transcript, the language and the reason. Nobody starts again.</p>
+      </div>
+      <div>
+        <div class="gl">▤</div>
+        <h3>Two reports, not a dashboard</h3>
+        <p>What it did — and what your customers asked that it could not answer.</p>
+      </div>
     </div>
-    <p class="sec-lede" style="margin-top:26px">
-      Telegram is first on that list on purpose. It is where a great many
-      Ethiopian customers already talk to businesses, and it is the channel the
-      international platforms in this category treat as an afterthought or skip
-      entirely.
-    </p>
   </div>
 </section>
 
 <section id="languages">
-  <div class="wrap">
-    <div class="kicker">Six languages</div>
-    <h2>Not a translation layer.</h2>
-    <p class="sec-lede">
-      Every one of these has its own complete table of what the assistant says,
-      its own detection rules, and — the part that matters — <strong>its own
-      safety rules, written and tested in that language</strong>. A customer
-      trying to talk the assistant into revealing an account detail does not
-      phrase it in Amharic the way an English phrasebook would translate it. So
-      the guardrail is not translated. It is written per language, and there is a
-      test for each one.
-    </p>
-    <div class="langs">
-      <span>English<small>EN</small></span>
-      <span lang="am">አማርኛ<small>AMHARIC</small></span>
-      <span>Afaan Oromoo<small>OROMO</small></span>
-      <span lang="ti">ትግርኛ<small>TIGRINYA</small></span>
-      <span>Soomaali<small>SOMALI</small></span>
-      <span>Kiswahili<small>SWAHILI</small></span>
+  <div class="glow"><i class="b"></i><i class="c"></i></div>
+  <div class="wrap center">
+    <div class="tag brand">Built for how your customers actually talk</div>
+    <h2 class="display" style="margin-top:16px">Everything a bank needs, and nothing it has to explain away.</h2>
+
+    <div class="bento" style="text-align:left">
+      <div class="tile w2 lit-teal">
+        <h3>Not a translation layer.</h3>
+        <p>Each language has its own table of what the assistant says, its own
+           detection rules, and its own safety rules — written and tested in that
+           language, because a social-engineering attempt in Amharic does not look
+           like its English translation.</p>
+        <div class="chips bottom">
+          <span class="on">English</span><span class="on" lang="am">አማርኛ</span>
+          <span class="on">Afaan Oromoo</span><span class="on" lang="ti">ትግርኛ</span>
+          <span class="on">Soomaali</span><span class="on">Kiswahili</span>
+        </div>
+      </div>
+
+      <div class="tile h2 lit-deep">
+        <div class="num">7</div>
+        <div class="sub">Channels, one conversation.</div>
+        <div class="chips" style="margin-top:18px">
+          <span class="on">Telegram</span><span>Website</span><span>WhatsApp</span>
+          <span>Messenger</span><span>Instagram</span><span>Viber</span><span>SMS</span>
+        </div>
+        <p class="bottom" style="font-size:13px">
+          Telegram is first on purpose — it is where a great many Ethiopian
+          customers already talk to businesses, and the international platforms
+          in this category treat it as an afterthought.
+        </p>
+      </div>
+
+      <div class="tile lit-viol">
+        <div class="num">0</div>
+        <div class="sub">Figures the model invents.</div>
+        <a class="arrow bottom" href="#safety">How that is enforced →</a>
+      </div>
+
+      <div class="tile lit-warm">
+        <h3>Your knowledge base stays yours.</h3>
+        <p>Not pooled, not used to train a shared model, not shared between
+           institutions.</p>
+      </div>
     </div>
-    <p class="sec-lede" style="margin-top:30px">
-      Amharic and Afaan Oromoo have been reviewed by a native speaker. Tigrinya,
-      Somali and Swahili are first-pass and under professional review — we would
-      rather say so than let you find out.
+
+    <p class="lede" style="margin-top:34px">
+      Amharic and Afaan&nbsp;Oromoo have been reviewed by a native speaker.
+      Tigrinya, Somali and Swahili are first-pass and under professional
+      review — we would rather say so than let you find out.
     </p>
   </div>
 </section>
 
 <section id="safety">
   <div class="wrap">
-    <div class="kicker">What it will not do</div>
-    <h2>The section your risk officer reads first.</h2>
-    <p class="sec-lede">
+    <div class="tag brand">What it will not do</div>
+    <h2 class="display" style="margin-top:16px">The section your risk officer<br>reads first.</h2>
+    <p class="lede">
       An assistant that occasionally invents an interest rate is not a cheaper
       contact centre — it is a regulatory incident with a chat interface. These
       are enforced in code and checked by the test suite on every change, not
       written into a prompt and hoped for.
     </p>
+
     <div class="rules">
       <div class="rule">
         <div class="n">01</div>
-        <div>
-          <h3>Answers come from your documents, with the source attached</h3>
-          <p>Every substantive answer carries the passage it came from. If your
-             knowledge base does not cover the question, the assistant says so
-             and offers a person — it does not improvise a plausible answer.</p>
-        </div>
+        <h3>It cannot invent a rate, a fee, or a balance</h3>
+        <p>Figures come from retrieved content or from a tool, never from the
+           model's own memory. An evaluation suite runs against a fixed set of
+           questions before any knowledge-base or model change ships.</p>
       </div>
       <div class="rule">
         <div class="n">02</div>
-        <div>
-          <h3>It cannot invent a rate, a fee, or a balance</h3>
-          <p>Figures come from retrieved content or from a tool, never from the
-             model's own memory. This is a rule the code enforces, and the
-             evaluation suite runs against a fixed set of questions before any
-             knowledge-base or model change ships.</p>
-        </div>
+        <h3>It refuses anything needing account access — and is tested for over-refusing too</h3>
+        <p>Balances, PINs, card blocks and transfers are out of bounds without an
+           authenticated session. Checked in both directions: an assistant that
+           refuses "what documents do I need to open an account?" has failed just
+           as surely as one that leaks a balance.</p>
       </div>
       <div class="rule">
         <div class="n">03</div>
-        <div>
-          <h3>It refuses anything that needs account access — and is tested for over-refusing too</h3>
-          <p>Balances, PINs, card blocks and transfers are out of bounds without
-             an authenticated session. The guardrail is checked in both
-             directions, because an assistant that refuses "what documents do I
-             need to open an account?" has failed just as surely as one that
-             leaks a balance.</p>
-        </div>
+        <h3>Education, not advice</h3>
+        <p>It explains how a product works. It does not tell a customer which one
+           to buy. That line is in the contract as well as the code.</p>
       </div>
       <div class="rule">
         <div class="n">04</div>
-        <div>
-          <h3>Education, not advice</h3>
-          <p>It will explain how a product works. It will not tell a customer
-             which one to buy. That line is written into the contract as well as
-             the code.</p>
-        </div>
+        <h3>One institution's data cannot reach another's</h3>
+        <p>Every query touching tenant data is scoped by institution, and an
+           integration test asserts it.</p>
       </div>
       <div class="rule">
         <div class="n">05</div>
-        <div>
-          <h3>One institution's data cannot reach another's</h3>
-          <p>Every query touching tenant data is scoped by institution, and an
-             integration test asserts it. Knowledge bases are strictly isolated;
-             nothing is pooled across customers.</p>
-        </div>
-      </div>
-      <div class="rule">
-        <div class="n">06</div>
-        <div>
-          <h3>Every action is auditable</h3>
-          <p>Staff actions are written to an audit log with actor, action and
-             entity. Administrator accounts carry a second factor.</p>
-        </div>
+        <h3>Chat text is never logged, and every staff action is</h3>
+        <p>Message content stays out of application logs. What is recorded is what
+           the system did — actor, action, entity. Administrator accounts carry a
+           second factor.</p>
       </div>
     </div>
   </div>
 </section>
 
-<section id="handoff">
+<section id="roadmap">
+  <div class="glow"><i class="c"></i></div>
   <div class="wrap">
-    <div class="kicker">When it must not answer</div>
-    <h2>A real person, inside the same conversation.</h2>
-    <p class="sec-lede">
-      The assistant hands over to a teller without the customer starting again.
-      The transcript, the detected language and the reason for the escalation are
-      already on the teller's screen when they pick it up — and the customer stays
-      in the channel they were already using, with a live voice call if the
-      conversation needs one.
+    <div class="tag brand">Where this actually is</div>
+    <h2 class="display" style="margin-top:16px">Development plan.</h2>
+    <p class="lede">
+      Published rather than implied, including the part that has not happened.
+      Phase&nbsp;1 is complete and running — the demo above is it. No bank has
+      signed a pilot yet, and a roadmap that hid that would be the first thing
+      worth distrusting.
     </p>
-    <div class="grid g3">
-      <div class="card">
-        <div class="ic">◎</div>
-        <h3>Routed by expertise</h3>
-        <p>Escalations land on the right desk — cards, accounts, loans, fraud —
-           rather than in one undifferentiated queue.</p>
-      </div>
-      <div class="card">
-        <div class="ic">◑</div>
-        <h3>Or into the tool you already own</h3>
-        <p>A signed webhook delivers the handoff to an existing contact-centre
-           system for institutions that would rather not add a console.</p>
-      </div>
-      <div class="card">
-        <div class="ic">▤</div>
-        <h3>Two reports, not one dashboard</h3>
-        <p>What the assistant did, and what your customers asked that it could
-           not answer. The second one is the list of documents worth writing.</p>
-      </div>
-    </div>
-  </div>
-</section>
 
-<section id="residency">
-  <div class="wrap">
-    <div class="kicker">Data residency</div>
-    <h2>Built to run inside Ethiopia.</h2>
-    <p class="sec-lede">
-      Chat content is personal data whether or not it is linked to an account, so
-      the deployment target is in-country infrastructure rather than a foreign
-      region with a data-processing addendum attached. Olink Technologies has been
-      through in-country certification before with Onekof, and that playbook is
-      what this product follows.
-    </p>
-    <div class="grid g2">
-      <div class="card">
-        <div class="ic">⌂</div>
-        <h3>Your knowledge base stays yours</h3>
-        <p>Documents you load are used to answer your customers. They are not
-           pooled, not used to train a shared model, and not shared between
-           institutions.</p>
+    <div class="gantt">
+      <div class="nowline"></div>
+      <div class="gantt-rows">
+        <div class="grow"><div class="bar done" style="--from:0%;   --w:26%; --tint:color-mix(in srgb, var(--brand) 26%, transparent)">
+          <b>Phase 1 — Assistant</b><span>Six languages, seven channels, live teller handoff, both reports</span></div></div>
+        <div class="grow"><div class="bar" style="--from:22%; --w:32%; --tint:color-mix(in srgb, var(--brand) 20%, transparent)">
+          <b>Phase 2 — First pilot</b><span>Your knowledge base, your branding, in-country hosting</span></div></div>
+        <div class="grow"><div class="bar" style="--from:46%; --w:30%; --tint:color-mix(in srgb, var(--violet) 22%, transparent)">
+          <b>Phase 3 — Account servicing</b><span>OTP sessions, read-only balances first, then card actions</span></div></div>
+        <div class="grow"><div class="bar" style="--from:68%; --w:32%; --tint:color-mix(in srgb, var(--warm) 22%, transparent)">
+          <b>Phase 4 — Scale</b><span>USSD and IVR for feature phones, financial education, multi-institution</span></div></div>
       </div>
-      <div class="card">
-        <div class="ic">✎</div>
-        <h3>Chat text is not logged</h3>
-        <p>Message content is not written to application logs. What is recorded
-           is what the system did — intent, language, outcome — which is what the
-           reports are built from.</p>
-      </div>
+      <div class="axis"><span>Now</span><span>Pilot</span><span>Servicing</span><span>Scale</span></div>
     </div>
   </div>
 </section>
 
 <section id="pricing">
   <div class="wrap">
-    <div class="kicker">Pricing</div>
-    <h2>Per institution. Never per seat.</h2>
-    <p class="sec-lede">
+    <div class="tag brand">Pricing</div>
+    <h2 class="display" style="margin-top:16px">Per institution. Never per seat.</h2>
+    <p class="lede">
       Charging per agent seat punishes you for putting the assistant in front of
       more customers, which is the entire point of buying it. So the model is a
       one-time setup fee plus a monthly subscription tiered by conversation
-      volume — the same shape the established platforms in this category use,
-      because it is the shape a bank's procurement team can actually approve.
+      volume — the shape a bank's procurement team can actually approve.
     </p>
 
-    <div class="price-grid">
-      <div class="price">
+    <div class="plans">
+      <div class="plan">
         <h3>Pilot</h3>
         <div class="who">One institution, one or two channels, a fixed term</div>
         <ul>
           <li>Your published content imported and answering</li>
           <li>Website widget and Telegram</li>
           <li>Both reports, with export</li>
-          <li>A defined success measure agreed before it starts</li>
+          <li>A success measure agreed before it starts</li>
         </ul>
       </div>
-      <div class="price mid">
+      <div class="plan feature">
         <h3>Institution</h3>
         <div class="who">A bank or MFI in production</div>
         <ul>
@@ -538,10 +637,10 @@ footer a { color: var(--muted); }
           <li>Live teller handoff, desks and routing</li>
           <li>Six languages, your branding on the widget</li>
           <li>In-country deployment</li>
-          <li>Evaluation suite run before every content or model change</li>
+          <li>Evaluation suite run before every change</li>
         </ul>
       </div>
-      <div class="price">
+      <div class="plan">
         <h3>Group</h3>
         <div class="who">A holding company or several institutions</div>
         <ul>
@@ -553,7 +652,7 @@ footer a { color: var(--muted); }
       </div>
     </div>
 
-    <div class="shape">
+    <div class="note">
       <b>We publish the model, not a number.</b> What it costs depends on your
       conversation volume, which channels you switch on, and whether the
       deployment is in-country from day one. Tell us those three things and you
@@ -562,16 +661,17 @@ footer a { color: var(--muted); }
   </div>
 </section>
 
-<section class="close">
+<section class="center">
+  <div class="glow"><i class="a"></i><i class="c"></i></div>
   <div class="wrap">
-    <h2>See it answer your own customers' questions.</h2>
-    <p class="sec-lede">
+    <h2 class="display" style="max-width:22ch;margin:0 auto">See it answer your own customers' questions.</h2>
+    <p class="lede">
       The fastest version of this conversation is thirty minutes with your own
       published FAQ loaded, so you are looking at your content rather than ours.
     </p>
     <div class="cta-row">
-      <a class="btn btn-primary" data-contact href="#top">Book a walkthrough</a>
-      <a class="btn btn-ghost" href="#demo">Try the live demo first</a>
+      <a class="btn btn-solid" href="#demo">Try the live demo</a>
+      <a class="btn btn-line" data-contact href="#top">Book a walkthrough</a>
     </div>
   </div>
 </section>
@@ -585,9 +685,9 @@ footer a { color: var(--muted); }
       appears anywhere on this site, and nothing here should be read as claiming
       a relationship with any named institution.
     </div>
-    <div>
-      © <span id="yr">2026</span> Olink Technologies. Olink Bank Assist.
-      · <a href="/admin">Staff sign in</a>
+    <div class="foot-end">
+      <span>© <span id="yr">2026</span> Olink Technologies. Olink Bank Assist.</span>
+      <a class="sp" href="/admin">Staff sign in</a>
     </div>
   </div>
 </footer>
@@ -596,13 +696,9 @@ footer a { color: var(--muted); }
 /* Two values set this page live, and both are deliberately empty rather than
    guessed. A placeholder address that silently goes nowhere is worse than a
    button that admits it is not wired yet, and a canonical URL invented before
-   the domain is chosen is a wrong URL that has to be hunted down later.
-
-   Fill CONTACT_EMAIL and the page's calls to action become real mailto links,
-   pre-addressed and pre-subjected. Until then they carry data-pending and do
-   not pretend to work. */
+   the domain is chosen is a wrong URL that has to be hunted down later. */
 var SITE = {
-  contactEmail: "",           // TODO before launch — e.g. the sales alias
+  contactEmail: "",           // TODO before launch — the sales alias
   domain: ""                  // TODO before launch — sets canonical + OG URLs
 };
 
@@ -614,8 +710,6 @@ var SITE = {
   );
   Array.prototype.forEach.call(links, function (a) {
     if (!SITE.contactEmail) {
-      // Honest rather than broken: it says what it is instead of opening a
-      // blank mail window addressed to nobody.
       a.setAttribute("data-pending", "1");
       a.setAttribute("aria-disabled", "true");
       a.setAttribute("title", "Contact address not configured yet");

@@ -634,6 +634,11 @@ _FONTS = {
     "inter-latin.woff2",
     "inter-latin-ext.woff2",
     "noto-sans-ethiopic.woff2",
+    # Display serif, public page only. The admin panel and the widget never
+    # ask for it, so nobody who is working pays for it — it loads on the one
+    # surface whose job is to look like something.
+    "playfair-latin.woff2",
+    "playfair-latin-ext.woff2",
 }
 
 

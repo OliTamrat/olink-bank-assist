@@ -584,6 +584,21 @@ It also **does not lead with the live handoff**: Glia owns that ground at
 scale, and `market-position.md` says leading with it will be caught. The spine
 is *your customers already message you, in their own language, on Telegram*.
 
+**The type pairing is the design.** An editorial serif (**Playfair Display**)
+at display size against Inter at text size — the first build set everything in
+Inter and read as a template, because a page with one neutral sans has no
+voice. The serif is weight 500 (bolding thickens the hairlines that make it
+worth having), display sizes and numerals only, and **loaded on this page
+alone** — a test asserts the admin panel and widget never request it.
+**Ge'ez is never set in the serif**: Playfair has no Ethiopic, so
+`.display:lang(am|ti)` switches family as well as spacing.
+
+**The widget takes `?theme=dark|light`.** Its dark palette used to be
+reachable only through `prefers-color-scheme`, so a bank with a dark site — or
+this page — got a white panel for every visitor on a light OS. The
+declarations moved onto `:root[data-theme="dark"]`; the choice is made in the
+`<head>` so it never paints light and then corrects.
+
 **The page is English on purpose** — a deliberate exception to the
 multilingual golden rule, recorded in ADR-0030. Its reader works in English,
 its content is persuasive prose rather than interface labels, and three of the

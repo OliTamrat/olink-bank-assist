@@ -33,9 +33,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-SITE = (
-    Path(__file__).resolve().parent.parent / "bankassist" / "static" / "site.html"
-).read_text(encoding="utf-8")
+STATIC = Path(__file__).resolve().parent.parent / "bankassist" / "static"
+SITE = (STATIC / "site.html").read_text(encoding="utf-8")
 
 
 def test_the_page_is_served_at_the_root(client: TestClient) -> None:
@@ -145,15 +144,35 @@ def test_the_language_claim_states_what_is_reviewed() -> None:
     )
 
 
-def test_geez_is_not_tracked_like_latin_here_either() -> None:
-    """Same defect, same fix, on a page that also sets big headlines.
+def test_geez_never_gets_set_in_the_display_serif() -> None:
+    """Two defects at once on this page, and the second is new.
 
-    The page carries Amharic and Tigrinya in the language row, and its
-    headings use the same negative tracking the panel's did.
+    The first is the familiar one: display tracking and leading tuned for
+    Latin, crowding a script whose characters are whole syllables.
+
+    The second only exists here. The page's voice is a **serif** at display
+    size, and Playfair has no Ethiopic at all — so a Ge'ez headline in the
+    serif falls through to a system face while keeping the serif's tracking
+    and leading. It has to switch families, not just relax the spacing.
     """
-    assert re.search(r"h[123]:lang\(am\)", SITE), "no Ge'ez heading rule"
-    rule = re.search(r"h1:lang\(am\).*?\{([^}]*)\}", SITE, re.S)
-    assert rule and "letter-spacing: normal" in rule.group(1)
+    rule = re.search(r"\.display:lang\(am\)[^{]*\{([^}]*)\}", SITE, re.S)
+    assert rule, "no Ge'ez rule on the display face"
+    body = rule.group(1)
+    assert "var(--sans)" in body, "Ge'ez is still being set in the display serif"
+    assert "letter-spacing: normal" in body, "Ge'ez is tracked like Latin"
+    assert re.search(r"line-height: 1\.[23]", body), "Ge'ez leading is Latin's"
+
+
+def test_the_serif_is_the_public_page_only() -> None:
+    """It is the page's whole voice, and it is 38 KB nobody working should pay.
+
+    The admin panel and the widget are tools people use all day; the serif is
+    for the one surface whose job is to look like something.
+    """
+    assert "playfair" in SITE.lower(), "the display serif is gone from the public page"
+    for other in ("admin.html", "widget.html"):
+        text = (STATIC / other).read_text(encoding="utf-8")
+        assert "playfair" not in text.lower(), f"{other} now loads the marketing serif"
 
 
 def test_every_nav_target_exists() -> None:
