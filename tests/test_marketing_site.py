@@ -179,6 +179,45 @@ def test_geez_never_gets_set_in_the_display_serif() -> None:
         )
 
 
+def test_geez_is_not_given_the_latin_headline_size() -> None:
+    """Same face as the panel, and now the same scale relationship too.
+
+    Switching family, tracking and leading was not the whole of it. A Ge'ez
+    syllable fills its em box where Latin lowercase fills about half of it, so
+    the two scripts set at one px never look like one size. The headline rides
+    to 68px for Playfair, which meant the Amharic and Tigrinya lines rendered a
+    third larger than the 50px the sign-in card was approved at — the same
+    typeface, visibly not doing the same thing on the two surfaces.
+
+    The cap is asserted rather than the exact clamp so the curve can be tuned;
+    what must not come back is Ge'ez inheriting the Latin maximum.
+    """
+    css = re.sub(r"/\*.*?\*/", "", SITE, flags=re.S)
+
+    def cap(selector: str) -> float:
+        rule = re.search(rf"{re.escape(selector)}[^{{]*\{{([^}}]*)\}}", css, re.S)
+        assert rule, f"no rule for {selector}"
+        size = re.search(r"font-size:\s*clamp\([^)]*?,\s*([\d.]+)px\s*\)", rule.group(1))
+        assert size, f"{selector} does not cap its font size with a clamp"
+        return float(size.group(1))
+
+    latin_h1 = cap("h1.display {")
+    geez_h1 = cap("h1.display:lang(am)")
+    assert geez_h1 < latin_h1, (
+        f"Ge'ez h1 is capped at {geez_h1}px against Latin's {latin_h1}px — it is "
+        "taking the Latin display size and will read a third too large"
+    )
+    assert geez_h1 <= 50, (
+        f"Ge'ez h1 caps at {geez_h1}px; the sign-in card's approved maximum is 50px"
+    )
+    # …and it must reach the nested span, for exactly the reason the family
+    # rule above does: the morphing line carries its own `lang`.
+    assert "h1.display :lang(am)" in css, (
+        "the Ge'ez size cap is missing its descendant form — the morphing "
+        "headline line is a span inside the heading and would keep 68px"
+    )
+
+
 def test_the_serif_reaches_the_selling_surfaces_and_stops() -> None:
     """It goes as far as the sign-in screen, and no further.
 

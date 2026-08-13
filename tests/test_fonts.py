@@ -34,7 +34,52 @@ from fastapi.testclient import TestClient
 from bankassist.api import _FONTS
 
 STATIC = Path(__file__).resolve().parent.parent / "bankassist" / "static"
-PAGES = ("admin.html", "widget.html")
+# site.html was missing from this tuple until the Ge'ez question came back a
+# third time. Every rule below — Latin first, the reader's Ge'ez before ours,
+# range gating, no CDN — had never once been applied to the public page, so
+# the one surface a prospect sees first was the only one free to drift.
+PAGES = ("site.html", "admin.html", "widget.html")
+
+# The Ge'ez faces a reader's own machine might supply, in the order a machine
+# is likely to have them. Ours is deliberately not in this list.
+SYSTEM_GEEZ = ("Nyala", "Abyssinica SIL", "Noto Sans Ethiopic", "Ebrima")
+OURS = "Noto Sans Ethiopic Variable"
+
+
+def _strip_comments(css: str) -> str:
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+
+def _body_stack(page: str) -> list[str]:
+    """The families `body` actually ends up with, however the page spells it.
+
+    Two of the three write the stack straight onto `body`; the public page
+    holds it in a custom property and writes `var(--sans)`. That is a
+    formatting difference, not a typographic one, so this resolves the
+    indirection rather than exempting the page from the rules.
+    """
+    html = (STATIC / page).read_text(encoding="utf-8")
+    # More than one rule mentions `body` (widget.html has `html, body`), so
+    # pick the one that actually sets the stack.
+    blocks = [
+        m.group(1)
+        for m in re.finditer(r"(?:^|[\s,])body\s*\{(.*?)\}", html, re.S)
+        if "font-family" in m.group(1)
+    ]
+    assert len(blocks) == 1, f"{page} sets a body font-family in {len(blocks)} rules"
+    stack = re.search(r"font-family:([^;]+);", blocks[0], re.S)
+    assert stack, f"body in {page} declares no font-family"
+    # The stack is commented inline, one script per group — strip those out
+    # before splitting, or the first "family" is a comment.
+    declared = _strip_comments(stack.group(1))
+
+    var = re.fullmatch(r"\s*var\((--[\w-]+)\)\s*", declared)
+    if var:
+        prop = re.search(rf"{var.group(1)}\s*:([^;]+);", _strip_comments(html))
+        assert prop, f"{page} points body at {var.group(1)}, which is not defined"
+        declared = prop.group(1)
+
+    return [f.strip().strip('"').strip("'") for f in declared.split(",") if f.strip()]
 
 
 @pytest.mark.parametrize("name", sorted(_FONTS))
@@ -109,40 +154,50 @@ def test_latin_leads_the_stack_and_geez_is_still_in_it(page: str) -> None:
     would look like a tidy-up: it costs every Ethiopian reader the face their
     own system chose, and costs them 198 KB to do it.
     """
-    html = (STATIC / page).read_text(encoding="utf-8")
-    # Both pages carry more than one rule whose selector mentions `body`
-    # (widget.html has `html, body { height: 100% }`), so pick the one that
-    # actually sets the stack rather than the first one that matches.
-    blocks = [
-        m.group(1)
-        for m in re.finditer(r"(?:^|[\s,])body\s*\{(.*?)\}", html, re.S)
-        if "font-family" in m.group(1)
-    ]
-    assert len(blocks) == 1, f"{page} sets a body font-family in {len(blocks)} rules"
-    stack = re.search(r"font-family:([^;]+);", blocks[0], re.S)
-    assert stack, f"body in {page} declares no font-family"
-    # The stack is commented inline, one script per group — strip those out
-    # before splitting, or the first "family" is a comment.
-    declared = re.sub(r"/\*.*?\*/", "", stack.group(1), flags=re.S)
-    families = [f.strip().strip('"').strip("'") for f in declared.split(",") if f.strip()]
+    families = _body_stack(page)
 
     assert families[0] == "Inter Variable", f"{page} body stack starts with {families[0]}"
 
-    ours = "Noto Sans Ethiopic Variable"
-    assert ours in families, f"{page} lost its Ge'ez last resort"
-    assert families.index("Inter Variable") < families.index(ours)
+    assert OURS in families, f"{page} lost its Ge'ez last resort"
+    assert families.index("Inter Variable") < families.index(OURS)
 
     # At least one Ge'ez face the reader's own machine might supply, ahead of
     # ours. Without this the "restore the original" decision is undone.
-    system_geez = ["Nyala", "Abyssinica SIL", "Noto Sans Ethiopic", "Ebrima"]
-    present = [f for f in system_geez if f in families]
+    present = [f for f in SYSTEM_GEEZ if f in families]
     assert present, f"{page} no longer prefers a system Ge'ez face"
     for face in present:
-        assert families.index(face) < families.index(ours), (
+        assert families.index(face) < families.index(OURS), (
             f"{page} puts our bundled Ge'ez ahead of {face} — that is the "
             "self-hosting the founder asked to be reverted"
         )
-    assert families[-1] not in system_geez, f"{page} has no generic tail"
+    assert families[-1] not in SYSTEM_GEEZ, f"{page} has no generic tail"
+
+
+def test_every_page_asks_for_the_same_geez_font() -> None:
+    """One typeface for Amharic and Tigrinya across the whole product.
+
+    The three stacks were byte-identical through their Ge'ez runs, and nothing
+    said they had to be — they were hand-copied into three files, and the only
+    test that read any of them read two. That is how "the Ge'ez font" became a
+    recurring question rather than a settled one: a page could be corrected,
+    and the correction had no way to reach the others.
+
+    The Latin tail is deliberately NOT compared. The widget ends
+    `-apple-system, BlinkMacSystemFont, …` because it runs inside a bank's own
+    page on a customer's phone, and that is a different problem from the two
+    desktop surfaces. This asserts the part that has to match: which Ethiopic
+    face gets asked for, and in what order.
+    """
+    runs = {p: [f for f in _body_stack(p) if f in SYSTEM_GEEZ or f == OURS] for p in PAGES}
+    first = runs[PAGES[0]]
+    assert first, f"{PAGES[0]} names no Ge'ez face at all"
+    for page, run in runs.items():
+        assert run == first, (
+            f"{page} asks for a different Ge'ez font from {PAGES[0]}:\n"
+            f"  {page}: {run}\n  {PAGES[0]}: {first}\n"
+            "Amharic and Tigrinya would render in one face on one surface and "
+            "another face on the next, which is the defect this pins."
+        )
 
 
 @pytest.mark.parametrize("page", PAGES)

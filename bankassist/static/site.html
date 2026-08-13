@@ -164,8 +164,19 @@ a { color: inherit; }
 .display:lang(am), .display:lang(ti),
 .display :lang(am), .display :lang(ti) {
   font-family: var(--sans); font-weight: 600;
-  letter-spacing: normal; line-height: 1.3;
+  letter-spacing: normal; line-height: 1.28;
 }
+/* …and Ge'ez does not take the same PX as Latin either.
+   A Ge'ez syllable fills its em box; Latin lowercase fills about half of it,
+   which is why the two scripts set at one size never look like one size. The
+   headline rode to 68px, so the Amharic and Tigrinya lines rendered a third
+   larger than the 50px the sign-in card was approved at — the same face,
+   doing something visibly different from what it does in the panel. This is
+   the dashboard's cap, and the surrounding Latin keeps its own. */
+h1.display:lang(am), h1.display:lang(ti),
+h1.display :lang(am), h1.display :lang(ti) { font-size: clamp(32px, 3.4vw, 50px); }
+h2.display:lang(am), h2.display:lang(ti),
+h2.display :lang(am), h2.display :lang(ti) { font-size: clamp(26px, 2.9vw, 42px); }
 /* Capped at 68px, not 82. At 82 the three lines filled a 900px viewport on
    their own and pushed the live demo — the thing the headline is promising —
    entirely below the fold. The drama is in the face, not the size. */
