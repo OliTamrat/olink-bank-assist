@@ -580,17 +580,35 @@ which widens the layout viewport and breaks the whole page, not just the box.
 
 ### Typography — vendored, and the order is load-bearing (ADR-0028)
 
-Both pages declare the same stack, and **Inter comes first, Ethiopic second**:
+The stack says **two different things for the two scripts**, and that is
+deliberate:
 
 ```
-"Inter Variable", Inter, "Noto Sans Ethiopic Variable", "Noto Sans Ethiopic", …
+"Inter Variable", Inter,                                  ← Latin: ours
+Nyala, "Abyssinica SIL", "Noto Sans Ethiopic", Ebrima,     ← Ge'ez: the reader's
+"Noto Sans Ethiopic Variable",                             ← ours, last resort only
+"Segoe UI", system-ui, …
 ```
 
-Ethiopic led it for a year, which meant every Latin character in the product —
-labels, metrics, English answers — was drawn with a Ge'ez face's Latin glyphs.
-CSS fallback is **per character**, so putting Inter first costs Amharic
-nothing: Inter declares no Ge'ez range, so ሰላም still resolves to Noto.
-Reordering these looks harmless and is not; `tests/test_fonts.py` asserts it.
+**Latin is ours, and Inter must lead.** Ethiopic led this stack for a year,
+which meant every Latin character in the product — labels, metrics, English
+answers — was drawn with a Ge'ez face's Latin glyphs. CSS fallback is **per
+character**, so Inter first costs Amharic nothing.
+
+**Ge'ez is the reader's, and our copy must stay LAST.** This is a founder
+decision, not a typographic one. The stack that shipped originally named
+`"Noto Sans Ethiopic"` with no `@font-face`, so it fell through to whatever
+the OS supplies — Nyala on Windows, where most Ethiopian desktop users are,
+and the face an Amharic reader recognises as properly set. Self-hosting
+replaced it everywhere with a monolinear sans; the verdict was *"restore the
+original font for Ge'ez, that was the best font."* Promoting our copy back up
+the list looks like a tidy-up and costs every Ethiopian reader both the right
+face and 198 KB. `tests/test_fonts.py` asserts the ordering both ways.
+
+Consequence: **a machine with any Ethiopic font never downloads ours** (a
+webfont is only fetched when it wins the fallback). Verified in a browser both
+ways. It also means `warmMockFonts` must **never name the Ge'ez family** —
+that forces the download — hence the probe-plus-`fonts.ready` approach.
 
 The `.woff2` files are **in the repo** and served from `/fonts/*` through an
 allowlist in `api.py` — never a path join, and never Google Fonts. Same

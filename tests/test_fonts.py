@@ -91,12 +91,23 @@ def test_the_files_the_pages_ask_for_are_the_files_that_exist(page: str) -> None
 
 @pytest.mark.parametrize("page", PAGES)
 def test_latin_leads_the_stack_and_geez_is_still_in_it(page: str) -> None:
-    """Both halves matter, and dropping either one is a visible regression.
+    """The stack says two different things for the two scripts.
 
-    Inter first, so Latin stops being drawn in a Ge'ez face. Ethiopic still
-    present, so ሰላም does not fall through to whatever the operating system
-    happens to have — which on Windows is Ebrima, a face designed for a
-    different script family.
+    **Inter first**, so Latin stops being drawn with a Ge'ez face's Latin
+    glyphs — which is what it was for years, and why the panel read flat.
+
+    **Our Ge'ez copy LAST.** This is the deliberate reversal, on the
+    founder's call: the stack that shipped originally named
+    `"Noto Sans Ethiopic"` with no `@font-face`, so it fell through to
+    whatever the operating system supplies — Nyala on Windows, where most
+    Ethiopian desktop users are. Self-hosting replaced that everywhere with a
+    monolinear sans, and his verdict was that the original was better. Local
+    faces now win; ours is reached only by a machine with no Ethiopic font at
+    all, which would otherwise render tofu.
+
+    Promoting our copy back up the list is the regression this guards, and it
+    would look like a tidy-up: it costs every Ethiopian reader the face their
+    own system chose, and costs them 198 KB to do it.
     """
     html = (STATIC / page).read_text(encoding="utf-8")
     # Both pages carry more than one rule whose selector mentions `body`
@@ -110,11 +121,28 @@ def test_latin_leads_the_stack_and_geez_is_still_in_it(page: str) -> None:
     assert len(blocks) == 1, f"{page} sets a body font-family in {len(blocks)} rules"
     stack = re.search(r"font-family:([^;]+);", blocks[0], re.S)
     assert stack, f"body in {page} declares no font-family"
-    families = [f.strip().strip('"').strip("'") for f in stack.group(1).split(",")]
+    # The stack is commented inline, one script per group — strip those out
+    # before splitting, or the first "family" is a comment.
+    declared = re.sub(r"/\*.*?\*/", "", stack.group(1), flags=re.S)
+    families = [f.strip().strip('"').strip("'") for f in declared.split(",") if f.strip()]
 
     assert families[0] == "Inter Variable", f"{page} body stack starts with {families[0]}"
-    assert "Noto Sans Ethiopic Variable" in families, f"{page} lost its Ge'ez face"
-    assert families.index("Inter Variable") < families.index("Noto Sans Ethiopic Variable")
+
+    ours = "Noto Sans Ethiopic Variable"
+    assert ours in families, f"{page} lost its Ge'ez last resort"
+    assert families.index("Inter Variable") < families.index(ours)
+
+    # At least one Ge'ez face the reader's own machine might supply, ahead of
+    # ours. Without this the "restore the original" decision is undone.
+    system_geez = ["Nyala", "Abyssinica SIL", "Noto Sans Ethiopic", "Ebrima"]
+    present = [f for f in system_geez if f in families]
+    assert present, f"{page} no longer prefers a system Ge'ez face"
+    for face in present:
+        assert families.index(face) < families.index(ours), (
+            f"{page} puts our bundled Ge'ez ahead of {face} — that is the "
+            "self-hosting the founder asked to be reverted"
+        )
+    assert families[-1] not in system_geez, f"{page} has no generic tail"
 
 
 @pytest.mark.parametrize("page", PAGES)

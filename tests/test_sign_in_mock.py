@@ -166,9 +166,21 @@ def test_the_height_is_reserved_after_the_fonts_land() -> None:
     """
     assert "minHeight" in _fn("reserveMockHeight")
     assert "mockFontsReady" in _fn("mockRestart")
+
     warm = _fn("warmMockFonts")
-    assert "Noto Sans Ethiopic Variable" in warm
-    assert "Inter Variable" in warm
+    # It must NOT name the Ge'ez family. Requesting our copy by name
+    # downloads all 198 KB of it even on a machine that already has an
+    # Ethiopic face — which is the saving the stack was rearranged to get
+    # when the founder asked for the system font back. Laying out the
+    # characters and awaiting `fonts.ready` asks the question the right way
+    # round: whatever the stack resolves to is what loads, and a system font
+    # resolves immediately.
+    assert "Noto Sans Ethiopic" not in warm, (
+        "warmMockFonts names the Ge'ez family, which forces the download"
+    )
+    assert "fonts.ready" in warm, "nothing waits for the fonts to settle"
+    assert re.search(r"[ሀ-፿]", warm), "the probe carries no Ge'ez"
+    assert re.search(r"[A-Za-z]", warm), "the probe carries no Latin"
 
 
 def test_reduced_motion_keeps_the_languages() -> None:

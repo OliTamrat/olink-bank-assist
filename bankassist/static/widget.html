@@ -54,7 +54,19 @@
 
      Ethiopic used to lead this stack, which put every Latin character in the
      widget into a Ge'ez face. Inter leads now; per-character fallback means
-     Amharic is unaffected, because Inter declares no Ge'ez range. */
+     Amharic is unaffected, because Inter declares no Ge'ez range.
+
+     GE'EZ RESOLVES TO THE READER'S OWN SYSTEM FACE — see the long note in
+     admin.html. Short version: the stack that shipped before named
+     "Noto Sans Ethiopic" with no @font-face, so it fell through to whatever
+     the operating system supplies (Nyala on Windows, where most Ethiopian
+     users are), and the founder judged that better than the monolinear sans
+     we started self-hosting. Local faces first, our copy last for machines
+     with no Ethiopic font at all.
+
+     It matters more here than in the panel: this runs on a phone on an
+     Ethiopian mobile connection, and a machine that already has an Ethiopic
+     face now never downloads our 198 KB. */
   @font-face {
     font-family: "Inter Variable"; font-style: normal;
     font-weight: 100 900; font-display: swap;
@@ -81,9 +93,11 @@
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; max-width: 100%; overflow-x: hidden; }
   body {
-    font-family: "Inter Variable", Inter, "Noto Sans Ethiopic Variable",
-                 "Noto Sans Ethiopic", -apple-system, BlinkMacSystemFont,
-                 "Segoe UI", system-ui, sans-serif;
+    font-family:
+      "Inter Variable", Inter,
+      Nyala, "Abyssinica SIL", "Noto Sans Ethiopic", Ebrima,
+      "Noto Sans Ethiopic Variable",
+      -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     background: var(--bg); color: var(--text);
     display: flex; flex-direction: column;
     -webkit-font-smoothing: antialiased;
