@@ -15,6 +15,7 @@ tried it with my phone" is not a test.
 from __future__ import annotations
 
 import base64
+import time
 
 import pytest
 
@@ -171,3 +172,52 @@ def test_a_recovery_code_matches_however_it_is_retyped() -> None:
 def test_two_different_codes_do_not_collide() -> None:
     codes = totp.generate_recovery_codes()
     assert len({totp.hash_recovery_code(c) for c in codes}) == len(codes)
+
+
+# ---------------------------------------------------------------- diagnosis
+# "That code was not accepted" is true of two unrelated problems, and working
+# out which one cost a round-trip of screenshots against a live deployment.
+
+
+def test_a_drifted_clock_is_named_as_a_drifted_clock() -> None:
+    secret = totp.generate_secret()
+    centre = totp.step_at(time.time())
+    for offset, wording in ((10, "ahead of"), (-10, "behind")):
+        code = totp.code_for_step(secret, centre + offset)
+        said = totp.explain_rejection(secret, code)
+        assert "clock" in said, said
+        assert wording in said, said
+        assert "5 minute" in said, said
+
+
+def test_a_code_from_another_secret_is_named_as_one() -> None:
+    """The case that actually happened.
+
+    Enrolment used to mint a new secret every time the panel opened, so an
+    authenticator entry scanned a minute earlier was already orphaned. The
+    code it produced is correct — for a secret the server threw away.
+    """
+    mine, theirs = totp.generate_secret(), totp.generate_secret()
+    code = totp.code_for_step(theirs, totp.step_at(time.time()))
+    said = totp.explain_rejection(mine, code)
+    assert "different secret" in said, said
+    assert "clock" not in said, said
+
+
+def test_the_diagnostic_never_accepts_anything() -> None:
+    """It explains; it must never widen the window that verify() enforces.
+
+    A rejected code has to stay rejected — the diagnostic runs AFTER verify
+    has already said no, and searching ±20 minutes must not become a way to
+    spend a 20-minute-old code.
+    """
+    secret = totp.generate_secret()
+    centre = totp.step_at(time.time())
+    drifted = totp.code_for_step(secret, centre + 10)
+    assert totp.explain_rejection(secret, drifted)  # it can explain it…
+    # …and verify still refuses it.
+    assert totp.verify(secret, drifted, now=time.time(), last_used_step=None) is None
+    assert totp.DIAGNOSTIC_STEPS > totp.DRIFT_STEPS, (
+        "the diagnostic window must be wider than the accepted one, or it "
+        "explains nothing verify did not already allow"
+    )

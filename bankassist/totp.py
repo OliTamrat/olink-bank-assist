@@ -169,3 +169,50 @@ def hash_recovery_code(code: str) -> str:
     denial-of-service amplifier.
     """
     return hashlib.sha256(normalise_recovery_code(code).encode("utf-8")).hexdigest()
+
+
+# How far either side of `now` a rejected code is searched when explaining
+# WHY it was rejected. Nothing here ever accepts a code — this window is a
+# diagnostic, not an allowance, and it is deliberately far wider than
+# DRIFT_STEPS so that a badly-set clock is recognisable rather than merely
+# refused. Twenty minutes covers every real drift; beyond that a clock is not
+# drifting, it is wrong.
+DIAGNOSTIC_STEPS = 40
+
+
+def explain_rejection(secret: str, code: str) -> str:
+    """Why a code failed, in terms the person typing it can act on.
+
+    "That code was not accepted" is true of two unrelated problems:
+
+    * the code is right and the **clock** is wrong — the fix is to turn on
+      automatic time on the device;
+    * the code is right for a **different secret** — the app is reading an
+      entry this account no longer holds, which is what happens when someone
+      keeps a stale entry from an earlier attempt or from another tenant.
+
+    Telling them apart is a search over steps, and it is cheap. Returning the
+    offset in minutes rather than steps is deliberate: nobody sets their clock
+    in units of thirty seconds.
+    """
+    candidate = code.strip().replace(" ", "")
+    if not candidate.isdigit() or len(candidate) != DIGITS:
+        return f"Enter the {DIGITS}-digit code from your authenticator app"
+
+    import time as _time
+
+    centre = step_at(_time.time())
+    for offset in range(-DIAGNOSTIC_STEPS, DIAGNOSTIC_STEPS + 1):
+        if hmac.compare_digest(code_for_step(secret, centre + offset), candidate):
+            minutes = offset * STEP_SECONDS / 60
+            direction = "ahead of" if offset > 0 else "behind"
+            return (
+                f"That code is correct but your device's clock is about "
+                f"{abs(minutes):.0f} minute(s) {direction} ours. Turn on automatic "
+                "date and time on the device, then try again."
+            )
+    return (
+        "That code is from a different secret. Your authenticator is showing an "
+        "entry this account no longer uses — delete it, scan the code on this "
+        "screen again, then enter the first code it shows."
+    )
