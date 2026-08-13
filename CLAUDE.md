@@ -605,6 +605,34 @@ They are **variable** (one file covers 100–900) and **split by script**, so
 Latin and never touches the 198 KB of Ge'ez. Dropping the ranges would put all
 331 KB on every Ethiopian mobile connection.
 
+### The sign-in card plays (ADR-0029)
+
+The mock on the gate is not a still. It asks **one** customer question and
+answers it in **all six languages in turn** — typed in, a pause, the answer
+typed back, the citation chip last — starting at the panel's own language.
+
+Three rules that look like details and are not:
+
+1. **Everything on the card is one language.** The header, the citation chip
+   and both bubbles all read through `inLang()`, never `A()`. `A()` is the
+   *panel's* language; the card is the *customer's*. Mixing them put a
+   Tigrinya conversation under an Amharic header, which is the founder's
+   original complaint reproduced inside the fix for it.
+2. **Timing is per message, not per character.** A Ge'ez character is a whole
+   syllable, so the Amharic answer is a fraction of the English one's length.
+   Fixed ms-per-character makes the same sentence race in one language and
+   crawl in another — on the screen whose job is to show six as one product.
+3. **It must be able to not run.** `mockMayRun()` refuses when signed in, in a
+   hidden tab, below 1024px, or before the string tables land. A login page is
+   the screen most likely to sit open in a background tab all day.
+
+**Six headlines, composed not translated.** `stage_line` in English keeps its
+"front door" metaphor. All five translations had rendered it as a physical
+door (`መግቢያ በር`, `Balbala`, `መእተዊ ማዕጾ`, `Albaabka hore`, `Mlango wa mbele`)
+and the founder was right that it read as nonsense. Each language now says the
+same thing its own way. `tests/test_sign_in_mock.py` fails if the doors come
+back.
+
 ### Deployment
 
 `.github/workflows/deploy.yml`, triggered by `workflow_run` off CI on `main`

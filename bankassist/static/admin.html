@@ -345,6 +345,11 @@ button { font-family: inherit; }
 }
 .mock-head b { font-size: 12.5px; color: #fff; font-weight: 600; }
 .mock-head span { font-size: 11px; color: rgba(255, 255, 255, .5); }
+/* `align-content: end` is what makes it read as a chat: the pair sits on the
+   floor of a reserved box, so a long Amharic answer pushes the question up
+   instead of stretching the card downward. `min-height` is set from JS once
+   the fonts have loaded — see reserveMockHeight(). */
+.mock-thread { display: grid; gap: 10px; align-content: end; }
 .bubble {
   font-size: 13.5px; line-height: 1.55; padding: 10px 13px; border-radius: 13px;
   max-width: 86%;
@@ -357,20 +362,90 @@ button { font-family: inherit; }
   background: rgba(255, 255, 255, .09); color: #eef1f7;
   border-bottom-left-radius: 5px;
 }
+/* `!important` earns its place exactly here. The browser's own rule for the
+   attribute is `[hidden] { display: none }` — specificity (0,1,0) — so ANY
+   class that sets `display` outranks it, and `.bubble.dots { display: flex }`
+   duly did: the thinking dots stayed on screen underneath the answer they
+   were supposed to precede. `hidden` has one meaning and nothing in a
+   stylesheet should be able to argue with it. */
+[hidden] { display: none !important; }
+
+/* The caret. It marks WHO is acting: on the customer's bubble somebody is
+   typing a question, on the assistant's an answer is being written. Without
+   it the text just appears, which reads as a page repainting rather than a
+   conversation happening. */
+.bubble.typing::after {
+  content: ""; display: inline-block; width: 2px; height: 1em;
+  margin-left: 3px; vertical-align: -2px; background: currentColor;
+  animation: mockcaret 1s steps(1) infinite;
+}
+@keyframes mockcaret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+
+/* The pause between question and answer is the honest part of this. A mock
+   that answered the instant the question landed would be promising something
+   the product does not do — there is a retrieval pass and a model call in
+   there, and they take about this long. */
+.bubble.dots {
+  display: flex; gap: 4px; align-items: center; width: max-content;
+  padding: 13px 14px;
+}
+.bubble.dots i {
+  width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+  opacity: .3; animation: mockdot 1.25s ease-in-out infinite;
+}
+.bubble.dots i:nth-child(2) { animation-delay: .16s; }
+.bubble.dots i:nth-child(3) { animation-delay: .32s; }
+@keyframes mockdot {
+  0%, 62%, 100% { opacity: .28; transform: translateY(0); }
+  31%           { opacity: .95; transform: translateY(-3px); }
+}
+
 .mock-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .mock-chips span {
   font-size: 10.5px; padding: 3px 8px; border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, .16); color: rgba(255, 255, 255, .72);
 }
+/* The citation lands LAST, after the answer is written — which is the order
+   that makes the point. An answer with a source attached is the product; an
+   answer alone is a chatbot. */
+#mock-src { opacity: 0; transition: opacity .4s ease; }
+#mock-src.show { opacity: 1; }
+/* Never all the way to zero. The chip carries the language name, so fading
+   it out fully at each turnover left the chip row visibly empty for a beat
+   and shifted "2 sources" across to fill the gap. A nudge is enough to say
+   "this changed". */
+#mock-lang.bump { animation: mockbump .45s ease; }
+@keyframes mockbump {
+  from { opacity: .35; transform: translateY(-3px); }
+  to   { opacity: 1; transform: none; }
+}
 
 /* Six pills, in their own scripts. The claim and the evidence are the same
    object — a row that says "six languages" in English would be the weaker
-   version of this. */
+   version of this. The one currently playing lights up, so the row doubles
+   as the mock's progress bar. */
 .langrow { display: flex; flex-wrap: wrap; gap: 8px; }
 .langrow span {
   font-size: 12px; padding: 5px 12px; border-radius: 999px;
   background: rgba(255, 255, 255, .08); color: rgba(255, 255, 255, .85);
   border: 1px solid rgba(255, 255, 255, .1);
+  transition: background .4s ease, border-color .4s ease, color .4s ease;
+}
+.langrow span.on {
+  background: color-mix(in srgb, var(--brand) 60%, transparent);
+  border-color: color-mix(in srgb, var(--brand) 85%, transparent);
+  color: var(--on-brand, #fff);
+}
+
+/* Reduced motion keeps the SUBJECT and drops the movement: the exchange
+   still rotates through all six languages, but each one appears whole
+   instead of being typed, with no caret and no bouncing dots. Removing the
+   rotation entirely would take away the thing the screen is for. */
+@media (prefers-reduced-motion: reduce) {
+  .bubble.typing::after { display: none; }
+  .bubble.dots i { animation: none; opacity: .5; }
+  #mock-src, .langrow span { transition: none; }
+  #mock-lang.bump { animation: none; }
 }
 .stage-proof { display: flex; flex-wrap: wrap; gap: 8px 20px; }
 .stage-proof li {
@@ -1793,12 +1868,22 @@ td.title { color: var(--ink); font-weight: 550; }
       <h2 class="stage-line" id="stage-line">Your bank’s front door, in your customer’s language.</h2>
       <p class="stage-sub" id="stage-sub"></p>
 
-      <!-- The hero object is the product. A real question in Amharic, a real
-           answer, and the citation chip that makes the answer trustworthy —
-           the three things this product is sold on, shown rather than
-           asserted. Static markup: it is a portrait of the widget, not a
-           live one, and pretending otherwise on a signed-out screen would
-           mean inventing a conversation that never happened. -->
+      <!-- The hero object is the product, and it PLAYS. One customer
+           question, asked and answered in all six languages in turn: typed
+           in, a pause while the assistant works, the answer typed back, the
+           citation chip landing last.
+
+           Six static screenshots would have claimed the same thing; showing
+           it costs a prospect no reading and leaves nothing to take on
+           trust. The same question every time is deliberate — the claim is
+           not "we have six phrasebooks", it is "the same question is
+           answered in whichever language it arrives in", and six different
+           questions would have blurred that into a feature tour.
+
+           It is still not a live conversation. The text is the string table,
+           not a model call: faking a real exchange on a signed-out screen
+           would mean inventing one that never happened, which is also why
+           the stage still carries no metrics. -->
       <div class="chatmock">
         <div class="chatmock-inner">
           <div class="mock-head">
@@ -1806,24 +1891,33 @@ td.title { color: var(--ink); font-weight: 550; }
             <b id="mock-name">Assistant</b>
             <span id="mock-status">online</span>
           </div>
-          <!-- One language across all four nodes, and English because that is
-               what every other literal in this markup is. These are the
-               strings that survive if /admin/strings never answers, so a
-               mismatch here is a mismatch shipped to whoever has the worst
-               connection. paintGateCopy replaces all four together. -->
-          <div class="bubble them" id="mock-question">How do I open an account?</div>
-          <div class="bubble us" id="mock-answer">To open an account, bring a valid ID
-            and a passport photo to any branch.</div>
+          <!-- Bottom-aligned and height-reserved, so the answer grows upward
+               the way a real thread does and the card never jumps between
+               languages. The reserved height is measured at boot from the
+               longest of the six, after the fonts land — measuring Ge'ez in
+               a fallback face would reserve the wrong number. -->
+          <div class="mock-thread" id="mock-thread">
+            <!-- One language across every node, and English because that is
+                 what every other literal in this markup is. This is what
+                 survives if /admin/strings never answers or the animation
+                 never starts, so a mismatch here is a mismatch shipped to
+                 whoever has the worst connection. -->
+            <div class="bubble them" id="mock-question">How do I open an account?</div>
+            <div class="bubble us dots" id="mock-dots" hidden><i></i><i></i><i></i></div>
+            <div class="bubble us" id="mock-answer">To open an account, bring a valid ID
+              and a passport photo to any branch.</div>
+          </div>
           <div class="mock-chips">
             <span id="mock-lang">English</span><span id="mock-src">2 sources</span>
           </div>
         </div>
       </div>
 
-      <div class="langrow">
-        <span>English</span><span>አማርኛ</span><span>Afaan Oromoo</span>
-        <span>ትግርኛ</span><span>Soomaali</span><span>Kiswahili</span>
-      </div>
+      <!-- Built from LANGS rather than written out, so a seventh language
+           cannot appear in the product and be missing here. The pill for the
+           language currently playing lights up, which turns the row into the
+           mock's progress bar as well as its own claim. -->
+      <div class="langrow" id="langrow"></div>
     </div>
   </div>
 </div>
@@ -2294,41 +2388,285 @@ function paintGateCopy() {
   $("stage-sub").textContent = A("stage_sub",
     "Seven channels, six languages, and a real teller one tap away — answering "
     + "from your bank’s own documents, with the source attached.");
-  $("mock-name").textContent = A("assistant", "Assistant");
-  $("mock-status").textContent = A("online", "online");
+  // Nothing on the mock card is painted from A() — see paintMockCard. Its
+  // language is the CUSTOMER's, and on this screen that changes every few
+  // seconds while the panel's own language does not.
+  //
   // Both halves of the exchange come from ONE language table. The first
   // version hard-coded an Amharic question and read the answer through A(),
   // so an English panel showed the assistant replying to Amharic in English
   // — on the sign-in screen, the exact failure this product exists to
   // prevent, presented as though it were a feature.
-  var ml = mockLanguage();
-  $("mock-question").textContent =
-    inLang(ml, "mock_question", "How do I open an account?");
-  $("mock-answer").textContent = inLang(ml, "mock_answer",
-    "To open an account, bring a valid ID and a passport photo to any branch.");
-  $("mock-lang").textContent = LANG_NAME[ml] || ml;
-  $("mock-src").textContent = A("n_sources", "{n} sources", { n: 2 });
+  //
+  // This is the STILL of the mock: what the card shows if the animation
+  // never starts (narrow window, reduced data, a browser that fails on
+  // something below). It is the panel's own language, because that is the
+  // one language the person reading it is known to have.
+  paintMockStill(adminLang);
+  paintLangRow();
+  // Restart rather than start: the language picker repaints the gate, and a
+  // second engine running alongside the first would type two languages into
+  // the same two bubbles.
+  mockRestart();
   $("gate-foot").innerHTML =
     "<span>" + esc(A("foot_encrypted", "Encrypted in transit")) + "</span> · " +
     "<span>" + esc(A("foot_sessions", "Sessions expire after 8 hours")) + "</span> · " +
     "<span>" + esc(A("foot_audited", "Every action is audited")) + "</span>";
 }
 
-function inLang(lang, key, fallback) {
+function inLang(lang, key, fallback, vars) {
   // A() reads the UI language. The mock conversation is not in the UI
   // language — it is in the CUSTOMER's — so it needs its own reader.
   var tables = adminUI || (state.me && state.me.ui) || {};
-  return ((tables[lang] || {})[key]) || ((tables.en || {})[key]) || fallback || key;
+  var text = ((tables[lang] || {})[key]) || ((tables.en || {})[key]) || fallback || key;
+  if (vars) {
+    Object.keys(vars).forEach(function (name) {
+      text = text.split("{" + name + "}").join(vars[name]);
+    });
+  }
+  return text;
 }
 
-function mockLanguage() {
-  // The staff panel is in the staff's language; the conversation shown is in
-  // a CUSTOMER's. When staff read English, showing an English exchange
-  // demonstrates nothing — the whole claim is that the customer gets their
-  // own language — so the illustration defaults to Amharic. Switch the panel
-  // to Afaan Oromoo and the conversation follows, because a bank deploying
-  // in that language should see it.
-  return adminLang === "en" ? "am" : adminLang;
+/* ------------------------------------------------------------- the mock
+   The sign-in card asks and answers one customer question in all six
+   languages in turn. Every rule below exists because the alternative is a
+   login page that burns a phone battery, jumps a card around, or types Ge'ez
+   in a fallback face.
+
+   It replaced a single still. The still had to pick ONE language to
+   illustrate a product whose whole claim is six, and whichever it picked was
+   the wrong one for five sixths of the room. */
+
+var MOCK_Q_MS = 950;     // a customer typing
+var MOCK_THINK_MS = 950; // retrieval + a model call, honestly represented
+var MOCK_A_MS = 1650;    // the assistant writing
+var MOCK_HOLD_MS = 2500; // long enough to read before the language turns over
+var MOCK_STILL_MS = 4200; // reduced motion: no typing, so only the hold
+
+// One object per run. Every scheduled callback captures it and bails if it
+// is no longer the current one — which is how a restart mid-type cannot
+// leave two engines writing into the same two bubbles.
+var mockRun = null;
+var mockReserved = false;
+
+function mockReduced() {
+  return !!(window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+function mockScript() {
+  // Starts at the PANEL's language and goes round the ring, so the first
+  // exchange anyone sees is one they can read; the other five then make the
+  // point. The same question throughout is the point — six different
+  // questions would read as a feature tour rather than as one question
+  // arriving in six languages.
+  var start = Math.max(0, LANGS.indexOf(adminLang));
+  return LANGS.map(function (_, i) {
+    var code = LANGS[(start + i) % LANGS.length];
+    return {
+      lang: code,
+      name: LANG_NAME[code] || code,
+      q: inLang(code, "mock_question", "How do I open an account?"),
+      a: inLang(code, "mock_answer",
+        "To open an account, bring a valid ID and a passport photo to any branch.")
+    };
+  });
+}
+
+/* Everything ON the card moves together — the header, the citation chip and
+   both bubbles. They did not at first: the chrome came from A() (the PANEL's
+   language) while the conversation cycled, so a Tigrinya exchange sat under
+   an Amharic "ረዳት" with an Amharic "2 ምንጮች" beneath it. That is the same
+   defect the founder reported one level up, and on the same card. If the
+   customer is speaking Tigrinya, the whole window is Tigrinya. */
+function paintMockCard(lang) {
+  $("mock-name").textContent = inLang(lang, "assistant", "Assistant");
+  $("mock-status").textContent = inLang(lang, "online", "online");
+  $("mock-src").textContent = inLang(lang, "n_sources", "{n} sources", { n: 2 });
+  $("mock-lang").textContent = LANG_NAME[lang] || lang;
+}
+
+function paintMockStill(lang) {
+  paintMockCard(lang);
+  $("mock-question").textContent =
+    inLang(lang, "mock_question", "How do I open an account?");
+  $("mock-answer").textContent = inLang(lang, "mock_answer",
+    "To open an account, bring a valid ID and a passport photo to any branch.");
+  $("mock-dots").hidden = true;
+  $("mock-answer").hidden = false;
+  $("mock-src").classList.add("show");
+}
+
+function paintLangRow() {
+  var row = $("langrow");
+  if (!row || row.childElementCount === LANGS.length) return;
+  row.innerHTML = LANGS.map(function (c) {
+    return '<span data-lang="' + c + '">' + esc(LANG_NAME[c] || c) + "</span>";
+  }).join("");
+}
+
+function markLangPill(code) {
+  var row = $("langrow");
+  if (!row) return;
+  Array.prototype.forEach.call(row.children, function (el) {
+    el.classList.toggle("on", el.getAttribute("data-lang") === code);
+  });
+}
+
+/* The card must not resize between languages, and the six answers are not
+   the same length. Measure the tallest once and hold the box open.
+
+   It has to run AFTER the fonts land: measuring Ge'ez while Noto is still in
+   flight measures a fallback face and reserves the wrong number, which shows
+   up as the card growing a line the first time Amharic plays. */
+function reserveMockHeight() {
+  var thread = $("mock-thread"), q = $("mock-question"), a = $("mock-answer");
+  if (!thread || !thread.getClientRects().length) return false;
+  var keepQ = q.textContent, keepA = a.textContent;
+  var dotsHidden = $("mock-dots").hidden;
+  $("mock-dots").hidden = true;
+  thread.style.minHeight = "0px";
+  var tallest = 0;
+  mockScript().forEach(function (item) {
+    q.textContent = item.q;
+    a.textContent = item.a;
+    tallest = Math.max(tallest, thread.offsetHeight);
+  });
+  thread.style.minHeight = tallest + "px";
+  q.textContent = keepQ;
+  a.textContent = keepA;
+  $("mock-dots").hidden = dotsHidden;
+  mockReserved = true;
+  return true;
+}
+
+/* Per-MESSAGE duration, not per-character. A Ge'ez character carries a whole
+   syllable, so the Amharic answer is a third of the length of the English
+   one; a fixed ms-per-character would make Amharic flash past and English
+   crawl, and the two would not look like the same product. Dividing a target
+   duration by the length is what makes the six feel like one speed.
+
+   The tick rate is fixed instead, so a long string writes several characters
+   per frame rather than scheduling one timer per glyph. */
+function mockType(el, text, duration, next) {
+  var run = mockRun;
+  var chars = Array.from(text);
+  var TICK = 28;
+  var per = Math.max(1, Math.ceil(chars.length / Math.max(1, duration / TICK)));
+  var i = 0;
+  el.textContent = "";
+  el.classList.add("typing");
+  (function tick() {
+    if (mockRun !== run) return;
+    i = Math.min(chars.length, i + per);
+    el.textContent = chars.slice(0, i).join("");
+    if (i >= chars.length) {
+      el.classList.remove("typing");
+      run.timer = setTimeout(next, 0);
+      return;
+    }
+    run.timer = setTimeout(tick, TICK);
+  })();
+}
+
+function mockPlay(idx) {
+  var run = mockRun;
+  if (!run) return;
+  var item = run.script[idx % run.script.length];
+  var q = $("mock-question"), a = $("mock-answer"), dots = $("mock-dots");
+
+  paintMockCard(item.lang);
+  $("mock-lang").classList.remove("bump");
+  void $("mock-lang").offsetWidth;   // restart the animation, not skip it
+  $("mock-lang").classList.add("bump");
+  markLangPill(item.lang);
+  $("mock-src").classList.remove("show");
+
+  function hold() {
+    $("mock-src").classList.add("show");
+    run.timer = setTimeout(function () {
+      if (mockRun === run) mockPlay(idx + 1);
+    }, run.reduced ? MOCK_STILL_MS : MOCK_HOLD_MS);
+  }
+
+  if (run.reduced) {
+    // Same six languages, same order, no movement: the rotation IS the
+    // subject, and dropping it would leave nothing to reduce the motion of.
+    q.textContent = item.q;
+    dots.hidden = true;
+    a.hidden = false;
+    a.textContent = item.a;
+    hold();
+    return;
+  }
+
+  q.textContent = "";
+  a.textContent = "";
+  a.hidden = true;
+  dots.hidden = true;
+  mockType(q, item.q, MOCK_Q_MS, function () {
+    dots.hidden = false;
+    run.timer = setTimeout(function () {
+      if (mockRun !== run) return;
+      dots.hidden = true;
+      a.hidden = false;
+      mockType(a, item.a, MOCK_A_MS, hold);
+    }, MOCK_THINK_MS);
+  });
+}
+
+function mockStop() {
+  if (!mockRun) return;
+  clearTimeout(mockRun.timer);
+  mockRun = null;
+}
+
+/* Four reasons not to run, and each one is a real cost rather than a
+   nicety:
+
+   - signed in: the gate is display:none behind the dashboard, so the timer
+     would type into an invisible card for the whole eight-hour session;
+   - narrow: the stage does not render below 1024px, so on the phone this
+     would be pure battery;
+   - hidden tab: a login page left open in a background tab is the normal
+     case, not the exception;
+   - no string tables yet: it would play six identical English exchanges,
+     which is the opposite of the point. */
+function mockMayRun() {
+  var stage = $("gate-stage");
+  return !!stage
+    && !$("gate").classList.contains("hidden")
+    && !document.hidden
+    && stage.getClientRects().length > 0
+    && !!adminUI;
+}
+
+var mockFontsReady = false;
+
+function mockRestart() {
+  mockStop();
+  if (!mockMayRun()) return;
+  if (!mockFontsReady) {
+    // Waited for once, not per restart. Two callers racing here is fine —
+    // the mockStop() above means the later restart retires the earlier one.
+    warmMockFonts().then(function () { mockFontsReady = true; mockRestart(); });
+    return;
+  }
+  if (!mockReserved && !reserveMockHeight()) return;
+  mockRun = { timer: null, reduced: mockReduced(), script: mockScript() };
+  mockPlay(0);
+}
+
+/* The fonts have to be in before the first frame and before the measure.
+   With font-display: swap an un-warmed Ge'ez face means the first Amharic
+   exchange types in a fallback and then jumps when Noto lands — on the one
+   screen whose entire job is to look like the product works. */
+function warmMockFonts() {
+  if (!document.fonts || !document.fonts.load) return Promise.resolve();
+  return Promise.all([
+    document.fonts.load('400 13.5px "Inter Variable"', "Aa"),
+    document.fonts.load('400 13.5px "Noto Sans Ethiopic Variable"', "ሀ")
+  ]).catch(function () { /* the still is already correct without them */ });
 }
 
 function busy(id, on) {
@@ -2481,6 +2819,10 @@ function signedOut(msg) {
   $("shell").classList.add("hidden");
   $("gate").classList.remove("hidden");
   gateError(msg || "");
+  // The gate is back on screen, so the mock plays again. It was stopped on
+  // the way in and would otherwise stay stopped for the rest of the tab's
+  // life — a sign-out landing on a frozen card.
+  mockRestart();
 }
 
 function signOut() {
@@ -2503,6 +2845,11 @@ function can(perm) {
 }
 
 function enterApp() {
+  // First, before the gate is hidden: an animation left running behind a
+  // display:none card would type into nothing for the whole eight-hour
+  // session, which is a timer nobody would ever see and everybody's laptop
+  // would pay for.
+  mockStop();
   $("gate").classList.add("hidden");
   $("shell").classList.remove("hidden");
   applyBrand(state.slug);
@@ -7106,6 +7453,36 @@ $("signin-btn").onclick = signInWithPassword;
     document.documentElement.lang = adminLang;
     paintGateCopy();
   };
+})();
+
+/* The mock's lifecycle. Everything here is about NOT running: a login page
+   is the screen most likely to be left open in a background tab for a day,
+   and a typewriter on a timer is exactly the thing that shows up in a
+   battery report. */
+(function wireMockLifecycle() {
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) mockStop(); else mockRestart();
+  });
+
+  // The stage does not render below 1024px, and the reserved height is
+  // measured from the rendered width — so both crossing the breakpoint and
+  // resizing within it invalidate the measurement. Debounced, because a
+  // drag fires this continuously and re-measuring six languages per frame
+  // is the one way this could become expensive.
+  var t = null;
+  window.addEventListener("resize", function () {
+    if ($("gate").classList.contains("hidden")) return;
+    clearTimeout(t);
+    mockStop();
+    t = setTimeout(function () { mockReserved = false; mockRestart(); }, 220);
+  });
+
+  // Someone turning motion down while the page is open gets the still
+  // rotation immediately rather than on the next load.
+  if (window.matchMedia) {
+    var mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (mq.addEventListener) mq.addEventListener("change", mockRestart);
+  }
 })();
 watchCapsLock("password", "caps-hint");
 $("mfa-btn").onclick = submitMfaCode;
