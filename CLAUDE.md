@@ -374,7 +374,7 @@ advantage away for the sake of whatever shortcut was taken that afternoon.
 
 ### Where this stands — updated 2026-08-12
 
-**All three string tables are complete: 483 strings × 6 languages, no gaps,
+**All three string tables are complete: 484 strings × 6 languages, no gaps,
 nothing silently left in English.** Swahili (`sw`) is the newest column —
 first-pass drafted, not yet native-reviewed, exactly the status OM/TI/SO
 carry. See ADR-0018.
@@ -383,7 +383,7 @@ carry. See ADR-0018.
 |---|---|---|
 | `strings.json` | 22 | what the assistant says to a customer |
 | `ui_strings.json` | 52 | the widget's own buttons and labels |
-| `admin_strings.json` | 409 | the staff panel, teller console included |
+| `admin_strings.json` | 410 | the staff panel, teller console included |
 
 The widget and the admin panel both got their string tables in August 2026.
 The teller console was the last surface and is done — queue, duty panel,
@@ -432,7 +432,7 @@ appears in no table anywhere.
 
 | | Where it lives | How it gets fixed |
 |---|---|---|
-| **Table text** — buttons, labels, the assistant's fixed templates, empty states, errors | `strings.json`, `ui_strings.json`, `admin_strings.json`; 437 rows in the workbook | A reviewer edits the row. Permanent, diffable, testable. |
+| **Table text** — buttons, labels, the assistant's fixed templates, empty states, errors | `strings.json`, `ui_strings.json`, `admin_strings.json`; 484 rows in the workbook | A reviewer edits the row. Permanent, diffable, testable. |
 | **Generated prose** — the AI Insights brief, every answer written from retrieved documents, the general-guidance replies | Nowhere. Written by Gemini per request, in the customer's language | Only the **prompt** can move it. No row to edit; the same question asked twice produces two different sentences. |
 
 So the review brief has to say which is which. Sheet-by-sheet corrections
@@ -577,6 +577,33 @@ had to be reverted — a bank must recognise the demo as *theirs* on sight.
 Inputs are **16px minimum**: iOS Safari auto-zooms a focused input below that,
 which widens the layout viewport and breaks the whole page, not just the box.
 `overflow-x: hidden` on the container backs that up.
+
+### Typography — vendored, and the order is load-bearing (ADR-0028)
+
+Both pages declare the same stack, and **Inter comes first, Ethiopic second**:
+
+```
+"Inter Variable", Inter, "Noto Sans Ethiopic Variable", "Noto Sans Ethiopic", …
+```
+
+Ethiopic led it for a year, which meant every Latin character in the product —
+labels, metrics, English answers — was drawn with a Ge'ez face's Latin glyphs.
+CSS fallback is **per character**, so putting Inter first costs Amharic
+nothing: Inter declares no Ge'ez range, so ሰላም still resolves to Noto.
+Reordering these looks harmless and is not; `tests/test_fonts.py` asserts it.
+
+The `.woff2` files are **in the repo** and served from `/fonts/*` through an
+allowlist in `api.py` — never a path join, and never Google Fonts. Same
+argument as the vendored LiveKit SDK: the widget runs on a bank's own
+production pages and the admin panel shows customer conversations, so a
+third-party font origin is a CSP entry and a security-review question in
+exchange for nothing. Both faces are SIL OFL 1.1 with the licences committed
+alongside.
+
+They are **variable** (one file covers 100–900) and **split by script**, so
+`unicode-range` decides what downloads: an English session fetches 48 KB of
+Latin and never touches the 198 KB of Ge'ez. Dropping the ranges would put all
+331 KB on every Ethiopian mobile connection.
 
 ### Deployment
 

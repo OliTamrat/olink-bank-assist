@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bank Assist — Admin</title>
+<!-- Only the Latin file, and only here. The sign-in stage is the first thing
+     anyone sees and it is nearly all type, so a swap-in halfway through the
+     animation is visible. The Ge'ez and Latin-Extended files are left to
+     unicode-range: preloading a 198 KB font every session to serve the
+     sessions that turn out to be Amharic is the opposite of the split.
+     `crossorigin` is required on font preloads even same-origin — without it
+     the browser fetches the file twice. -->
+<link rel="preload" as="font" type="font/woff2" href="/fonts/inter-latin.woff2" crossorigin>
 <style>
 /* ---------------------------------------------------------------- tokens
    The brand hue is the tenant's own primary_color, injected at runtime from
@@ -115,9 +123,50 @@
   --series-8: #e34948;
   --shadow: 0 1px 3px rgba(16, 24, 40, .09), 0 1px 2px rgba(16, 24, 40, .05);
 }
+/* ----------------------------------------------------------------- type
+   Inter for Latin, Noto Sans Ethiopic for Ge'ez, both served from our own
+   origin (`/fonts/*`, allowlisted in api.py) rather than from Google Fonts —
+   a bank's admin panel is not a screen to put a third-party request on.
+
+   Both are variable fonts: one file covers 100-900, so the weights this panel
+   actually uses (400/500/550/600/700) cost nothing extra.
+
+   `unicode-range` is what makes this cheap. The browser fetches a file only
+   when it needs a glyph inside that range, so an English session never pulls
+   the 198 KB of Ge'ez and an Amharic one never pulls Latin Extended.
+
+   ORDER MATTERS in the stack below. Ethiopic was first for years, which meant
+   every Latin character in the panel — every label, every number, every
+   English answer — rendered in a Ge'ez face's Latin glyphs. That is why it
+   read flat. Per-character fallback means listing Inter first costs Amharic
+   nothing: Inter declares no Ge'ez range, so ፩ still resolves to Noto. */
+@font-face {
+  font-family: "Inter Variable"; font-style: normal;
+  font-weight: 100 900; font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,
+                 U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,
+                 U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Inter Variable"; font-style: normal;
+  font-weight: 100 900; font-display: swap;
+  src: url("/fonts/inter-latin-ext.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,
+                 U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,
+                 U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face {
+  font-family: "Noto Sans Ethiopic Variable"; font-style: normal;
+  font-weight: 100 900; font-display: swap;
+  src: url("/fonts/noto-sans-ethiopic.woff2") format("woff2-variations");
+  unicode-range: U+030E,U+1200-1399,U+2D80-2DDE,U+AB01-AB2E,U+1E7E0-1E7E6,
+                 U+1E7E8-1E7EB,U+1E7ED-1E7EE,U+1E7F0-1E7FE;
+}
 * { box-sizing: border-box; margin: 0; }
 body {
-  font-family: "Noto Sans Ethiopic", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: "Inter Variable", Inter, "Noto Sans Ethiopic Variable",
+               "Noto Sans Ethiopic", "Segoe UI", system-ui, -apple-system, sans-serif;
   background: var(--bg); color: var(--ink);
   min-height: 100vh; font-size: 14px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -172,9 +221,26 @@ button { font-family: inherit; }
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 12px; margin-bottom: 18px;
 }
+/* `appearance: none` is doing the work. A native <select> keeps the platform
+   widget and quietly ignores `background`, so on a dark gate this rendered as
+   a light-grey system control sitting in the corner of the panel — the one
+   element on the screen that looked like it belonged to a different product.
+   The chevron has to be drawn back by hand once the widget is gone; inline as
+   a data URI rather than an icon file, because this stylesheet has no build
+   step and one more network request on the first paint is not worth a glyph. */
 .gate-head .langpick {
-  width: auto; padding: 6px 10px; font-size: 12px; background: var(--surface-2);
+  width: auto; padding: 6px 28px 6px 10px; font-size: 12px;
+  appearance: none; -webkit-appearance: none;
+  background: var(--surface-2);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  cursor: pointer;
 }
+/* The dropdown itself is drawn by the OS and inherits nothing, so the options
+   need their own colours or a dark panel opens a white list. */
+.gate-head .langpick option { background: var(--surface); color: var(--ink); }
 .gate-mark {
   width: 44px; height: 44px; border-radius: 12px; background: var(--brand);
   display: grid; place-items: center; color: var(--on-brand, #fff);
@@ -1724,7 +1790,7 @@ td.title { color: var(--ink); font-weight: 550; }
     <div class="aurora"><i></i><i></i><i></i></div>
     <div class="stage-inner">
       <div class="stage-eyebrow">Olink Bank Assist</div>
-      <h2 class="stage-line" id="stage-line">Your bank's front door, in your customer's language.</h2>
+      <h2 class="stage-line" id="stage-line">Your bank’s front door, in your customer’s language.</h2>
       <p class="stage-sub" id="stage-sub"></p>
 
       <!-- The hero object is the product. A real question in Amharic, a real
@@ -1740,11 +1806,16 @@ td.title { color: var(--ink); font-weight: 550; }
             <b id="mock-name">Assistant</b>
             <span id="mock-status">online</span>
           </div>
-          <div class="bubble them">ሂሳብ እንዴት እከፍታለሁ?</div>
+          <!-- One language across all four nodes, and English because that is
+               what every other literal in this markup is. These are the
+               strings that survive if /admin/strings never answers, so a
+               mismatch here is a mismatch shipped to whoever has the worst
+               connection. paintGateCopy replaces all four together. -->
+          <div class="bubble them" id="mock-question">How do I open an account?</div>
           <div class="bubble us" id="mock-answer">To open an account, bring a valid ID
             and a passport photo to any branch.</div>
           <div class="mock-chips">
-            <span>አማርኛ</span><span id="mock-src">2 sources</span>
+            <span id="mock-lang">English</span><span id="mock-src">2 sources</span>
           </div>
         </div>
       </div>
@@ -2219,19 +2290,45 @@ function paintGateCopy() {
     "Enter the 6-digit code from your authenticator app, or one of your recovery codes.");
 
   $("stage-line").textContent =
-    A("stage_line", "Your bank's front door, in your customer's language.");
+    A("stage_line", "Your bank’s front door, in your customer’s language.");
   $("stage-sub").textContent = A("stage_sub",
     "Seven channels, six languages, and a real teller one tap away — answering "
-    + "from your bank's own documents, with the source attached.");
+    + "from your bank’s own documents, with the source attached.");
   $("mock-name").textContent = A("assistant", "Assistant");
   $("mock-status").textContent = A("online", "online");
-  $("mock-answer").textContent = A("mock_answer",
+  // Both halves of the exchange come from ONE language table. The first
+  // version hard-coded an Amharic question and read the answer through A(),
+  // so an English panel showed the assistant replying to Amharic in English
+  // — on the sign-in screen, the exact failure this product exists to
+  // prevent, presented as though it were a feature.
+  var ml = mockLanguage();
+  $("mock-question").textContent =
+    inLang(ml, "mock_question", "How do I open an account?");
+  $("mock-answer").textContent = inLang(ml, "mock_answer",
     "To open an account, bring a valid ID and a passport photo to any branch.");
+  $("mock-lang").textContent = LANG_NAME[ml] || ml;
   $("mock-src").textContent = A("n_sources", "{n} sources", { n: 2 });
   $("gate-foot").innerHTML =
     "<span>" + esc(A("foot_encrypted", "Encrypted in transit")) + "</span> · " +
     "<span>" + esc(A("foot_sessions", "Sessions expire after 8 hours")) + "</span> · " +
     "<span>" + esc(A("foot_audited", "Every action is audited")) + "</span>";
+}
+
+function inLang(lang, key, fallback) {
+  // A() reads the UI language. The mock conversation is not in the UI
+  // language — it is in the CUSTOMER's — so it needs its own reader.
+  var tables = adminUI || (state.me && state.me.ui) || {};
+  return ((tables[lang] || {})[key]) || ((tables.en || {})[key]) || fallback || key;
+}
+
+function mockLanguage() {
+  // The staff panel is in the staff's language; the conversation shown is in
+  // a CUSTOMER's. When staff read English, showing an English exchange
+  // demonstrates nothing — the whole claim is that the customer gets their
+  // own language — so the illustration defaults to Amharic. Switch the panel
+  // to Afaan Oromoo and the conversation follows, because a bank deploying
+  // in that language should see it.
+  return adminLang === "en" ? "am" : adminLang;
 }
 
 function busy(id, on) {
@@ -2560,6 +2657,19 @@ function landingPage() {
 loadAdminStrings().then(function () {
   renderNav();
   paintAdminChrome();
+  // The gate too, and it is the one that could not be left out. Before this
+  // line the gate was painted from exactly two places — a bank's brand
+  // resolving, and the language picker changing — so a fresh browser with no
+  // remembered slug painted it from NEITHER and the screen kept whatever the
+  // markup said. That is how the sign-in page came to show an Amharic
+  // question answered in English: the two halves were separate literals in
+  // the HTML and nothing ever replaced them.
+  //
+  // It also has to be here rather than only earlier. `loadPublicBank` calls
+  // paintGateCopy the moment a brand resolves, which can beat this fetch, and
+  // a gate painted before the string tables land is a gate painted in
+  // English whatever the picker says.
+  paintGateCopy();
 });
 
 (function wireAdminLanguage() {

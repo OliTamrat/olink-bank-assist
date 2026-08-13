@@ -398,17 +398,18 @@
     "password_label": "Password",
     "admin_token": "Admin token",
     "caps_lock_on": "Caps Lock is on",
-    "stage_line": "Your bank's front door, in your customer's language.",
+    "stage_line": "Your bank’s front door, in your customer’s language.",
     "foot_encrypted": "Encrypted in transit",
     "foot_sessions": "Sessions expire after 8 hours",
     "foot_audited": "Every action is audited",
     "bank": "Bank",
     "gate_sub": "{bank} — assistant administration",
-    "stage_sub": "Seven channels, six languages, and a real teller one tap away — answering from your bank's own documents, with the source attached.",
+    "stage_sub": "Seven channels, six languages, and a real teller one tap away — answering from your bank’s own documents, with the source attached.",
     "assistant": "Assistant",
     "online": "online",
     "mock_answer": "To open an account, bring a valid ID and a passport photo to any branch.",
-    "n_sources": "{n} sources"
+    "n_sources": "{n} sources",
+    "mock_question": "How do I open an account?"
   },
   "am": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -819,7 +820,8 @@
     "assistant": "ረዳት",
     "online": "በመስመር ላይ",
     "mock_answer": "ሂሳብ ለመክፈት የሚሰራ መታወቂያና የፓስፖርት ፎቶ ይዘው ወደ ማንኛውም ቅርንጫፍ ይምጡ።",
-    "n_sources": "{n} ምንጮች"
+    "n_sources": "{n} ምንጮች",
+    "mock_question": "ሂሳብ እንዴት እከፍታለሁ?"
   },
   "om": {
     "nav_dashboard": "Daashboordii",
@@ -1230,7 +1232,8 @@
     "assistant": "Gargaaraa",
     "online": "sararaa irra",
     "mock_answer": "Herrega banuuf, waraqaa eenyummaa hojjetuu fi suuraa paaspoortii qabattanii damee kamiyyuu dhufaa.",
-    "n_sources": "maddeen {n}"
+    "n_sources": "maddeen {n}",
+    "mock_question": "Herrega akkamittin bana?"
   },
   "ti": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -1641,7 +1644,8 @@
     "assistant": "ሓጋዚ",
     "online": "ኣብ መስመር",
     "mock_answer": "ሕሳብ ንምኽፋት፡ ዝሰርሕ መንነትን ናይ ፓስፖርት ስእልን ሒዝኩም ናብ ዝኾነ ጨንፈር ምጹ።",
-    "n_sources": "{n} ምንጭታት"
+    "n_sources": "{n} ምንጭታት",
+    "mock_question": "ሕሳብ ብኸመይ እኸፍት?"
   },
   "so": {
     "nav_dashboard": "Dashboard-ka",
@@ -2052,7 +2056,8 @@
     "assistant": "Kaaliye",
     "online": "khadka tooska ah",
     "mock_answer": "Si aad xisaab u furto, keen aqoonsi ansax ah iyo sawir baasaboor laan kasta.",
-    "n_sources": "{n} il"
+    "n_sources": "{n} il",
+    "mock_question": "Sidee ayaan xisaab u furaa?"
   },
   "sw": {
     "nav_dashboard": "Dashibodi",
@@ -2463,6 +2468,7 @@
     "assistant": "Msaidizi",
     "online": "mtandaoni",
     "mock_answer": "Ili kufungua akaunti, leta kitambulisho halali na picha ya pasipoti katika tawi lolote.",
-    "n_sources": "vyanzo {n}"
+    "n_sources": "vyanzo {n}",
+    "mock_question": "Ninawezaje kufungua akaunti?"
   }
 }
