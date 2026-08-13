@@ -131,15 +131,52 @@
    Both are variable fonts: one file covers 100-900, so the weights this panel
    actually uses (400/500/550/600/700) cost nothing extra.
 
+   INTER CARRIES ITS OPTICAL-SIZE AXIS, and that is not optional. Inter 4 has
+   `opsz` 14-32, and `font-optical-sizing: auto` — the CSS default — moves a
+   46px headline onto Inter's DISPLAY cut: tighter, more compact, higher
+   contrast. The first build of this shipped fontsource's wght-only file,
+   which has no opsz, so the hero was Inter TEXT scaled up to 46px — looser
+   and softer, and visibly not the Inter anybody recognises from a site that
+   loads it from Google Fonts (which does serve the axis). The founder's
+   words were "not even the same font". He was right, and this is why.
+   Costs 23 KB on the Latin file. Worth it: the hero is the screen.
+
    `unicode-range` is what makes this cheap. The browser fetches a file only
    when it needs a glyph inside that range, so an English session never pulls
    the 198 KB of Ge'ez and an Amharic one never pulls Latin Extended.
 
-   ORDER MATTERS in the stack below. Ethiopic was first for years, which meant
-   every Latin character in the panel — every label, every number, every
-   English answer — rendered in a Ge'ez face's Latin glyphs. That is why it
-   read flat. Per-character fallback means listing Inter first costs Amharic
-   nothing: Inter declares no Ge'ez range, so ፩ still resolves to Noto. */
+   ORDER MATTERS in the stack below, and it says two different things for the
+   two scripts.
+
+   LATIN IS OURS. Inter leads, so it is the same on every machine. Ethiopic
+   led this stack for years, which meant every Latin character in the panel —
+   every label, every number, every English answer — was drawn with a Ge'ez
+   face's Latin glyphs. That is why it read flat. Per-character fallback means
+   Inter first costs Amharic nothing: Inter declares no Ge'ez range.
+
+   GE'EZ IS THE READER'S. This is a deliberate reversal, on the founder's
+   call, and it is worth understanding before anybody "fixes" it back.
+
+   The stack that shipped before all of this named `"Noto Sans Ethiopic"` with
+   no @font-face at all — so it only ever resolved if the machine already had
+   that font, and otherwise fell through to whatever the operating system
+   supplies for Ge'ez. On Windows, where most Ethiopian desktop users are,
+   that is Nyala: a traditional face with modulated strokes, and the one an
+   Amharic reader recognises as properly set. Self-hosting Noto Sans Ethiopic
+   replaced it everywhere with a monolinear sans — consistent, and worse.
+   The founder's verdict on the result was "restore the original font for
+   Ge'ez, that was the best font."
+
+   So the local faces come first and our copy is LAST — reached only by a
+   machine with no Ethiopic font at all, which would otherwise render tofu.
+   Two consequences, both intended:
+
+   - Ge'ez looks slightly different across operating systems. That is the
+     cost of the reader getting the face their own system thinks is right for
+     their script, and for this product's readers it is the better trade.
+   - On any machine that has an Ethiopic face, our 198 KB is NEVER FETCHED.
+     A webfont is only downloaded when it wins the fallback for some
+     character, so most Ethiopian users now pay nothing for it. */
 @font-face {
   font-family: "Inter Variable"; font-style: normal;
   font-weight: 100 900; font-display: swap;
@@ -165,8 +202,17 @@
 }
 * { box-sizing: border-box; margin: 0; }
 body {
-  font-family: "Inter Variable", Inter, "Noto Sans Ethiopic Variable",
-               "Noto Sans Ethiopic", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family:
+    /* Latin — ours, identical everywhere */
+    "Inter Variable", Inter,
+    /* Ge'ez — the reader's own system face, in the order a machine is
+       likely to have them: Nyala (Windows), Abyssinica SIL (Linux and a
+       common manual install), Noto Sans Ethiopic (macOS, Android, ChromeOS),
+       Ebrima (Windows fallback) */
+    Nyala, "Abyssinica SIL", "Noto Sans Ethiopic", Ebrima,
+    /* …and only then our copy, for a machine that has no Ethiopic face */
+    "Noto Sans Ethiopic Variable",
+    "Segoe UI", system-ui, -apple-system, sans-serif;
   background: var(--bg); color: var(--ink);
   min-height: 100vh; font-size: 14px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -320,6 +366,26 @@ button { font-family: inherit; }
   font-weight: 700; color: #fff; max-width: 19ch;
   text-shadow: 0 2px 30px rgba(0, 0, 0, .45);
 }
+/* Ge'ez is not Latin and must not be set like it. Three values above are
+   tuned for Inter at display size and all three are wrong for Ethiopic:
+
+   - `-.025em` tracking CROWDS it. A Ge'ez character is a whole syllable with
+     dense internal structure, and its sidebearings are already the minimum
+     that keeps the strokes apart. Pulling a pixel out of each gap at 46px is
+     what turned the Amharic hero into a grey block.
+   - `1.1` leading is too tight. Ethiopic has no descenders to speak of but
+     tall, busy forms, so two lines at 1.1 nearly touch.
+   - `700` fills the counters in. Ge'ez at 46px reads better at 600; the
+     weight difference is invisible next to the Latin because the script is
+     denser to begin with.
+
+   Scoped by `:lang()`, so it follows the text rather than the panel — the
+   mock card cycles languages independently of the interface. Both the
+   headline and the card set `lang` from JS for exactly this reason. */
+.stage-line:lang(am), .stage-line:lang(ti) {
+  letter-spacing: normal; line-height: 1.28; font-weight: 600;
+}
+.gate h1:lang(am), .gate h1:lang(ti) { letter-spacing: normal; }
 .stage-sub {
   font-size: 15px; line-height: 1.65; color: rgba(255, 255, 255, .8);
   max-width: 46ch; margin-top: -14px;
@@ -1886,7 +1952,7 @@ td.title { color: var(--ink); font-weight: 550; }
            the stage still carries no metrics. -->
       <div class="chatmock">
         <div class="chatmock-inner">
-          <div class="mock-head">
+          <div class="mock-head" id="mock-head">
             <span class="mock-dot"></span>
             <b id="mock-name">Assistant</b>
             <span id="mock-status">online</span>
@@ -2383,6 +2449,12 @@ function paintGateCopy() {
   $("mfa-hint").textContent = A("mfa_hint",
     "Enter the 6-digit code from your authenticator app, or one of your recovery codes.");
 
+  // `lang` on the elements, not just on <html>. It is what the Ge'ez
+  // typography rules key off, and it is true regardless: a screen reader
+  // handed Amharic text tagged `en` pronounces it as English.
+  $("stage-line").lang = adminLang;
+  $("stage-sub").lang = adminLang;
+  $("gate-title").lang = adminLang;
   $("stage-line").textContent =
     A("stage_line", "Your bank’s front door, in your customer’s language.");
   $("stage-sub").textContent = A("stage_sub",
@@ -2480,6 +2552,10 @@ function mockScript() {
    defect the founder reported one level up, and on the same card. If the
    customer is speaking Tigrinya, the whole window is Tigrinya. */
 function paintMockCard(lang) {
+  // The card's own language, independent of the panel's — which is the whole
+  // reason `lang` is set per element rather than once on <html>.
+  $("mock-thread").lang = lang;
+  $("mock-head").lang = lang;
   $("mock-name").textContent = inLang(lang, "assistant", "Assistant");
   $("mock-status").textContent = inLang(lang, "online", "online");
   $("mock-src").textContent = inLang(lang, "n_sources", "{n} sources", { n: 2 });
@@ -2662,11 +2738,26 @@ function mockRestart() {
    exchange types in a fallback and then jumps when Noto lands — on the one
    screen whose entire job is to look like the product works. */
 function warmMockFonts() {
-  if (!document.fonts || !document.fonts.load) return Promise.resolve();
-  return Promise.all([
-    document.fonts.load('400 13.5px "Inter Variable"', "Aa"),
-    document.fonts.load('400 13.5px "Noto Sans Ethiopic Variable"', "ሀ")
-  ]).catch(function () { /* the still is already correct without them */ });
+  if (!document.fonts) return Promise.resolve();
+  // A probe carrying both scripts, styled by the REAL stack it inherits from
+  // body — not a list of family names. Naming the Ge'ez family here would
+  // request our copy by name and download all 198 KB of it even on the many
+  // machines that already have an Ethiopic face, which is the whole saving
+  // the stack was just rearranged to get. Laying out the characters instead
+  // asks the question the right way round: whatever the stack actually
+  // resolves to is what gets loaded, and `fonts.ready` waits for exactly
+  // that — resolving immediately when it turns out to be a system font.
+  var probe = document.createElement("div");
+  probe.setAttribute("aria-hidden", "true");
+  probe.style.cssText = "position:absolute;left:-9999px;top:0;" +
+    "font-size:46px;font-weight:600;white-space:nowrap";
+  probe.textContent = "Aa ሀለ";
+  document.body.appendChild(probe);
+  return Promise.resolve(document.fonts.ready)
+    .catch(function () { /* the still is already correct without them */ })
+    .then(function () {
+      if (probe.parentNode) probe.parentNode.removeChild(probe);
+    });
 }
 
 function busy(id, on) {

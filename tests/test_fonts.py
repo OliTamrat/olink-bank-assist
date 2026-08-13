@@ -91,12 +91,23 @@ def test_the_files_the_pages_ask_for_are_the_files_that_exist(page: str) -> None
 
 @pytest.mark.parametrize("page", PAGES)
 def test_latin_leads_the_stack_and_geez_is_still_in_it(page: str) -> None:
-    """Both halves matter, and dropping either one is a visible regression.
+    """The stack says two different things for the two scripts.
 
-    Inter first, so Latin stops being drawn in a Ge'ez face. Ethiopic still
-    present, so ሰላም does not fall through to whatever the operating system
-    happens to have — which on Windows is Ebrima, a face designed for a
-    different script family.
+    **Inter first**, so Latin stops being drawn with a Ge'ez face's Latin
+    glyphs — which is what it was for years, and why the panel read flat.
+
+    **Our Ge'ez copy LAST.** This is the deliberate reversal, on the
+    founder's call: the stack that shipped originally named
+    `"Noto Sans Ethiopic"` with no `@font-face`, so it fell through to
+    whatever the operating system supplies — Nyala on Windows, where most
+    Ethiopian desktop users are. Self-hosting replaced that everywhere with a
+    monolinear sans, and his verdict was that the original was better. Local
+    faces now win; ours is reached only by a machine with no Ethiopic font at
+    all, which would otherwise render tofu.
+
+    Promoting our copy back up the list is the regression this guards, and it
+    would look like a tidy-up: it costs every Ethiopian reader the face their
+    own system chose, and costs them 198 KB to do it.
     """
     html = (STATIC / page).read_text(encoding="utf-8")
     # Both pages carry more than one rule whose selector mentions `body`
@@ -110,11 +121,28 @@ def test_latin_leads_the_stack_and_geez_is_still_in_it(page: str) -> None:
     assert len(blocks) == 1, f"{page} sets a body font-family in {len(blocks)} rules"
     stack = re.search(r"font-family:([^;]+);", blocks[0], re.S)
     assert stack, f"body in {page} declares no font-family"
-    families = [f.strip().strip('"').strip("'") for f in stack.group(1).split(",")]
+    # The stack is commented inline, one script per group — strip those out
+    # before splitting, or the first "family" is a comment.
+    declared = re.sub(r"/\*.*?\*/", "", stack.group(1), flags=re.S)
+    families = [f.strip().strip('"').strip("'") for f in declared.split(",") if f.strip()]
 
     assert families[0] == "Inter Variable", f"{page} body stack starts with {families[0]}"
-    assert "Noto Sans Ethiopic Variable" in families, f"{page} lost its Ge'ez face"
-    assert families.index("Inter Variable") < families.index("Noto Sans Ethiopic Variable")
+
+    ours = "Noto Sans Ethiopic Variable"
+    assert ours in families, f"{page} lost its Ge'ez last resort"
+    assert families.index("Inter Variable") < families.index(ours)
+
+    # At least one Ge'ez face the reader's own machine might supply, ahead of
+    # ours. Without this the "restore the original" decision is undone.
+    system_geez = ["Nyala", "Abyssinica SIL", "Noto Sans Ethiopic", "Ebrima"]
+    present = [f for f in system_geez if f in families]
+    assert present, f"{page} no longer prefers a system Ge'ez face"
+    for face in present:
+        assert families.index(face) < families.index(ours), (
+            f"{page} puts our bundled Ge'ez ahead of {face} — that is the "
+            "self-hosting the founder asked to be reverted"
+        )
+    assert families[-1] not in system_geez, f"{page} has no generic tail"
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -132,6 +160,75 @@ def test_each_face_is_range_gated(page: str) -> None:
         # Fallback text has to be readable while the file is in flight; a
         # blocking font on an Ethiopian mobile connection is a blank panel.
         assert "font-display: swap" in face, f"an @font-face in {page} blocks paint"
+
+
+def test_inter_ships_its_optical_size_axis() -> None:
+    """The regression that made the founder say "not even the same font".
+
+    Inter 4 carries `opsz` 14–32, and `font-optical-sizing: auto` — the CSS
+    default — moves a 46px headline onto the DISPLAY cut: tighter, more
+    compact, higher contrast. The first build of these fonts shipped
+    fontsource's weight-only file, which has no `opsz`, so the hero rendered
+    in Inter's TEXT cut scaled up to 46px. Looser, softer, and not the Inter
+    anybody recognises from a site that loads it from Google Fonts — which
+    does serve the axis.
+
+    Nothing outside the font says which file this is. The filename is ours,
+    the CSS is identical either way, and the byte count is a coincidence
+    waiting to be optimised away by somebody trimming 23 KB. The `fvar`
+    table is the only witness.
+    """
+    from fontTools.ttLib import TTFont
+
+    for name in ("inter-latin.woff2", "inter-latin-ext.woff2"):
+        font = TTFont(STATIC / "fonts" / name)
+        axes = {a.axisTag: (a.minValue, a.maxValue) for a in font["fvar"].axes}
+        assert "opsz" in axes, (
+            f"{name} has no optical-size axis — this is the weight-only build, "
+            "and the sign-in headline will render in Inter's text cut"
+        )
+        assert axes["opsz"][1] >= 32, f"{name} opsz does not reach the display size"
+        # Still one file for every weight the panel uses.
+        assert axes.get("wght") == (100.0, 900.0), f"{name} lost its weight range"
+
+
+def test_nothing_disables_optical_sizing() -> None:
+    """`font-optical-sizing: none` would waste the axis silently.
+
+    It is the kind of line that gets added to "stop the font looking
+    different at different sizes" — which is the feature, not a bug.
+    """
+    for page in PAGES:
+        html = (STATIC / page).read_text(encoding="utf-8")
+        assert "font-optical-sizing: none" not in html, f"{page} disables optical sizing"
+
+
+def test_geez_is_not_set_like_latin() -> None:
+    """The other half of the same complaint.
+
+    The hero's `-.025em` tracking, `1.1` leading and `700` weight are tuned
+    for Inter at display size, and all three are wrong for Ethiopic: a Ge'ez
+    character is a whole syllable whose sidebearings are already minimal, so
+    negative tracking crowds it into a grey block, 1.1 leading nearly touches
+    on two lines, and 700 fills the counters in.
+
+    Keyed on `:lang()` rather than the panel's language, because the mock
+    card cycles languages independently of the interface — which is also why
+    both set `lang` from JS.
+    """
+    html = (STATIC / "admin.html").read_text(encoding="utf-8")
+    rule = re.search(
+        r"\.stage-line:lang\(am\)[^{]*\{([^}]*)\}", html, re.S
+    )
+    assert rule, "the Ge'ez headline rule is gone"
+    body = rule.group(1)
+    assert "letter-spacing: normal" in body, "Ge'ez is being tracked negatively again"
+    assert re.search(r"line-height: 1\.[23]", body), "Ge'ez leading is back to Latin's"
+
+    for node in ("stage-line", "mock-thread"):
+        assert re.search(rf'\$\("{node}"\)\.lang\s*=', html), (
+            f"{node} no longer declares its language, so :lang() cannot match"
+        )
 
 
 def test_the_licences_travel_with_the_fonts() -> None:

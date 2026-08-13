@@ -580,17 +580,35 @@ which widens the layout viewport and breaks the whole page, not just the box.
 
 ### Typography — vendored, and the order is load-bearing (ADR-0028)
 
-Both pages declare the same stack, and **Inter comes first, Ethiopic second**:
+The stack says **two different things for the two scripts**, and that is
+deliberate:
 
 ```
-"Inter Variable", Inter, "Noto Sans Ethiopic Variable", "Noto Sans Ethiopic", …
+"Inter Variable", Inter,                                  ← Latin: ours
+Nyala, "Abyssinica SIL", "Noto Sans Ethiopic", Ebrima,     ← Ge'ez: the reader's
+"Noto Sans Ethiopic Variable",                             ← ours, last resort only
+"Segoe UI", system-ui, …
 ```
 
-Ethiopic led it for a year, which meant every Latin character in the product —
-labels, metrics, English answers — was drawn with a Ge'ez face's Latin glyphs.
-CSS fallback is **per character**, so putting Inter first costs Amharic
-nothing: Inter declares no Ge'ez range, so ሰላም still resolves to Noto.
-Reordering these looks harmless and is not; `tests/test_fonts.py` asserts it.
+**Latin is ours, and Inter must lead.** Ethiopic led this stack for a year,
+which meant every Latin character in the product — labels, metrics, English
+answers — was drawn with a Ge'ez face's Latin glyphs. CSS fallback is **per
+character**, so Inter first costs Amharic nothing.
+
+**Ge'ez is the reader's, and our copy must stay LAST.** This is a founder
+decision, not a typographic one. The stack that shipped originally named
+`"Noto Sans Ethiopic"` with no `@font-face`, so it fell through to whatever
+the OS supplies — Nyala on Windows, where most Ethiopian desktop users are,
+and the face an Amharic reader recognises as properly set. Self-hosting
+replaced it everywhere with a monolinear sans; the verdict was *"restore the
+original font for Ge'ez, that was the best font."* Promoting our copy back up
+the list looks like a tidy-up and costs every Ethiopian reader both the right
+face and 198 KB. `tests/test_fonts.py` asserts the ordering both ways.
+
+Consequence: **a machine with any Ethiopic font never downloads ours** (a
+webfont is only fetched when it wins the fallback). Verified in a browser both
+ways. It also means `warmMockFonts` must **never name the Ge'ez family** —
+that forces the download — hence the probe-plus-`fonts.ready` approach.
 
 The `.woff2` files are **in the repo** and served from `/fonts/*` through an
 allowlist in `api.py` — never a path join, and never Google Fonts. Same
@@ -601,9 +619,26 @@ exchange for nothing. Both faces are SIL OFL 1.1 with the licences committed
 alongside.
 
 They are **variable** (one file covers 100–900) and **split by script**, so
-`unicode-range` decides what downloads: an English session fetches 48 KB of
+`unicode-range` decides what downloads: an English session fetches 71 KB of
 Latin and never touches the 198 KB of Ge'ez. Dropping the ranges would put all
-331 KB on every Ethiopian mobile connection.
+399 KB on every Ethiopian mobile connection.
+
+**Inter must be the build WITH the `opsz` axis** (`inter-*-opsz-normal.woff2`
+from fontsource, not `-wght-`). Inter 4 has optical sizing 14–32, and
+`font-optical-sizing: auto` moves the 46px hero onto the **display** cut. The
+first build shipped the weight-only file, the hero rendered in the text cut
+blown up, and the founder's verdict was "not even the same font" — correctly.
+It costs 23 KB and nothing outside the font's `fvar` table can see it, so
+`tests/test_fonts.py` reads that table (hence `fonttools` in dev deps).
+
+**Ge'ez is not Latin. Do not set it like Latin.** `-.025em` tracking crowds a
+script whose characters are whole syllables with already-minimal sidebearings;
+`1.1` leading nearly touches; `700` fills the counters in. Ethiopic headlines
+are `letter-spacing: normal; line-height: 1.28; font-weight: 600`, keyed on
+**`:lang()`** so it follows the text rather than the panel — the mock card
+cycles languages independently of the interface. This bites at *display* size
+only: the widget's `-.01em` at 15px is 0.15 of a pixel and was deliberately
+left alone.
 
 ### The sign-in card plays (ADR-0029)
 

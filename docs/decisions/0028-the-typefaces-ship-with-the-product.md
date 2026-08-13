@@ -44,9 +44,9 @@ Both are SIL OFL 1.1, and both licences are committed alongside them.
 
 | File | Size | Fetched when |
 |---|---|---|
-| `inter-latin.woff2` | 48 KB | any Latin character |
-| `inter-latin-ext.woff2` | 85 KB | a Latin-Extended one — rare here |
-| `noto-sans-ethiopic.woff2` | 198 KB | any Ge'ez character |
+| `inter-latin.woff2` | 71 KB | any Latin character |
+| `inter-latin-ext.woff2` | 130 KB | a Latin-Extended one — rare here |
+| `noto-sans-ethiopic.woff2` | 198 KB | Ge'ez **and** the machine has no Ethiopic font of its own — see the second revision |
 
 That split is what makes vendoring Ge'ez affordable. Verified in a real
 browser: an English widget session fetches **48 KB and nothing else**. Without
@@ -91,6 +91,108 @@ blank panel, and the fallback text is readable.
   Roman. `tests/test_fonts.py` asserts the allowlist, the woff2 magic number,
   the stack order, the range gating, and that no page reaches out to a font
   CDN.
+
+## Revised 2026-08-13 — the first build got the wrong Inter, and set Ge'ez like Latin
+
+The founder's verdict on what shipped: *"the Ge'ez and also the Latin font
+looks ugly, not even the same font we used on DAPS Analytics."* Two separate
+mistakes, both mine, both in this ADR's own decision.
+
+**Inter must ship with its optical-size axis.** Inter 4 carries `opsz` 14–32,
+and `font-optical-sizing: auto` — the CSS default — moves a 46px headline onto
+the **display** cut: tighter, more compact, higher contrast. The first build
+took fontsource's `wght`-only file, which has no `opsz`, so the hero rendered
+in Inter's **text** cut scaled up to 46px: looser, wider, softer. Google Fonts
+*does* serve the axis, so a site loading Inter from there gets the display cut
+and this did not — which is precisely why it read as a different typeface.
+Rendering both at 46px side by side made the difference obvious. Costs 23 KB
+on the Latin file and 45 KB on Latin-Extended.
+
+Nothing outside the font can see this. The filename is ours, the CSS is
+identical either way, and the byte count is 23 KB that somebody will
+eventually try to save. `tests/test_fonts.py` now reads the `fvar` table —
+which is why `fonttools` is a declared dev dependency, on the same reasoning
+as `openpyxl`.
+
+**Ge'ez is not Latin and must not be set like it.** The hero's `-.025em`
+tracking, `1.1` leading and `700` weight are tuned for Inter at display size,
+and all three are wrong for Ethiopic:
+
+- a Ge'ez character is a whole **syllable** with dense internal structure, and
+  its sidebearings are already the minimum that keeps the strokes apart —
+  pulling a pixel out of every gap at 46px is what turned the Amharic hero
+  into a grey block;
+- `1.1` leading nearly touches across two lines of a script with tall, busy
+  forms;
+- `700` fills the counters in. At 46px Ge'ez reads better at 600, and the
+  weight drop is invisible beside the Latin because the script is denser to
+  start with.
+
+Now `letter-spacing: normal; line-height: 1.28; font-weight: 600`, keyed on
+**`:lang()`** rather than the panel's language — the mock card cycles
+languages independently of the interface, so the rule has to follow the text.
+Both the headline and the card set `lang` from JS for that reason, which is
+also just correct: a screen reader handed Amharic tagged `en` pronounces it as
+English.
+
+**The widget was checked and deliberately left alone** for the tracking fix. Its negative tracking
+is `-.01em` on a 15px bank name and a 17px sheet heading — 0.15 of a pixel,
+which is not the defect. The defect is display size: `-.025em` at 46px is over
+a pixel per character. Message bubbles already sit at `line-height: 1.5`.
+Changing the widget would have been motion without a reason.
+
+## Revised again 2026-08-13 — Ge'ez goes back to the reader's own system face
+
+The tracking and leading fix above helped and did not settle it. The founder:
+*"restore the original font for Ge'ez, that was the best font."*
+
+**"The original" was never a font this repo shipped.** Checking `59aa9b3`,
+the stack before any of this named `"Noto Sans Ethiopic"` with **no
+`@font-face`** — so it resolved only on a machine that already had that font,
+and otherwise fell through to whatever the operating system supplies for
+Ge'ez. On Windows, where most Ethiopian desktop users are, that is **Nyala**:
+a traditional face with modulated strokes, and the one an Amharic reader
+recognises as properly set. Self-hosting Noto Sans Ethiopic replaced it
+*everywhere* with a monolinear sans — consistent, and worse.
+
+So this ADR's own reasoning was right for Latin and wrong for Ge'ez, and the
+two are now handled differently on purpose:
+
+- **Latin is ours.** Inter leads, identical on every machine. There is no
+  system Latin face a bank's dispatcher has an opinion about, and the whole
+  point of vendoring it was that it look the same everywhere.
+- **Ge'ez is the reader's.** `Nyala, "Abyssinica SIL", "Noto Sans Ethiopic",
+  Ebrima` come first; our copy is **last**, reached only by a machine with no
+  Ethiopic font at all, which would otherwise render tofu.
+
+Two consequences, both accepted:
+
+- **Ge'ez looks slightly different across operating systems.** That is the
+  cost of the reader getting the face their own system considers right for
+  their script. For this product's readers it is the better trade, and it is
+  the founder's call to make, not a typographic principle to defend.
+- **Most Ethiopian users no longer download the 198 KB at all.** A webfont is
+  only fetched when it wins the fallback for a rendered character.
+
+Both branches were **verified in a browser**, by installing an Ethiopic face
+into the test container's fontconfig and running the page twice:
+
+| Machine | our 198 KB file | Ge'ez renders | face used |
+|---|---|---|---|
+| has a system Ethiopic font | **not fetched** | yes | the system's |
+| has none | fetched | yes | ours |
+
+`warmMockFonts` had to change with it. It used to call `document.fonts.load`
+with the Ge'ez family *by name*, which requests our copy explicitly and
+downloads all 198 KB even on a machine that already has a face — exactly the
+saving this arranges. It now lays out a probe carrying both scripts, styled by
+the real stack, and awaits `document.fonts.ready`: whatever the stack actually
+resolves to is what loads, and a system font resolves immediately.
+
+**Known and unresolved:** the Ge'ez headline weight is `600`. Nyala ships only
+Regular and Bold, so on Windows `600` selects **Bold**. If the Amharic hero
+still reads heavy, `500` is the one-line change that picks Regular — it cannot
+be judged from this sandbox, which has no copy of Nyala.
 
 ## References
 
