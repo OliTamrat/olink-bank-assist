@@ -75,10 +75,27 @@
 
 :root {
   --bg: #060709;
+  /* Text ramp, and the numbers are the point. Measured against BOTH the page
+     background and the slightly lighter card surface, taking the worse:
+
+       --ink   18.4 : 1
+       --body  10.9 : 1
+       --muted  7.5 : 1   (was 6.4 — scraped AA and read washed out)
+       --faint  6.2 : 1   (was 3.7 — FAILED WCAG AA outright)
+
+     `--faint` carries the micro-labels, the plan subtitles, the axis and the
+     footer, all at 10–13px, and it was below the 4.5:1 floor for normal text
+     at any size. Low-contrast grey on near-black is the default look of this
+     genre and it is a genuine legibility failure, not a style — worse on a
+     dim laptop screen in a bright office, which is where a bank's staff will
+     open this.
+
+     Hue and saturation are unchanged; only lightness moved, solved for the
+     target ratio rather than nudged by eye. */
   --ink: #f6f8fb;
   --body: #b9c2d0;
-  --muted: #8a94a5;
-  --faint: #626c7d;
+  --muted: #98a1b0;
+  --faint: #8892a2;
   --line: rgba(255,255,255,.085);
   --line-2: rgba(255,255,255,.15);
   --card: rgba(255,255,255,.026);
