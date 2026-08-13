@@ -163,16 +163,32 @@ def test_geez_never_gets_set_in_the_display_serif() -> None:
     assert re.search(r"line-height: 1\.[23]", body), "Ge'ez leading is Latin's"
 
 
-def test_the_serif_is_the_public_page_only() -> None:
-    """It is the page's whole voice, and it is 38 KB nobody working should pay.
+def test_the_serif_reaches_the_selling_surfaces_and_stops() -> None:
+    """It goes as far as the sign-in screen, and no further.
 
-    The admin panel and the widget are tools people use all day; the serif is
-    for the one surface whose job is to look like something.
+    The gate is the first thing anybody sees and the only part of the admin
+    panel doing a selling job, so it shares the public page's voice. The
+    dashboard behind it does not — a serif on a table of conversation counts
+    is costume.
+
+    **The widget must never load it.** That runs on customers' phones on
+    Ethiopian mobile connections, where 38 KB is a real cost and a display
+    serif has no job at all. This is the line that matters, and it is the one
+    a future "make it all consistent" pass would cross.
     """
     assert "playfair" in SITE.lower(), "the display serif is gone from the public page"
-    for other in ("admin.html", "widget.html"):
-        text = (STATIC / other).read_text(encoding="utf-8")
-        assert "playfair" not in text.lower(), f"{other} now loads the marketing serif"
+
+    admin = (STATIC / "admin.html").read_text(encoding="utf-8")
+    assert "playfair" in admin.lower(), "the sign-in screen lost the display serif"
+    # …and only the gate uses it. If the dashboard's own type started asking
+    # for the serif, this catches it.
+    assert "stage-line" in admin, "the gate headline rule is gone"
+
+    widget = (STATIC / "widget.html").read_text(encoding="utf-8")
+    assert "playfair" not in widget.lower(), (
+        "the widget now loads the marketing serif — 38 KB onto a customer's "
+        "phone for type that surface never sets"
+    )
 
 
 def test_every_nav_target_exists() -> None:

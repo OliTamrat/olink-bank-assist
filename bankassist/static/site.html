@@ -112,6 +112,12 @@
            "Times New Roman", serif;
 }
 * { box-sizing: border-box; margin: 0; }
+/* The browser's own rule is `[hidden] { display: none }` at specificity
+   (0,1,0), so ANY class that sets `display` outranks it — and `.btn` sets
+   `inline-flex`, which is exactly how the footer's unconfigured call to
+   action stayed on screen after JS hid it. Same defect as the widget's
+   thinking dots. `hidden` has one meaning and no stylesheet gets a vote. */
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
@@ -158,6 +164,19 @@ h2.display { font-size: clamp(30px, 4.1vw, 54px); }
 section { position: relative; padding: 128px 0; }
 section + section { border-top: 1px solid var(--line); }
 @media (max-width: 760px) { section { padding: 82px 0; } }
+/* ============================================================== reveal
+   Sections rise a little as they enter. Applied by JS adding `.reveal`, so a
+   browser that never runs the script shows everything — the content is never
+   hidden by CSS alone, which is how scroll animations turn into blank pages.
+   Also why the transition is on `.reveal` and not on the element itself. */
+.reveal { opacity: 0; transform: translateY(18px); }
+.reveal.in {
+  opacity: 1; transform: none;
+  transition: opacity .7s cubic-bezier(.22,.61,.36,1), transform .7s cubic-bezier(.22,.61,.36,1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .reveal.in { opacity: 1; transform: none; transition: none; }
+}
 .center { text-align: center; }
 .center .lede { margin-left: auto; margin-right: auto; }
 /* A centred display line set across the full 1180px reads as a banner rather
@@ -231,7 +250,41 @@ section + section { border-top: 1px solid var(--line); }
 /* `text-align: center` centres the TEXT inside each block; it does not
    centre the blocks. The lede and the button row both sat left of the
    headline until they were given auto margins of their own. */
+/* ============================================================== texture
+   The blooms alone left the hero reading as flat colour. Three cheap layers
+   fix that, and none of them is decoration for its own sake:
+
+   GRAIN. Every reference in this genre has film grain, and it is why their
+   gradients look photographic rather than like a CSS gradient. It also does
+   real work: 8-bit gradients across a large dark area band visibly, and a
+   little noise dithers the banding away. One inline SVG turbulence, fixed to
+   the viewport, pointer-events none — no request, no library.
+
+   VIGNETTE. Darkens the corners so the eye lands on the headline instead of
+   wandering to the edges of a very wide dark rectangle.
+
+   SPOTLIGHT. A soft pool of brand light sitting directly behind the display
+   type, which is what makes the headline feel lit rather than pasted on. */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 200; pointer-events: none;
+  opacity: .045; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@media (prefers-reduced-motion: reduce) { body::after { opacity: .03; } }
+
 .hero { padding: 92px 0 104px; text-align: center; }
+.hero::after {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(ellipse 78% 62% at 50% 34%,
+              transparent 42%, rgba(0,0,0,.6) 100%);
+}
+.hero .wrap::before {
+  content: ""; position: absolute; left: 50%; top: 34px; z-index: -1;
+  width: min(980px, 96vw); height: 380px; transform: translateX(-50%);
+  border-radius: 50%; pointer-events: none; filter: blur(30px);
+  background: radial-gradient(closest-side,
+              color-mix(in srgb, var(--brand) 20%, transparent), transparent 72%);
+}
 .hero .lede { margin-left: auto; margin-right: auto; }
 .hero .cta-row { justify-content: center; }
 .pill {
@@ -250,11 +303,33 @@ section + section { border-top: 1px solid var(--line); }
 .hero em { font-style: italic; color: var(--brand); }
 
 .stage { margin-top: 58px; position: relative; }
+/* A pool of light under the panel, so it reads as an object standing on a
+   surface rather than a rectangle pasted onto the page. Deliberately NOT a
+   float animation: this is an iframe somebody is going to click into and
+   type in, and moving a target under the cursor is hostile. */
+.stage::before {
+  content: ""; position: absolute; left: 50%; bottom: 26px; z-index: 0;
+  width: min(720px, 92vw); height: 220px; transform: translateX(-50%);
+  border-radius: 50%; filter: blur(60px); pointer-events: none;
+  background: radial-gradient(closest-side,
+              color-mix(in srgb, var(--brand) 26%, transparent), transparent 70%);
+}
 .stage-inner {
+  position: relative; z-index: 1;
   max-width: 480px; margin: 0 auto; border-radius: 22px; overflow: hidden;
   border: 1px solid var(--line-2); background: #0b0e13;
   box-shadow: 0 80px 140px -50px rgba(0,0,0,.95), 0 10px 40px rgba(0,0,0,.6);
   height: 600px;
+}
+/* Rim light along the top edge — one hairline, the same trick a rendered
+   product shot uses to separate an object from its background. */
+.stage-inner::after {
+  content: ""; position: absolute; inset: 0; border-radius: 22px; z-index: 2;
+  pointer-events: none; padding: 1px;
+  background: linear-gradient(180deg,
+              color-mix(in srgb, var(--brand) 55%, transparent), transparent 42%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
 }
 .stage-inner iframe { width: 100%; height: 100%; border: 0; display: block; }
 .stage-cap {
@@ -409,14 +484,36 @@ section + section { border-top: 1px solid var(--line); }
 .note b { color: var(--ink); }
 
 /* =============================================================== footer */
-footer { border-top: 1px solid var(--line); padding: 54px 0 70px; font-size: 13.5px; color: var(--faint); }
-footer .wrap { display: grid; gap: 22px; }
-.disc {
-  padding: 18px 20px; border-radius: 13px; background: var(--card);
-  border: 1px solid var(--line); line-height: 1.62; max-width: 80ch;
+/* =============================================================== footer
+   Carries the same light the hero does — one bloom behind it — so the page
+   closes the way it opened instead of falling off a cliff into a grey bar. */
+footer { position: relative; overflow: hidden; border-top: 1px solid var(--line); padding: 78px 0 44px; }
+footer .glow i { opacity: .16; }
+.f-top {
+  display: grid; grid-template-columns: 1.5fr 1fr 1fr 1.2fr; gap: 40px;
+  padding-bottom: 46px; border-bottom: 1px solid var(--line);
 }
-.foot-end { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
-.foot-end .sp { margin-left: auto; }
+@media (max-width: 900px) { .f-top { grid-template-columns: 1fr 1fr; gap: 34px; } }
+@media (max-width: 560px) { .f-top { grid-template-columns: 1fr; } }
+.f-brand .brand { font-size: 16px; margin-bottom: 14px; }
+.f-brand p { font-size: 14px; color: var(--muted); max-width: 34ch; }
+.f-col h4 {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 16px;
+}
+.f-col a, .f-col span {
+  display: block; font-size: 14px; color: var(--body);
+  text-decoration: none; padding: 5px 0; transition: color .18s;
+}
+.f-col a:hover { color: var(--ink); }
+.f-cta p { font-size: 14px; color: var(--muted); margin-bottom: 16px; }
+.f-bottom {
+  display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center;
+  padding-top: 26px; font-size: 13px; color: var(--faint);
+}
+.f-bottom .sp { margin-left: auto; }
+.f-bottom a { text-decoration: none; }
+.f-bottom a:hover { color: var(--body); }
 </style>
 </head>
 <body>
@@ -510,7 +607,9 @@ footer .wrap { display: grid; gap: 22px; }
         </div>
       </div>
 
-      <div class="tile h2 lit-deep">
+      <!-- Anchored: the channels story lives inside the bento rather than in
+           its own section, and the footer links to it by name. -->
+      <div class="tile h2 lit-deep" id="channels">
         <div class="num">7</div>
         <div class="sub">Channels, one conversation.</div>
         <div class="chips" style="margin-top:18px">
@@ -693,18 +792,43 @@ footer .wrap { display: grid; gap: 22px; }
   </div>
 </section>
 
-<footer>
+<footer id="contact">
+  <div class="glow"><i class="a"></i><i class="c"></i></div>
   <div class="wrap">
-    <div class="disc">
-      <strong>About the demo on this page:</strong> it answers from the knowledge
-      base of a fictional institution created for demonstration. Every figure in
-      it is illustrative. No real bank's content, branding or customer data
-      appears anywhere on this site, and nothing here should be read as claiming
-      a relationship with any named institution.
+    <div class="f-top">
+      <div class="f-brand">
+        <a class="brand" href="#top"><span class="mk">BA</span><span class="wm">Olink Bank&nbsp;Assist</span></a>
+        <p>An AI assistant for banks and microfinance institutions, answering
+           from their own documents in six languages — with a real teller one
+           tap away.</p>
+      </div>
+
+      <div class="f-col">
+        <h4>Product</h4>
+        <a href="#demo">Live demo</a>
+        <a href="#channels">Channels</a>
+        <a href="#languages">Languages</a>
+        <a href="#safety">Safety</a>
+      </div>
+
+      <div class="f-col">
+        <h4>Company</h4>
+        <a href="#roadmap">Roadmap</a>
+        <a href="#pricing">Pricing</a>
+        <a href="/admin">Staff sign in</a>
+      </div>
+
+      <div class="f-col f-cta">
+        <h4>Talk to us</h4>
+        <p>Thirty minutes, with your own published FAQ loaded, so you are
+           looking at your content rather than ours.</p>
+        <a class="btn btn-solid" data-contact data-contact-primary href="#contact">Book a walkthrough</a>
+      </div>
     </div>
-    <div class="foot-end">
-      <span>© <span id="yr">2026</span> Olink Technologies. Olink Bank Assist.</span>
-      <a class="sp" href="/admin">Staff sign in</a>
+
+    <div class="f-bottom">
+      <span>© <span id="yr">2026</span> Olink Technologies</span>
+      <span class="sp">Olink Bank Assist</span>
     </div>
   </div>
 </footer>
@@ -719,22 +843,87 @@ var SITE = {
   domain: ""                  // TODO before launch — sets canonical + OG URLs
 };
 
+/* Every call to action goes somewhere. The previous version stripped the href
+   when no address was configured and marked the button `data-pending`, which
+   was honest and read as broken — a greyed-out primary button is the first
+   thing a visitor clicks and the first thing they conclude is unfinished.
+   "Honest" is not worth much if the page looks abandoned.
+
+   So: with an address, the buttons are real mailto links, pre-addressed and
+   pre-subjected. Without one they scroll to the footer's contact block, which
+   is a normal thing for a big CTA to do — and the footer's own button, which
+   would otherwise scroll to itself, is the single place that steps aside
+   until there is somewhere for it to point. */
 (function wireContact() {
-  var links = document.querySelectorAll("[data-contact]");
   var subject = encodeURIComponent("Olink Bank Assist — walkthrough");
   var body = encodeURIComponent(
     "Institution:\nChannels we care about:\nRough monthly conversation volume:\n"
   );
-  Array.prototype.forEach.call(links, function (a) {
-    if (!SITE.contactEmail) {
-      a.setAttribute("data-pending", "1");
-      a.setAttribute("aria-disabled", "true");
-      a.setAttribute("title", "Contact address not configured yet");
-      a.removeAttribute("href");
+  var mailto = SITE.contactEmail
+    ? "mailto:" + SITE.contactEmail + "?subject=" + subject + "&body=" + body
+    : "";
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-contact]"), function (a) {
+    if (mailto) { a.href = mailto; return; }
+    if (a.hasAttribute("data-contact-primary")) {
+      // The one in the footer's own contact column. Nothing to point at yet,
+      // and a button that scrolls to itself is worse than no button.
+      a.hidden = true;
       return;
     }
-    a.href = "mailto:" + SITE.contactEmail + "?subject=" + subject + "&body=" + body;
+    a.href = "#contact";
   });
+})();
+
+/* Scroll reveal. The class is added by script rather than sitting in the
+   markup, so the page is fully readable if this never runs — a scroll
+   animation that hides content by default is how a site becomes a blank
+   screen for anyone whose JS failed.
+
+   Only the sections below the fold: revealing the hero would mean fading in
+   the first thing a visitor sees, which reads as a slow page rather than a
+   considered one. Unobserved once shown — nothing keeps running. */
+(function reveal() {
+  var reduced = window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced) return;
+
+  var pending = Array.prototype.slice.call(document.querySelectorAll("section, footer"));
+  pending.forEach(function (el) { el.classList.add("reveal"); });
+
+  /* Position, not intersection.
+     IntersectionObserver was the obvious tool and it is the wrong one here.
+     It fires when an element ENTERS the viewport, so a jump — an anchor link
+     in the nav, a restored scroll position, a fragment in the URL — skips
+     every section it flies past, and those stay invisible forever. This page
+     is mostly anchor links, so that is the normal case rather than an edge
+     one, and it was caught by scrolling to the bottom and back up.
+
+     The rule that cannot fail: if a section's top has passed the fold, it is
+     visible. Anything scrolled past is shown whether it was ever "entered"
+     or not. rAF-throttled and it unhooks itself once everything is out. */
+  var queued = false;
+  function sweep() {
+    queued = false;
+    var line = window.innerHeight * 0.92;
+    pending = pending.filter(function (el) {
+      if (el.getBoundingClientRect().top >= line) return true;
+      el.classList.add("in");
+      return false;
+    });
+    if (!pending.length) {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    }
+  }
+  function onScroll() {
+    if (queued) return;
+    queued = true;
+    window.requestAnimationFrame(sweep);
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll);
+  sweep();
 })();
 
 // Stamped rather than hard-coded, so a footer year cannot go stale in a file
