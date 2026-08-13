@@ -1649,18 +1649,24 @@ def mfa_status(
 
 @app.post("/admin/api/{slug}/mfa/enroll")
 def mfa_enroll(
-    slug: str, user: User = Depends(require_user), db: Session = Depends(get_db)
+    slug: str,
+    restart: bool = False,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Start enrolment: a fresh secret and the URI an app scans.
+    """Start enrolment: the pending secret and the URI an app scans.
 
     The credential row is written now but left UNVERIFIED, and that ordering
     is the safety property. If it counted as a second factor immediately,
     somebody who closed the tab between scanning and typing their first code
     would be locked out of their own account by a secret nothing holds.
 
-    Re-enrolling replaces the pending secret rather than adding a second one —
-    the unique constraint on (user_id, kind) enforces that at the schema, and
-    a person who scanned a stale QR should simply be able to start again.
+    **This is idempotent on purpose.** Calling it again returns the secret
+    already pending rather than minting a new one — see the comment on the
+    reuse below for the failure that taught us. `restart=true` is the explicit
+    way to abandon a secret whose QR is genuinely lost, and it must stay
+    explicit: the whole defect was a fresh secret arriving when nobody asked
+    for one.
     """
     bank = _own_bank(db, slug, user)
     if _verified_totp(db, user) is not None:
@@ -1670,17 +1676,34 @@ def mfa_enroll(
         raise HTTPException(
             status_code=409, detail="Two-factor is already on for this account"
         )
-    secret = totp.generate_secret()
     existing = db.execute(
         select(UserCredential).where(
             UserCredential.user_id == user.id, UserCredential.kind == "totp"
         )
     ).scalar_one_or_none()
-    if existing is not None:
-        existing.secret_hash = secret
-        existing.last_used_step = None
+    # Opening the panel again must show the SAME secret. This used to mint a
+    # fresh one unconditionally and overwrite the pending row, so the sequence
+    # everybody actually performs — scan the QR, look away, come back to type
+    # the first code — silently orphaned the entry the authenticator had just
+    # stored. The app then produced correct codes for a secret the server no
+    # longer held, and the only feedback was "That code was not accepted",
+    # forever, with a valid-looking secret on screen the whole time.
+    #
+    # Confirmed rather than guessed: the rejected code did not match the
+    # displayed secret at ANY step within ±24 hours, which rules out clock
+    # drift and leaves only a different secret.
+    #
+    # Reuse is safe here because a VERIFIED credential has already been turned
+    # away with a 409 above — the row this can reuse is always a pending one.
+    if existing is not None and not restart:
+        secret = existing.secret_hash
     else:
-        db.add(UserCredential(user_id=user.id, kind="totp", secret_hash=secret))
+        secret = totp.generate_secret()
+        if existing is not None:
+            existing.secret_hash = secret
+            existing.last_used_step = None
+        else:
+            db.add(UserCredential(user_id=user.id, kind="totp", secret_hash=secret))
     db.commit()
     return {
         "secret": secret,
@@ -1725,7 +1748,19 @@ def mfa_activate(
         credential.secret_hash, payload.code, now=time.time(), last_used_step=None
     )
     if step is None:
-        raise HTTPException(status_code=400, detail="That code was not accepted")
+        # Say WHICH failure it is. "That code was not accepted" is true of two
+        # completely different problems with completely different fixes, and
+        # working out which one cost a full round-trip of screenshots: a
+        # correct code from a clock that has drifted, versus a correct code
+        # from a secret this account no longer holds.
+        #
+        # This leaks nothing. It is authenticated, rate-limited, and only ever
+        # reached by someone who already holds a code; a guessed code matches
+        # at no offset at all, so the answer for an attacker is always the
+        # generic one.
+        raise HTTPException(
+            status_code=400, detail=totp.explain_rejection(credential.secret_hash, payload.code)
+        )
 
     credential.verified_at = datetime.now(UTC)
     credential.last_used_step = step

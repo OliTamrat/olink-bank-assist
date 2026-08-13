@@ -315,3 +315,67 @@ def test_a_pending_session_expires_in_minutes_not_hours(
     ).scalars().first()
     assert row is not None
     assert admin_auth.PENDING_MFA_LIFETIME < admin_auth.SESSION_LIFETIME
+
+
+def test_reopening_the_enrolment_panel_keeps_the_same_secret(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """The defect that made two-factor look permanently broken.
+
+    Enrolment minted a fresh secret on EVERY call and overwrote the pending
+    row. The panel calls it each time it renders, so the ordinary sequence —
+    scan the QR, look away, come back and type the first code — silently
+    orphaned the entry the authenticator had just stored. The app then
+    produced correct codes for a secret the server no longer held, and the
+    only feedback was "That code was not accepted", indefinitely, with a
+    perfectly valid-looking secret on screen throughout.
+
+    Found by taking the rejected code and the displayed secret from a
+    screenshot and searching every step within ±24 hours for a match. There
+    was none, which rules out clock drift and leaves only a second secret.
+    """
+    _sign_in(client)
+    first = client.post("/admin/api/demo/mfa/enroll").json()["secret"]
+    again = client.post("/admin/api/demo/mfa/enroll").json()["secret"]
+    assert again == first, (
+        "reopening enrolment issued a new secret, which orphans whatever the "
+        "authenticator already scanned"
+    )
+    # …and the code from that secret still activates, which is the property
+    # the user actually cares about.
+    code = totp.code_for_step(first, totp.step_at(time.time()))
+    assert client.post("/admin/api/demo/mfa/activate", json={"code": code}).status_code == 200
+
+
+def test_starting_over_is_possible_but_has_to_be_asked_for(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """Someone who genuinely lost the QR still needs a fresh secret.
+
+    Explicit is the whole point: the defect was a new secret arriving when
+    nobody asked for one.
+    """
+    _sign_in(client)
+    first = client.post("/admin/api/demo/mfa/enroll").json()["secret"]
+    fresh = client.post("/admin/api/demo/mfa/enroll?restart=true").json()["secret"]
+    assert fresh != first
+    stale = totp.code_for_step(first, totp.step_at(time.time()))
+    assert client.post("/admin/api/demo/mfa/activate", json={"code": stale}).status_code == 400
+
+
+def test_a_rejected_code_says_which_failure_it_was(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """The generic message cost a full round-trip of screenshots to diagnose."""
+    _sign_in(client)
+    secret = client.post("/admin/api/demo/mfa/enroll").json()["secret"]
+
+    drifted = totp.code_for_step(secret, totp.step_at(time.time()) + 10)
+    said = client.post("/admin/api/demo/mfa/activate", json={"code": drifted})
+    assert said.status_code == 400
+    assert "clock" in said.json()["detail"], said.json()
+
+    other = totp.code_for_step(totp.generate_secret(), totp.step_at(time.time()))
+    said = client.post("/admin/api/demo/mfa/activate", json={"code": other})
+    assert said.status_code == 400
+    assert "different secret" in said.json()["detail"], said.json()
