@@ -503,3 +503,101 @@ def test_the_stylesheet_does_not_resize_the_qr() -> None:
         "every module onto fractional pixels and is what stopped it scanning"
     )
     assert "crispEdges" in body, "antialiasing is back on the module edges"
+
+
+def _enrol_and_activate(client: TestClient) -> list[str]:
+    """A fully enrolled account, and the recovery codes it was issued."""
+    secret = client.post("/admin/api/demo/mfa/enroll").json()["secret"]
+    code = totp.code_for_step(secret, totp.step_at(time.time()))
+    r = client.post("/admin/api/demo/mfa/activate", json={"code": code})
+    assert r.status_code == 200, r.text
+    return list(r.json()["recovery_codes"])
+
+
+def test_rotating_recovery_codes_leaves_the_second_factor_up(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """The entire reason this endpoint exists.
+
+    Before it, replacing leaked codes meant disabling two-factor and enrolling
+    again — which works, and is the wrong shape for the moment it is needed:
+    it leaves the account with no second factor at all, briefly, precisely
+    while somebody is reacting to a leak. It also forced a new secret and a
+    re-scan for a problem that had nothing to do with the secret.
+    """
+    _sign_in(client)
+    _enrol_and_activate(client)
+    before = client.get("/admin/api/demo/mfa").json()
+
+    r = client.post("/admin/api/demo/mfa/recovery-codes",
+                    json={"password": PW})
+    assert r.status_code == 200, r.text
+
+    after = client.get("/admin/api/demo/mfa").json()
+    assert after["enabled"] is True, "rotating the codes took two-factor down"
+    assert before["enabled"] is True
+
+
+def test_the_old_recovery_codes_stop_working(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """A rotation that left both sets valid would DOUBLE the number of working
+    bypasses — the exact opposite of what somebody rotating them wants."""
+    _sign_in(client)
+    old = _enrol_and_activate(client)
+    new = client.post("/admin/api/demo/mfa/recovery-codes",
+                      json={"password": PW}).json()["recovery_codes"]
+
+    assert not (set(old) & set(new)), "a code survived the rotation"
+    remaining = client.get("/admin/api/demo/mfa").json()["recovery_codes_remaining"]
+    assert remaining == len(new), (
+        f"{remaining} codes on file but {len(new)} were issued — the old ones "
+        "were not deleted"
+    )
+
+
+def test_rotating_costs_the_password(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """Same reason `disable` asks: a signed-in session may be a borrowed
+    unlocked laptop, and minting ten fresh bypasses from one is exactly the
+    move that turns a moment of physical access into a lasting one."""
+    _sign_in(client)
+    _enrol_and_activate(client)
+    r = client.post("/admin/api/demo/mfa/recovery-codes", json={"password": "not-it"})
+    assert r.status_code == 401
+    # …and nothing was rotated by the attempt.
+    assert client.get("/admin/api/demo/mfa").json()["recovery_codes_remaining"] == 10
+
+
+def test_rotating_needs_a_second_factor_to_recover_from(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """Codes for an authenticator nobody holds would be ten bypasses of a
+    password and nothing else."""
+    _sign_in(client)
+    r = client.post("/admin/api/demo/mfa/recovery-codes",
+                    json={"password": PW})
+    assert r.status_code == 409, r.text
+
+
+def test_a_bank_that_mandates_mfa_can_still_rotate(
+    client: TestClient, account: User, db_session: Session, demo_bank: Any
+) -> None:
+    """Turning two-factor OFF is gated by the tenant's policy. Rotating the
+    codes is not, because it removes nothing — and a bank that mandates
+    two-factor is exactly the one whose staff must be able to replace leaked
+    recovery codes."""
+    _sign_in(client)
+    _enrol_and_activate(client)
+    # Through db_session, not the fixture object — the seeders return a Bank
+    # attached to their own session, so assigning to that instance never
+    # reaches the database. Documented a few tests above; I did it anyway.
+    bank = db_session.execute(select(Bank).where(Bank.slug == "demo")).scalar_one()
+    bank.require_mfa = True
+    db_session.commit()
+
+    assert client.post("/admin/api/demo/mfa/disable",
+                       json={"password": PW}).status_code == 403
+    assert client.post("/admin/api/demo/mfa/recovery-codes",
+                       json={"password": PW}).status_code == 200
