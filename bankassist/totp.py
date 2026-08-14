@@ -243,8 +243,17 @@ def provisioning_qr_svg(uri: str) -> str:
     # Error correction M: ~15% recoverable, which is the level every
     # authenticator's own documentation assumes and enough for a code read off
     # a slightly dirty laptop screen at an angle.
+    #
+    # scale=6 means every module is SIX pixels at the SVG's intrinsic size, and
+    # the stylesheet deliberately does not override that size. Photographing a
+    # screen is a far harder problem than decoding a clean bitmap — glare,
+    # moiré against the pixel grid, focus, angle — and the first version of
+    # this shipped at scale 5 with CSS forcing the result down to 188px. That
+    # is a 0.709 downscale, so every module boundary landed on a fractional
+    # pixel and every edge softened, at 3.55 px per module. The code decoded
+    # perfectly from a clean render and would not scan off the screen.
     segno.make(uri, error="m").save(
-        buf, kind="svg", scale=5, border=4, dark="#0b1220", light="#ffffff",
+        buf, kind="svg", scale=6, border=4, dark="#0b1220", light="#ffffff",
         xmldecl=False, svgns=True, nl=False,
     )
     return buf.getvalue().decode("utf-8")

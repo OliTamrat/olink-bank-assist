@@ -682,7 +682,19 @@ button { font-family: inherit; }
   display: inline-block; background: #fff; padding: 10px; border-radius: 12px;
   margin-bottom: 16px; line-height: 0;
 }
-.qrplate svg { display: block; width: 188px; height: 188px; }
+/* NO width or height here, deliberately. The SVG carries its own size — six
+   pixels per module — and any CSS size scales it by a fraction, which puts
+   every module boundary between pixels and softens every edge. That is what
+   a phone camera photographing a glossy screen has the least tolerance for,
+   and it is why the first version rendered a provably-correct QR that would
+   not scan: forced to 188px it was 3.55 px per module, blurred.
+   `max-width` is the one exception — a narrow window should shrink it rather
+   than overflow the card, and a QR too small to scan still beats a broken
+   layout. `crispEdges` turns off antialiasing so the modules stay square. */
+.qrplate svg {
+  display: block; max-width: 100%; height: auto;
+  shape-rendering: crispEdges;
+}
 .capslock {
   display: none; margin-top: 6px; font-size: 11.5px; color: var(--warn);
   align-items: center; gap: 5px;
