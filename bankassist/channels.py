@@ -32,6 +32,16 @@ the difference is the whole honesty of this page:
   each vendor publishes; the first real connection is still the first real
   connection. SMS is the sharpest case — see `sms.py`, where the aggregator's
   own body shape may need a mapping written for it.
+
+**`needs` goes stale on somebody else's schedule, and nothing here can tell.**
+This file described Viber as self-serve, issuing a token immediately — which
+was true when it was written and stopped being true on 5 February 2024, when
+Rakuten Viber moved chatbots to an application-and-commercial-terms model. The
+code kept passing, because a vendor changing its onboarding is invisible to
+every test we can write. It surfaced only when someone logged in and found no
+button. So: when a `needs` list is the thing a bank is deciding on, re-check it
+against the vendor rather than against this file, and treat a stale entry here
+as the expected failure mode rather than a surprise.
 """
 
 from __future__ import annotations
@@ -62,8 +72,8 @@ CATALOGUE: Final[tuple[dict[str, Any], ...]] = (
         "name": "Telegram",
         "status": AVAILABLE,
         "blurb": "Customers message your bank's bot. Widely used in Ethiopia, and "
-                 "— with Viber — one of the two channels you can turn on today "
-                 "without anyone's approval.",
+                 "the only channel you can turn on today with no approval and "
+                 "no cost.",
         "needs": ["A bot token from @BotFather — free, and takes about a minute."],
     },
     {
@@ -104,11 +114,19 @@ CATALOGUE: Final[tuple[dict[str, Any], ...]] = (
         "name": "Viber",
         "status": AVAILABLE,
         "blurb": "Customers message your bank's Viber account. Still common in "
-                 "parts of the diaspora, and — like Telegram — it can be turned "
-                 "on today without anyone's approval.",
+                 "parts of the diaspora. Bots stopped being self-serve in "
+                 "February 2024 — this is now a commercial account, closer to "
+                 "WhatsApp than to Telegram.",
         "needs": [
-            "A bot account from partners.viber.com — self-serve, and it issues "
-            "the authentication token immediately.",
+            "An approved chatbot account. Since 5 February 2024 Rakuten Viber "
+            "no longer lets anyone create one: you apply to Viber directly or "
+            "through one of their verified partners.",
+            "Agreement to Viber's commercial terms — a monthly maintenance fee "
+            "per bot, plus a per-message charge for anything the bot starts. "
+            "Confirm the current figures on the Pricing page of your Viber "
+            "partner account; they vary by market.",
+            "The authentication token, which the panel shows once the bot "
+            "account exists.",
         ],
     },
     {

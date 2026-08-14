@@ -62,11 +62,13 @@ What that buys a bank:
   is conversation state, not channel state. When a teller picks up the live
   call, everything the customer already said travels with them. Nobody
   explains themselves twice.
-- **Connecting a channel is credential entry, not a project.** Telegram and
-  Viber are self-serve and take minutes — Telegram is live today for two
-  prospect tenants. The Meta trio (WhatsApp, Messenger, Instagram — one app,
-  one callback, one signature scheme) waits only on the bank's business
-  verification; SMS waits on an aggregator agreement. Every webhook fails
+- **Connecting a channel is credential entry, not a project.** Telegram is
+  self-serve, takes minutes, and is live today for two prospect tenants. The
+  rest wait on an account rather than on code: the Meta trio (WhatsApp,
+  Messenger, Instagram — one app, one callback, one signature scheme) on the
+  bank's business verification, SMS on an aggregator agreement, and Viber on
+  Rakuten Viber's chatbot application and commercial terms, which replaced
+  self-serve bot creation in February 2024. Every webhook fails
   closed on an unset credential and compares signatures constant-time.
 
 ## Six languages, engineered — not translated

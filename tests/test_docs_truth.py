@@ -150,3 +150,79 @@ def test_no_doc_hard_codes_an_exact_test_count() -> None:
             f"{name} hard-codes an exact test count {exact} — state a floor "
             "('1,350+') or nothing; the CI run is the count."
         )
+
+
+SELF_SERVE_CHANNELS = {"web", "telegram"}
+"""The channels a bank can switch on with nobody's permission and no bill.
+
+`web` needs no credential at all; Telegram's comes from @BotFather in about a
+minute. Everything else needs an account somebody else has to approve.
+
+**Viber was in this set and is not any more.** Rakuten Viber moved chatbots to
+an application-and-commercial-terms model on 5 February 2024, which no test in
+this repo could have noticed — a vendor rewriting its onboarding is invisible
+from inside the code. It was found by a human logging in and seeing no button,
+after four separate files had told him it would take minutes.
+"""
+
+
+STALE_SELF_SERVE_CLAIMS = (
+    "Telegram and Viber are self-serve",
+    "Telegram and Viber self-serve",
+    "with Viber — one of the two channels",
+    "like Telegram — it can be turned",
+    "A bot account from partners.viber.com",
+    "Viber are self-serve and take minutes",
+)
+"""The exact sentences that were true before 5 February 2024, and were not
+after it. Each one shipped somewhere a bank could read it.
+
+Phrases, not a prose heuristic. **The first version of this test tried to
+reason about the sentences** — find a paragraph mentioning both "self-serve"
+and a channel that is not, unless the paragraph also contained a retraction
+word. It passed the regression it was written to catch: the replacement
+paragraph both makes and withdraws the claim, so the retraction word excused
+the whole thing. A check that cannot tell an assertion from its retraction is
+worse than none, because it reads as coverage.
+"""
+
+
+def test_no_surface_repeats_a_retired_self_serve_claim() -> None:
+    """The vendor's terms are not checkable here. Agreeing with ourselves is.
+
+    Four files carried the same stale claim — `channels.py`, the README,
+    `CLAUDE.md` and `docs/market-position.md` — so correcting one and missing
+    the others was the likely outcome, and this is what makes that a failure
+    rather than a slow leak back into the sales copy.
+    """
+    surfaces = {
+        "channels.py": (ROOT / "bankassist" / "channels.py"),
+        "README.md": (ROOT / "README.md"),
+        "CLAUDE.md": (ROOT / "CLAUDE.md"),
+        "docs/market-position.md": (ROOT / "docs" / "market-position.md"),
+        "docs/integrations/viber.md": (
+            ROOT / "docs" / "integrations" / "viber.md"
+        ),
+        "admin_strings.json": (ROOT / "bankassist" / "admin_strings.json"),
+    }
+    for label, path in surfaces.items():
+        # Whitespace-normalised: every one of these files is hard-wrapped, so
+        # the claim routinely straddles a line break.
+        flat = " ".join(path.read_text(encoding="utf-8").split())
+        for claim in STALE_SELF_SERVE_CLAIMS:
+            assert claim not in flat, (
+                f"{label} still says {claim!r}. Only "
+                f"{sorted(SELF_SERVE_CHANNELS)} are self-serve — Viber has "
+                f"needed an application and commercial terms since "
+                f"5 February 2024."
+            )
+
+
+def test_the_viber_page_does_not_promise_a_token_in_minutes() -> None:
+    """The specific sentence that sent somebody to a page with no button."""
+    page = (ROOT / "docs" / "integrations" / "viber.md").read_text(encoding="utf-8")
+    for stale in ("connect this in minutes", "no review", "Create a bot account at"):
+        assert stale not in page, (
+            f"docs/integrations/viber.md still says {stale!r} — bot accounts "
+            f"have not been self-created since 5 February 2024."
+        )

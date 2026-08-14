@@ -8,8 +8,8 @@ decisions it records.
 ## Where the product actually stands
 
 Phase 1 is complete and live: 5 languages across all three string surfaces,
-seven channel adapters (Telegram and Viber self-serve, the Meta trio and SMS
-pending business/aggregator steps), the live-teller handoff verified against
+seven channel adapters (Telegram self-serve; Viber, the Meta trio and SMS
+all pending a commercial or business step on the vendor's side), the live-teller handoff verified against
 real WebRTC traffic, and a safety doctrine (tool-output-is-truth, allowlist
 intents, machine-checked guardrail invariants) that is unusually rigorous for
 a pre-revenue product. `CLAUDE.md` "Current state" is the live version of
