@@ -548,12 +548,17 @@ Four tenants seeded in the production database:
 | `dashen` | Dashen Bank | 14 seed docs, `SOURCES_DASHEN.md` |
 | `awash` | Awash Bank | 14 seed docs, `SOURCES_AWASH.md` |
 
-**The corpus is the ceiling.** A real bank's public site is several hundred
-pages; every tenant here runs on fifteen to twenty-three. Nothing about the
-model, the prompt or retrieval moves the answer rate as much as content does —
-which is why `ingest.py` exists and why the curated-answer loop matters. When
-a session is asked to "make the assistant better", check the corpus size
-first.
+**The corpus is a ceiling — but adding to it is not monotonically good**
+(ADR-0033, measured 2026-08-14). A real bank's public site is several hundred
+pages; every tenant here runs on fifteen to twenty-three, and content still
+moves the answer rate more than prompt tuning does. But `scripts/corpus_gaps.py`
+measured the four tenants at 63–69% on 52 real customer questions, and adding
+one well-sourced document to fill the *largest measured gap* took the total
+from 66 gaps to 70: with `top_k=4` a new document competes for retrieval slots
+and displaces answers that were working. **Measure before and after any batch;
+a batch that raises the gap count does not ship.** `top_k` is a corpus-size
+assumption, not a constant, and raising it is the prerequisite for real corpus
+growth.
 
 **CBE, Dashen and Awash are private pitch-demo prototypes, not live public
 products.** Each carries a mandatory `Bank.disclaimer` banner rendered in the
