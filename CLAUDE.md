@@ -32,9 +32,10 @@ branded assistant its customers talk to about accounts, transfers, loans,
 fees, saving, and financial education — in **Amharic, Afaan Oromo, Tigrinya,
 Somali, Swahili, or English** — over a web chat widget, Telegram (Ethiopia's dominant
 messaging channel), Viber, WhatsApp, Facebook Messenger, Instagram Direct and
-SMS. All seven adapters are built; Telegram and Viber are self-serve to
-connect, the Meta three await the bank's business verification, SMS awaits an
-aggregator agreement. Phase 3 adds authenticated account servicing.
+SMS. All seven adapters are built; **Telegram is the only self-serve one**,
+the Meta three await the bank's business verification, SMS awaits an
+aggregator agreement, and Viber awaits Rakuten Viber's chatbot application and
+commercial terms (self-serve bot creation ended 5 February 2024). Phase 3 adds authenticated account servicing.
 
 **This repo is the product's only home.** It briefly incubated inside
 `olink-dispatch` (`bank-assist/`, PR #12, closed unmerged) — founder decision

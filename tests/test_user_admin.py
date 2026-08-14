@@ -401,14 +401,22 @@ def test_the_channel_list_does_not_promise_what_is_not_connected(
         )
         assert row["needs"], f"{key} is not live but lists no prerequisite"
 
-    # Self-serve and business-gated are different waits, and a bank planning
-    # its rollout is entitled to know which is which. Telegram and Viber issue
-    # a token in minutes; the rest need someone else's approval first.
+    # Self-serve and approval-gated are different waits, and a bank planning
+    # its rollout is entitled to know which is which. Telegram issues a token
+    # in minutes; everything else needs someone else's yes first.
     assert len(rows["telegram"]["needs"]) == 1
-    assert len(rows["viber"]["needs"]) == 1
     assert len(rows["whatsapp"]["needs"]) >= 3, (
         "WhatsApp's prerequisites are the business verification, the number, "
         "and Meta's review — collapsing them understates the wait"
+    )
+    # Viber sat beside Telegram here, asserting a single prerequisite, until
+    # 2026-08-14. Rakuten Viber ended self-serve bot creation on 5 February
+    # 2024: it is now an application plus commercial terms plus the token, and
+    # a one-line `needs` understated that by about the width of a contract.
+    assert len(rows["viber"]["needs"]) >= 3, (
+        "Viber needs an approved chatbot account, agreement to Viber's "
+        "commercial terms, and the token — presenting it as one step reads "
+        "as self-serve, which it stopped being in February 2024"
     )
 
 
