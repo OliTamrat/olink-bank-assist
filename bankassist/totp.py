@@ -216,3 +216,35 @@ def explain_rejection(secret: str, code: str) -> str:
         "entry this account no longer uses — delete it, scan the code on this "
         "screen again, then enter the first code it shows."
     )
+
+
+def provisioning_qr_svg(uri: str) -> str:
+    """The provisioning URI as an inline SVG QR code.
+
+    Returned as markup rather than a URL because an authenticated image
+    endpoint for a credential is a second thing to get wrong: it would need
+    the same session check, the same rate limit, and a `Cache-Control` nobody
+    would remember to set. Inline, it inherits the enrolment response's
+    protections exactly and never touches disk or a cache.
+
+    Dark modules on a WHITE plate, never on the panel's own dark surface.
+    Inverted QR codes are out of spec — the finder patterns are defined as
+    dark-on-light — and while some phones cope, "some phones" is not a
+    property to ship on the screen that turns on two-factor. The quiet zone
+    is part of that: a border of at least 4 modules is what lets a camera
+    find the symbol at all, so it is set explicitly rather than left to a
+    default that might change.
+    """
+    import io
+
+    import segno
+
+    buf = io.BytesIO()
+    # Error correction M: ~15% recoverable, which is the level every
+    # authenticator's own documentation assumes and enough for a code read off
+    # a slightly dirty laptop screen at an angle.
+    segno.make(uri, error="m").save(
+        buf, kind="svg", scale=5, border=4, dark="#0b1220", light="#ffffff",
+        xmldecl=False, svgns=True, nl=False,
+    )
+    return buf.getvalue().decode("utf-8")
