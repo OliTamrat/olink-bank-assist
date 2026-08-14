@@ -1344,6 +1344,13 @@ lender (smaller, faster procurement, hungrier).
    use is not finished**, and asking twice for the same thing is a cost paid
    by the person who already said yes.
 
+   **The exceptions below are the founder's too** — proposed in the same
+   conversation and explicitly agreed, 2026-08-14. That matters because they
+   would otherwise read as an agent hedging against its own instruction, and
+   the next session would be free to decide they were over-caution. They are
+   not. Relaxing one is a decision to take back to him, exactly like changing
+   the rule itself.
+
    Still stop and ask, because these are not "the work already asked for":
    - a migration that drops or rewrites data, or one whose `downgrade()` is
      lossy;
