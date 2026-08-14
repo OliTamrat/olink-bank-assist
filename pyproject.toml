@@ -37,6 +37,21 @@ dependencies = [
     # an import error, so it surfaces on the first real inbound SMS rather
     # than at startup.
     "python-multipart>=0.0.9",
+    # The two-factor QR. The enrolment screen said "Scan this in your
+    # authenticator app" and rendered nothing to scan — only the secret as
+    # text — so the sole route it actually offered was typing a 32-character
+    # base32 key into a phone by hand. Nobody does that, which is why nobody
+    # had an entry in their authenticator and every code they tried was
+    # rejected.
+    #
+    # A dependency rather than a hand-rolled encoder because a QR is Reed
+    # Solomon over GF(256) plus a mask-scoring pass, and getting it subtly
+    # wrong produces a code that scans on one phone and not another — the
+    # worst failure mode for the screen this is on. segno is pure Python with
+    # no dependencies of its own and emits SVG, so nothing binary enters the
+    # image and nothing is fetched from a third-party origin at render time,
+    # which is the same rule the vendored fonts follow.
+    "segno>=1.6",
 ]
 
 [project.optional-dependencies]

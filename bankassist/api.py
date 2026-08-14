@@ -1738,11 +1738,13 @@ def mfa_enroll(
         else:
             db.add(UserCredential(user_id=user.id, kind="totp", secret_hash=secret))
     db.commit()
+    uri = totp.provisioning_uri(secret, account=user.email, issuer=bank.display_name)
     return {
         "secret": secret,
-        "uri": totp.provisioning_uri(
-            secret, account=user.email, issuer=bank.display_name
-        ),
+        "uri": uri,
+        # The thing the screen has been telling people to scan since MFA
+        # shipped, and which was never actually rendered.
+        "qr_svg": totp.provisioning_qr_svg(uri),
     }
 
 

@@ -379,3 +379,61 @@ def test_a_rejected_code_says_which_failure_it_was(
     said = client.post("/admin/api/demo/mfa/activate", json={"code": other})
     assert said.status_code == 400
     assert "different secret" in said.json()["detail"], said.json()
+
+
+def test_enrolment_ships_a_qr_that_encodes_the_provisioning_uri(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """The screen said "Scan this in your authenticator app" and rendered
+    nothing to scan.
+
+    Only the secret as text, which means the sole route it actually offered
+    was typing a 32-character base32 key into a phone by hand. Nobody does
+    that — so nobody had an entry in their authenticator, and every code they
+    tried was for something else. The instruction was a lie for the whole
+    life of the feature.
+
+    Asserting the QR *decodes back to the URI* rather than merely existing:
+    an SVG of the wrong string scans perfectly and enrols the wrong account,
+    which is indistinguishable from this bug from the user's side.
+    """
+    _sign_in(client)
+    enrol = client.post("/admin/api/demo/mfa/enroll").json()
+    svg = enrol.get("qr_svg")
+    assert svg, "enrolment ships no QR — the screen's own instruction is unfollowable"
+    assert svg.lstrip().startswith("<svg"), svg[:80]
+
+    import segno
+    from segno import helpers  # noqa: F401  (import surface check)
+
+    # Rebuild the symbol from the URI and compare module matrices: same URI
+    # and settings produce an identical matrix, so this catches a QR built
+    # from the wrong string without needing a camera.
+    expected = segno.make(enrol["uri"], error="m")
+    import io
+
+    buf = io.BytesIO()
+    expected.save(buf, kind="svg", scale=5, border=4, dark="#0b1220",
+                  light="#ffffff", xmldecl=False, svgns=True, nl=False)
+    assert svg == buf.getvalue().decode("utf-8"), (
+        "the QR does not encode this enrolment's provisioning URI"
+    )
+
+    # …and the URI is the one an authenticator needs.
+    assert enrol["uri"].startswith("otpauth://totp/")
+    assert enrol["secret"] in enrol["uri"]
+
+
+def test_the_qr_reaches_no_third_party_origin(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """Same rule as the vendored fonts: the panel shows customer
+    conversations, so a third-party origin is a CSP entry and a security
+    review question in exchange for nothing. Generating the SVG server-side
+    means the QR is markup, not a request."""
+    _sign_in(client)
+    svg = client.post("/admin/api/demo/mfa/enroll").json()["qr_svg"]
+    assert "<image" not in svg and "xlink:href" not in svg
+    for scheme in ("http://", "https://"):
+        stripped = svg.replace("http://www.w3.org/2000/svg", "")
+        assert scheme not in stripped, f"the QR SVG reaches out to {scheme}"
