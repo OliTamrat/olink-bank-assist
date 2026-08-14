@@ -1280,6 +1280,14 @@ class MfaDisableIn(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class MfaRecoveryCodesIn(BaseModel):
+    # Same reasoning as the disable payload, and deliberately a separate model
+    # rather than a shared one: these two endpoints ask for the password for
+    # related but distinct reasons, and a shared "PasswordIn" would make it
+    # easy to add a third caller without thinking about whether it should.
+    password: str = Field(min_length=1, max_length=1024)
+
+
 class CreateUserIn(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=passwords.MIN_LENGTH, max_length=1024)
@@ -1864,6 +1872,74 @@ def mfa_disable(
     db.commit()
     log_event(logger, "admin_mfa_disabled", bank=slug, user=user.email)
     return {"enabled": False}
+
+
+@app.post("/admin/api/{slug}/mfa/recovery-codes")
+def mfa_regenerate_recovery_codes(
+    slug: str,
+    payload: MfaRecoveryCodesIn,
+    request: Request,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Replace the recovery codes, WITHOUT taking the second factor down.
+
+    Rotating these is an ordinary thing to need — they leak the way anything
+    printed on a screen leaks, into a screenshot or a photograph — and the
+    only route before this was to disable two-factor and enrol again. That
+    works, and it is the wrong shape for the moment it is needed: it leaves
+    the account with no second factor at all, briefly, precisely while
+    somebody is reacting to a leak. It also forces a new secret and a re-scan
+    for a problem that has nothing to do with the secret.
+
+    The password again, for the same reason `mfa_disable` asks: a signed-in
+    session may be a borrowed unlocked laptop, and minting ten fresh bypasses
+    from one is exactly the move that turns a moment of physical access into
+    a lasting one.
+
+    The old codes are deleted in the same transaction that writes the new
+    ones. A partial apply that left both sets valid would double the number
+    of working bypasses — the opposite of what somebody rotating them wants.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    bank = _own_bank(db, slug, user)
+    _mfa_rate_limit(request, f"mfa-recovery:{slug}:{client_ip}")
+
+    # Only meaningful when there is a factor to recover FROM. Issuing codes
+    # for an authenticator nobody holds would be ten bypasses of a password
+    # and nothing else.
+    if _verified_totp(db, user) is None:
+        raise HTTPException(
+            status_code=409, detail="Two-factor is not on for this account"
+        )
+
+    password = db.execute(
+        select(UserCredential).where(
+            UserCredential.user_id == user.id, UserCredential.kind == "password"
+        )
+    ).scalar_one_or_none()
+    if not passwords.verify_password(
+        password.secret_hash if password else None, payload.password
+    ):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    for row in db.execute(
+        select(RecoveryCode).where(RecoveryCode.user_id == user.id)
+    ).scalars():
+        db.delete(row)
+    codes = totp.generate_recovery_codes()
+    for code in codes:
+        db.add(
+            RecoveryCode(user_id=user.id, code_hash=totp.hash_recovery_code(code))
+        )
+    _audit(db, bank, "admin_mfa_recovery_codes_rotated", "user", user.id,
+           {"email": user.email}, actor=user.id)
+    db.commit()
+    log_event(logger, "admin_mfa_recovery_codes_rotated", bank=slug, user=user.email)
+    # Same shape as activation, so the panel reuses one renderer — and the
+    # same one-time contract: hashed on the way in, so this is the only
+    # moment they exist in readable form.
+    return {"recovery_codes": codes}
 
 
 @app.get("/admin/strings")

@@ -380,6 +380,14 @@ def _guarded_admin_routes() -> list[Any]:
     `login/mfa` belongs with `login` for the same reason `login` does — it is
     the second half of the same act, reachable only by someone holding a
     pending session and nothing else.
+
+    `mfa/recovery-codes` is in that second category too, and it earned its
+    place here by being caught: it was added without a Principal and this test
+    failed, which is the whole point of reading the live route table. It
+    replaces YOUR OWN recovery codes, costs your password again, and refuses
+    unless you already hold a verified second factor. Notably it is NOT gated
+    on the tenant's `require_mfa` policy — that policy stops you removing the
+    factor, and replacing leaked codes removes nothing.
     """
     unguarded_by_design = {
         "/admin/api/{slug}/login",
@@ -391,6 +399,7 @@ def _guarded_admin_routes() -> list[Any]:
         "/admin/api/{slug}/mfa/enroll",
         "/admin/api/{slug}/mfa/activate",
         "/admin/api/{slug}/mfa/disable",
+        "/admin/api/{slug}/mfa/recovery-codes",
     }
     return [
         r

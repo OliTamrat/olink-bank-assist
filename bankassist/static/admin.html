@@ -7568,10 +7568,17 @@ function renderMfa(st) {
     '<span class="meta">' +
       esc(A("recovery_codes_left", "{n} recovery codes left").replace("{n}", st.recovery_codes_remaining)) +
     "</span></div>" +
+    '<div class="rowacts" style="margin-top:12px">' +
+      '<button class="btn ghost sm" id="mfa-rotate">' + esc(A("recovery_rotate")) + "</button>" +
+      // Turning it off is gated by the tenant's policy; rotating the codes is
+      // not, because it removes nothing. A bank that mandates two-factor
+      // still needs its staff able to replace leaked recovery codes.
+      (st.required ? "" :
+        '<button class="btn ghost sm danger" id="mfa-off">' + esc(A("two_factor_turn_off")) + "</button>") +
+    "</div>" +
     (st.required
-      ? '<div class="meta" style="margin-top:12px">' + esc(A("two_factor_required")) + "</div>"
-      : '<div class="rowacts" style="margin-top:12px">' +
-        '<button class="btn ghost sm danger" id="mfa-off">' + esc(A("two_factor_turn_off")) + "</button></div>");
+      ? '<div class="meta" style="margin-top:12px">' + esc(A("two_factor_required")) + "</div>" : "");
+  $("mfa-rotate").onclick = confirmRecoveryRotate;
   if ($("mfa-off")) $("mfa-off").onclick = confirmMfaOff;
 }
 
@@ -7635,10 +7642,12 @@ function startMfaEnrolment() {
   }).catch(function (e) { setStatus(e.message, "error"); });
 }
 
-function showRecoveryCodes(result) {
+function showRecoveryCodes(result, headline) {
   // Shown once, and said so plainly. They are hashed on the server, so this
   // render is the only moment they exist in readable form anywhere.
-  setStatus(A("two_factor_enabled"), "ok");
+  // The headline is a parameter because the same panel now follows two
+  // different acts, and "Two-factor is on" is a lie after a rotation.
+  setStatus(headline || A("two_factor_enabled"), "ok");
   $("mfa-panel").innerHTML =
     '<div class="meta" style="margin-bottom:12px"><strong>' + esc(A("recovery_codes")) + "</strong> — " +
       esc(A("recovery_codes_help")) + "</div>" +
@@ -7656,19 +7665,25 @@ function showRecoveryCodes(result) {
   $("rc-done").onclick = loadMfa;
 }
 
-function confirmMfaOff() {
-  // Themed, like every other confirmation in this panel — and it asks for the
-  // password rather than a yes/no, because a borrowed unlocked laptop must
-  // not be enough to remove somebody's second factor.
+/* Both security-relevant acts on this panel cost the password again, for the
+   same reason: a signed-in session may be a borrowed unlocked laptop, and
+   either removing somebody's second factor OR minting ten fresh bypasses
+   from one turns a moment of physical access into a lasting one.
+
+   One function rather than two near-identical modals — the second one was
+   going to be a copy-paste of the first, and a copy-paste of a security
+   prompt is how the two drift into asking for different things. */
+function askPassword(opts) {
   var host = document.createElement("div");
   host.className = "modal-overlay";
   host.innerHTML =
     '<div class="modal-card" role="dialog" aria-modal="true">' +
-    "<p class=\"confirm-msg\">" + esc(A("two_factor_off_confirm")) + "</p>" +
-    '<div class="field"><input id="mfa-off-pw" type="password" autocomplete="current-password"></div>' +
+    "<p class=\"confirm-msg\">" + esc(opts.message) + "</p>" +
+    '<div class="field"><input id="ask-pw" type="password" autocomplete="current-password"></div>' +
     '<div class="rowacts" style="margin-top:14px;justify-content:flex-end;gap:8px">' +
     '<button class="btn ghost sm" data-c-cancel>' + esc(A("cancel")) + "</button>" +
-    '<button class="btn sm danger" data-c-ok>' + esc(A("two_factor_turn_off")) + "</button>" +
+    '<button class="btn sm ' + (opts.danger ? "danger" : "") + '" data-c-ok>' +
+      esc(opts.confirm) + "</button>" +
     "</div></div>";
   function close() { host.remove(); document.removeEventListener("keydown", onKey); }
   function onKey(e) { if (e.key === "Escape") close(); }
@@ -7676,13 +7691,40 @@ function confirmMfaOff() {
   document.addEventListener("keydown", onKey);
   host.querySelector("[data-c-cancel]").onclick = close;
   host.querySelector("[data-c-ok]").onclick = function () {
-    api("/mfa/disable", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: host.querySelector("#mfa-off-pw").value }) })
-      .then(function () { close(); setStatus(A("two_factor_disabled"), "ok"); loadMfa(); })
-      .catch(function (e) { setStatus(e.message, "error"); });
+    opts.onConfirm(host.querySelector("#ask-pw").value, close);
   };
   document.body.appendChild(host);
-  host.querySelector("#mfa-off-pw").focus();
+  host.querySelector("#ask-pw").focus();
+}
+
+function confirmMfaOff() {
+  askPassword({
+    message: A("two_factor_off_confirm"),
+    confirm: A("two_factor_turn_off"),
+    danger: true,
+    onConfirm: function (pw, close) {
+      api("/mfa/disable", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw }) })
+        .then(function () { close(); setStatus(A("two_factor_disabled"), "ok"); loadMfa(); })
+        .catch(function (e) { setStatus(e.message, "error"); });
+    },
+  });
+}
+
+/* Rotating the codes never takes the second factor down — that is the whole
+   reason this exists rather than telling people to disable and re-enrol. So
+   it is not a destructive action and does not get the danger styling. */
+function confirmRecoveryRotate() {
+  askPassword({
+    message: A("recovery_rotate_confirm"),
+    confirm: A("recovery_rotate"),
+    onConfirm: function (pw, close) {
+      api("/mfa/recovery-codes", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw }) })
+        .then(function (r) { close(); showRecoveryCodes(r, A("recovery_rotated")); })
+        .catch(function (e) { setStatus(e.message, "error"); });
+    },
+  });
 }
 
 /* ------------------------------------------------------------ theme
