@@ -3456,6 +3456,11 @@ function loadChannelNav() {
 function go(id) {
   var page = PAGES.filter(function (p) { return p.id === id; })[0];
   if (!page || !mayOpen(page)) return;
+  // The SMS inbound secret is held only long enough to survive the reload
+  // that renders it. Navigating away is the operator saying they are done
+  // with it, and "copy this now, it is shown once" must not greet somebody
+  // who merely came back to the page later.
+  if (!(id === "channels" && state.channel === "sms")) state.smsSecret = null;
   state.page = id;
   markNav();
   var chan = state.page === "channels" && state.channel
@@ -6413,7 +6418,8 @@ function channelOverview(cfg, counts, a) {
 
 function channelDetail(c, cfg, n, a) {
   var st = CHANNEL_PILL[c.status] || ["", null, c.status];
-  var tg = cfg.telegram || {};
+  var tg = cfg.telegram || {}, vb = cfg.viber || {};
+  var mt = cfg.meta || {}, sm = cfg.sms || {};
   // Hollow unless it is live. A filled dot reads as a status light, and three
   // of the identity hues in this palette are green-ish — WhatsApp's slot among
   // them — so a solid mark beside "Needs setup" says two opposite things.
@@ -6443,24 +6449,131 @@ function channelDetail(c, cfg, n, a) {
       : "") + "</div>";
 
   // The one control that actually switches this channel on, on the page that
-  // describes it.
+  // describes it. Every channel in the catalogue has one — a page that
+  // explains a channel and then offers no way to connect it reads as an
+  // unfinished product, which is exactly how five of these were reported.
   if (c.key === "web" && cfg.embed) {
-    h += '<div class="panel"><h3>Put the widget on your website</h3>' +
-      '<div class="meta" style="margin-bottom:10px">Paste this once, before the closing ' +
-      "&lt;/body&gt; tag. It adds a chat button in your own colour and loads nothing " +
-      "until a visitor opens it.</div>" +
+    h += '<div class="panel"><h3>' + esc(A("chan_web_title")) + "</h3>" +
+      '<div class="meta" style="margin-bottom:10px">' + esc(A("chan_web_help")) + "</div>" +
       '<div class="field"><textarea id="embed-snip" readonly ' +
       'style="min-height:64px;font-family:ui-monospace,monospace;font-size:12.5px">' +
       esc(cfg.embed) + "</textarea></div>" +
-      '<button class="btn ghost sm" id="copy-embed">Copy</button></div>';
+      '<button class="btn ghost sm" id="copy-embed">' + esc(A("chan_copy")) + "</button></div>";
   } else if (c.key === "telegram") {
-    h += '<div class="panel"><h3>Connect your bot</h3>' +
-      '<div class="meta" style="margin-bottom:12px">Message @BotFather on Telegram, ' +
-      "send /newbot, and paste the token it gives you." +
-      (tg.connected ? " Entering a new token replaces the current bot." : "") + "</div>" +
-      '<div class="field"><input id="tg-token" placeholder="Bot token from @BotFather" type="password"></div>' +
-      '<button class="btn sm" id="tg-save">' + (tg.connected ? "Replace bot" : "Connect") +
-      "</button></div>";
+    h += connectPanel("chan_telegram_title", "chan_telegram_help", tg.connected,
+      '<div class="field"><input id="tg-token" type="password" placeholder="' +
+      esc(A("chan_telegram_placeholder")) + '"></div>', "tg-save");
+  } else if (c.key === "viber") {
+    h += connectPanel("chan_viber_title", "chan_viber_help", vb.connected,
+      '<div class="field"><input id="vb-token" type="password" placeholder="' +
+      esc(A("chan_viber_placeholder")) + '"></div>', "vb-save");
+  } else if (c.key === "whatsapp" || c.key === "messenger" || c.key === "instagram") {
+    h += metaPanel(c.key, mt);
+  } else if (c.key === "sms") {
+    h += smsPanel(sm);
+  }
+  return h;
+}
+
+/* One shape for every "paste a credential here" panel. The fields differ;
+   the surrounding sentence, the replace-warning and the button label do not,
+   and writing them five more times is five more places for the warning to be
+   forgotten on the one channel where it matters. */
+function connectPanel(titleKey, helpKey, connected, fieldsHtml, buttonId) {
+  return '<div class="panel"><h3>' + esc(A(titleKey)) + "</h3>" +
+    '<div class="meta" style="margin-bottom:12px">' + esc(A(helpKey)) +
+    (connected ? " " + esc(A("chan_replaces_current")) : "") + "</div>" +
+    fieldsHtml +
+    '<button class="btn sm" id="' + buttonId + '">' +
+    esc(A(connected ? "chan_update" : "chan_connect")) + "</button></div>";
+}
+
+/* A read-only value with a copy button — the callback URLs and tokens that
+   have to be carried into somebody else's dashboard by hand. Selectable
+   monospace rather than a styled box, because the failure mode here is a
+   character transposed while retyping. */
+function copyRow(id, label, value) {
+  return '<div class="field"><label>' + esc(label) + "</label>" +
+    '<div style="display:flex;gap:8px;align-items:center">' +
+    '<input id="' + id + '" readonly value="' + esc(value || "") +
+    '" style="font-family:ui-monospace,monospace;font-size:12.5px">' +
+    '<button class="btn ghost sm" data-copy="' + id + '" style="flex:none">' +
+    esc(A("chan_copy")) + "</button></div></div>";
+}
+
+/* WhatsApp, Messenger and Instagram share one Meta app, so this is one panel
+   rendered three times with a different second field. The app secret is asked
+   for once and then optional — see MetaConnectIn — so connecting the second
+   product does not mean fetching the first product's credential again. */
+function metaPanel(key, mt) {
+  var fields = {
+    whatsapp: '<div class="grid2"><div class="field"><label>' + esc(A("chan_wa_phone_id")) +
+      '</label><input id="meta-wa-id" value="' + esc(mt.whatsapp_phone_number_id || "") + '"></div>' +
+      '<div class="field"><label>' + esc(A("chan_wa_token")) +
+      '</label><input id="meta-wa-token" type="password"></div></div>' +
+      (mt.has_whatsapp_token ? '<div class="meta" style="margin-bottom:12px">' +
+        esc(A("chan_token_stored")) + "</div>" : ""),
+    messenger: '<div class="field"><label>' + esc(A("chan_ms_token")) +
+      '</label><input id="meta-ms-token" type="password"></div>' +
+      (mt.has_messenger_token ? '<div class="meta" style="margin-bottom:12px">' +
+        esc(A("chan_token_stored")) + "</div>" : ""),
+    instagram: '<div class="field"><label>' + esc(A("chan_ig_token")) +
+      '</label><input id="meta-ig-token" type="password"></div>' +
+      (mt.has_instagram_token ? '<div class="meta" style="margin-bottom:12px">' +
+        esc(A("chan_token_stored")) + "</div>" : "")
+  }[key];
+
+  var h = '<div class="panel"><h3>' + esc(A("chan_meta_title")) + "</h3>" +
+    '<div class="meta" style="margin-bottom:12px">' + esc(A("chan_meta_help")) + "</div>" +
+    '<div class="field"><label>' + esc(A("chan_meta_app_secret")) +
+    '</label><input id="meta-secret" type="password"></div>' +
+    '<div class="meta" style="margin-bottom:12px">' +
+    esc(A(mt.connected ? "chan_meta_secret_stored" : "chan_meta_app_secret_help")) + "</div>" +
+    fields +
+    '<button class="btn sm" id="meta-save">' +
+    esc(A(mt.connected ? "chan_update" : "chan_connect")) + "</button></div>";
+
+  // Only once the app exists, because before that the verify token has not
+  // been minted and the panel would show an empty box labelled as if it were
+  // a value to copy.
+  if (mt.connected) {
+    h += '<div class="panel"><h3>' + esc(A("chan_meta_paste_title")) + "</h3>" +
+      '<div class="meta" style="margin-bottom:12px">' + esc(A("chan_meta_paste_help")) + "</div>" +
+      copyRow("meta-cb", A("chan_callback_url"), mt.callback_url) +
+      copyRow("meta-vt", A("chan_verify_token"), mt.verify_token) + "</div>";
+  }
+  return h;
+}
+
+function smsPanel(sm) {
+  var h = '<div class="panel"><h3>' + esc(A("chan_sms_title")) + "</h3>" +
+    '<div class="meta" style="margin-bottom:12px">' + esc(A("chan_sms_help")) + "</div>" +
+    '<div class="field"><label>' + esc(A("chan_sms_url")) +
+    '</label><input id="sms-url" value="' + esc(sm.send_url || "") +
+    '" placeholder="https://gateway.example/send"></div>' +
+    '<div class="grid2"><div class="field"><label>' + esc(A("chan_sms_auth")) +
+    '</label><input id="sms-auth" type="password" placeholder="Bearer …"></div>' +
+    '<div class="field"><label>' + esc(A("chan_sms_sender")) +
+    '</label><input id="sms-sender" value="' + esc(sm.sender_id || "") + '"></div></div>' +
+    '<div class="meta" style="margin-bottom:12px">' +
+    esc(A(sm.has_auth_header ? "chan_sms_auth_stored" : "chan_sms_auth_help")) + "</div>" +
+    '<button class="btn sm" id="sms-save">' +
+    esc(A(sm.connected ? "chan_update" : "chan_connect")) + "</button></div>";
+
+  if (sm.connected) {
+    h += '<div class="panel"><h3>' + esc(A("chan_sms_inbound_title")) + "</h3>" +
+      '<div class="meta" style="margin-bottom:12px">' + esc(A("chan_sms_inbound_help")) + "</div>" +
+      copyRow("sms-cb", A("chan_callback_url"), sm.callback_url) +
+      // The secret is never returned by /integrations — only the fact that one
+      // exists. It comes back once, from the connect response, and is held on
+      // `state` across the reload so this is the single place it renders.
+      (state.smsSecret
+        ? copyRow("sms-secret", A("chan_sms_secret_label"), state.smsSecret) +
+          '<div class="note">' + esc(A("chan_sms_secret_once")) + "</div>"
+        : sm.has_secret
+          ? '<div class="meta">' + esc(A("chan_sms_secret_set")) + "</div>"
+          : "") +
+      "</div>";
   }
   return h;
 }
@@ -6483,12 +6596,89 @@ function wireChannelForms(cfg) {
     try { document.execCommand("copy"); setStatus(A("embed_copied"), "ok"); }
     catch (e) { setStatus(A("copy_manually"), "error"); }
   };
-  var save = $("tg-save");
-  if (save) save.onclick = function () {
-    api("/telegram/connect", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bot_token: $("tg-token").value.trim() }) })
-      .then(function () { setStatus(A("telegram_connected"), "ok"); loadChannels(); })
-      .catch(function (e) { setStatus(e.message, "error"); });
+  // Every read-only value that has to be carried into someone else's
+  // dashboard by hand gets the same button, wired by attribute rather than by
+  // id so adding a row does not mean adding a handler.
+  wireCopyButtons();
+
+  wireConnect("tg-save", "/telegram/connect", "telegram_connected", function () {
+    return { bot_token: $("tg-token").value.trim() };
+  });
+  wireConnect("vb-save", "/viber/connect", "chan_viber_connected", function () {
+    return { auth_token: $("vb-token").value.trim() };
+  });
+  wireConnect("meta-save", "/meta/connect", "chan_meta_connected", function () {
+    // Blank means "keep what is stored", never "clear it" — none of these can
+    // be read back, so treating an untouched field as an instruction to erase
+    // would let someone disconnect WhatsApp by saving a Messenger token.
+    var body = { app_secret: blankToNull($("meta-secret")) };
+    if ($("meta-wa-id")) {
+      body.whatsapp_phone_number_id = blankToNull($("meta-wa-id"));
+      body.whatsapp_access_token = blankToNull($("meta-wa-token"));
+    }
+    if ($("meta-ms-token")) body.messenger_page_token = blankToNull($("meta-ms-token"));
+    if ($("meta-ig-token")) body.instagram_access_token = blankToNull($("meta-ig-token"));
+    return body;
+  });
+  wireConnect("sms-save", "/sms/connect", "chan_sms_connected", function () {
+    return {
+      send_url: $("sms-url").value.trim(),
+      // Undefined rather than null: the server reads an absent auth_header as
+      // "unchanged", so an operator renaming the sender ID does not silently
+      // drop the gateway's API key.
+      auth_header: blankToNull($("sms-auth")) || undefined,
+      sender_id: blankToNull($("sms-sender"))
+    };
+  }, function (r) {
+    // The inbound secret is returned exactly once, by this response. Held here
+    // so the reload that follows renders it instead of destroying it.
+    //
+    // The first version wrote it straight into the panel and skipped the
+    // reload. That failed in the browser and passed every test: on the FIRST
+    // connect the panel it wrote into does not exist yet — it only renders
+    // once the channel is connected — so the write silently found nothing and
+    // the secret was lost at the one moment it could ever be read.
+    if (r.inbound_secret) state.smsSecret = r.inbound_secret;
+  });
+}
+
+/* Wired by attribute rather than by id so a new read-only row needs no new
+   handler — including rows inserted after this first runs, which is why it is
+   safe to call again. */
+function wireCopyButtons() {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-copy]"), function (btn) {
+    btn.onclick = function () {
+      var box = $(btn.getAttribute("data-copy"));
+      box.select();
+      // execCommand rather than the clipboard API, for the same reason as the
+      // embed snippet: no navigator.clipboard over plain http.
+      try { document.execCommand("copy"); setStatus(A("chan_copied"), "ok"); }
+      catch (e) { setStatus(A("copy_manually"), "error"); }
+    };
+  });
+}
+
+function blankToNull(el) {
+  var v = el && el.value.trim();
+  return v ? v : null;
+}
+
+/* One connect button. `body()` builds the payload, `onDone` may claim the
+   result — returning true means it put something on screen that a reload
+   would destroy, so the reload is skipped. */
+function wireConnect(id, path, okKey, body, onDone) {
+  var btn = $(id);
+  if (!btn) return;
+  btn.onclick = function () {
+    btn.disabled = true;
+    api(path, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body()) })
+      .then(function (r) {
+        setStatus(A(okKey), "ok");
+        if (!(onDone && onDone(r || {}))) loadChannels();
+      })
+      .catch(function (e) { setStatus(e.message, "error"); })
+      .then(function () { btn.disabled = false; });
   };
 }
 

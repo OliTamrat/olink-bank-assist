@@ -178,10 +178,29 @@ def test_each_channel_control_has_exactly_one_home() -> None:
     Two Telegram token fields on two pages both look right; the second one to
     render wins the id, and the handler wires itself to whichever the DOM
     returns. Moving these out of Settings has to be a move, not a copy.
+
+    Now covering all seven channels, not just Telegram. The save buttons are
+    matched on the bare id rather than on `id="…"` because they are produced by
+    a shared panel builder that takes the id as an argument — that indirection
+    is what makes duplication *harder*, so the test should not read as if it
+    were a regression.
     """
     src = ADMIN.read_text()
-    for element in ('id="tg-token"', 'id="embed-snip"', 'id="tg-save"'):
+    fields = (
+        'id="tg-token"', 'id="embed-snip"', 'id="vb-token"',
+        'id="meta-secret"', 'id="meta-wa-id"', 'id="meta-wa-token"',
+        'id="meta-ms-token"', 'id="meta-ig-token"',
+        'id="sms-url"', 'id="sms-auth"', 'id="sms-sender"',
+    )
+    for element in fields:
         assert src.count(element) == 1, f"{element} appears {src.count(element)} times"
+    # One button per channel, named once where it is created and once where it
+    # is wired — never a third time, which is what a copied panel looks like.
+    for button in ('"tg-save"', '"vb-save"', '"meta-save"', '"sms-save"'):
+        assert src.count(button) == 2, (
+            f"{button} appears {src.count(button)} times; expected exactly one "
+            f"panel that creates it and one call that wires it"
+        )
 
 
 def test_the_topbar_controls_the_boot_block_wires_still_exist() -> None:
