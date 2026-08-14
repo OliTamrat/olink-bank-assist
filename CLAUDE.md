@@ -551,14 +551,23 @@ Four tenants seeded in the production database:
 **The corpus is a ceiling — but adding to it is not monotonically good**
 (ADR-0033, measured 2026-08-14). A real bank's public site is several hundred
 pages; every tenant here runs on fifteen to twenty-three, and content still
-moves the answer rate more than prompt tuning does. But `scripts/corpus_gaps.py`
-measured the four tenants at 63–69% on 52 real customer questions, and adding
-one well-sourced document to fill the *largest measured gap* took the total
-from 66 gaps to 70: with `top_k=4` a new document competes for retrieval slots
-and displaces answers that were working. **Measure before and after any batch;
-a batch that raises the gap count does not ship.** `top_k` is a corpus-size
-assumption, not a constant, and raising it is the prerequisite for real corpus
-growth.
+moves the answer rate more than prompt tuning does. `scripts/corpus_gaps.py`
+measured the four tenants at 63–69% on 52 real customer questions.
+
+**One document, one question** (ADR-0034). The same facts written as one broad
+page took the corpus from 66 gaps to **70**; rewritten as a single narrow
+document answering one question, they took it to **64**. A document touching
+many topics shares vocabulary with many queries and outscores the right
+document for questions it should have lost. Title it as the question, split
+rather than append, and use the customer's words — three questions returned
+*zero* sources against the broad draft because it said "anything you did not
+authorise" where a customer says "someone withdrew money without my
+permission".
+
+**Measure before and after any batch; a batch that raises the gap count does
+not ship.** Retrieval budget is NOT the lever: `scripts/topk_sweep.py` shows
+2 chunks to 12 buys two answers out of 208 and doubles the reply text, so
+`top_k=4` and `MAX_FALLBACK_CHUNKS=2` stay as they are.
 
 **CBE, Dashen and Awash are private pitch-demo prototypes, not live public
 products.** Each carries a mandatory `Bank.disclaimer` banner rendered in the

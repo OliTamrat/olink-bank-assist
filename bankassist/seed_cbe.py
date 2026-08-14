@@ -350,6 +350,30 @@ _DOCS: list[dict[str, str]] = [
         ),
     },
     {
+        "title": "ATM Took My Money But Gave No Cash",
+        "category": "general",
+        "language": "en",
+        "content": (
+            "If an ATM debited your account but did not dispense the cash, "
+            "keep the slip if one printed and note the date, time, amount and "
+            "which ATM it was.\n\n"
+            "Most of these reverse on their own. Ethiopia's interbank "
+            "transactions clear through EthSwitch, whose rules require a "
+            "transaction that was authorised but not completed at the machine "
+            "to be reversed — including failures from a power cut or a "
+            "cash-dispensing fault. Where the daily reconciliation of that "
+            "machine shows a difference, the bank owning the ATM refunds the "
+            "bank that issued the card without waiting to be asked.\n\n"
+            "If the money has not come back, report it to your own bank, not "
+            "to the bank that owns the machine — your bank raises the claim "
+            "for you even when the ATM belonged to someone else. Ask for a "
+            "reference number and use it to chase.\n\n"
+            "If it is still unresolved after ten business days, the National "
+            "Bank of Ethiopia's financial consumer protection office will "
+            "review a complaint that the provider has had that long to settle."
+        ),
+    },
+    {
         "title": "Saving and Budgeting Basics",
         "category": "financial-education",
         "language": "en",
