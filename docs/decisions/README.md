@@ -40,3 +40,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0028 | The typefaces ship with the product |
 | 0029 | The sign-in card plays, and the headline is composed six times |
 | 0030 | The public page runs the product, and is English |
+| 0031 | The break-glass token stops being a login |

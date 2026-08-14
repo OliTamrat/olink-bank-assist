@@ -15,6 +15,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from conftest import create_user
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -47,14 +48,7 @@ def _headers(bank: Any) -> dict[str, str]:
 def _make_user(
     client: TestClient, bank: Any, email: str = "ops@bank.et", role: str = "operator"
 ) -> dict[str, Any]:
-    resp = client.post(
-        "/admin/api/demo/users",
-        headers=_headers(bank),
-        json={"email": email, "password": PW, "role": role},
-    )
-    assert resp.status_code == 201, resp.text
-    data: dict[str, Any] = resp.json()
-    return data
+    return create_user(client, bank, email, password=PW, role=role)
 
 
 def _login(client: TestClient, email: str = "ops@bank.et", password: str = PW) -> Any:
@@ -303,10 +297,17 @@ def test_the_same_email_can_exist_at_two_banks_independently(
 def test_a_duplicate_email_within_one_bank_is_rejected(
     client: TestClient, demo_bank: Any
 ) -> None:
+    # An admin first, because the token creates only the tenant's first user
+    # now — and the duplicate has to be attempted by somebody who is allowed
+    # to create users at all, or the 409 would be masked by a 403.
+    _make_user(client, demo_bank, email="boss@bank.et", role="admin")
     _make_user(client, demo_bank)
-    resp = client.post(
+    admin = TestClient(client.app)
+    assert admin.post(
+        "/admin/api/demo/login", json={"email": "boss@bank.et", "password": PW}
+    ).status_code == 200
+    resp = admin.post(
         "/admin/api/demo/users",
-        headers=_headers(demo_bank),
         json={"email": "ops@bank.et", "password": PW, "role": "operator"},
     )
     assert resp.status_code == 409

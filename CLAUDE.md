@@ -335,9 +335,16 @@ The load-bearing parts, none of which are obvious from the diff:
   They used to sit on Settings behind `integrations.manage`, which meant a
   teller could not change their own password — found by rendering the panel
   as an operator, not by reading the code.
-- **The per-bank admin token still bypasses MFA**, deliberately: it is the
-  break-glass credential. Retiring it is the natural next step and is not
-  done.
+- **The per-bank admin token is no longer a login** (ADR-0031, 2026-08-14).
+  It authenticates only while a tenant has **zero users** — enough to create
+  the first administrator, and nothing else. After that a correct token gets
+  **403** naming the replacement. It used to bypass MFA, which meant an
+  account with two-factor on it was only as strong as its bank's token was
+  secret. The gate is tenant state rather than a route allowlist so a route
+  added later cannot quietly become token-reachable.
+  **Consequence for tests: the first user a test creates must be an admin**,
+  because `conftest.create_user` bootstraps through that one door and then
+  signs in as that person for everyone after.
 
 ## Multilingual completeness (GOLDEN RULE — applies to every Olink product)
 
