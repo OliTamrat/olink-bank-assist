@@ -10,3 +10,4 @@ mig-check.db
 
 # Local artefact of scripts/corpus_gaps.py
 corpus_gaps.db
+topk_sweep.db
