@@ -565,7 +565,17 @@ authorise" where a customer says "someone withdrew money without my
 permission".
 
 **Measure before and after any batch; a batch that raises the gap count does
-not ship.** Retrieval budget is NOT the lever: `scripts/topk_sweep.py` shows
+not ship.**
+
+**Adding a document to a seed file does NOT change a tenant that already
+exists.** `seed_prospect_bank` looks up the slug, finds a row and returns
+before it touches documents — deliberately, since a seeder that rewrote a live
+corpus on every run would be a foot-gun aimed at production. Deploying does not
+help either: seeds are code, the corpus is data written once at tenant
+creation. So corpus work reaches the four live tenants through
+`POST /admin/api/{slug}/documents/bulk` (or the Knowledge Base import card),
+and `scripts/export_new_documents.py <range>` writes that payload from the
+seed diff. The import is all-or-nothing on a bad language code. Retrieval budget is NOT the lever: `scripts/topk_sweep.py` shows
 2 chunks to 12 buys two answers out of 208 and doubles the reply text, so
 `top_k=4` and `MAX_FALLBACK_CHUNKS=2` stay as they are.
 
