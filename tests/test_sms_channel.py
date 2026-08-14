@@ -7,6 +7,7 @@ per reply means a long answer must not quietly become a dozen billed segments.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -204,3 +205,99 @@ def test_the_disclaimer_leads_on_sms_as_well(
         headers=HEADERS,
     )
     assert wired[0][1] == cbe_bank.disclaimer
+
+
+# ------------------------------------------------------------- connecting it
+#
+# The gateway's API key is the one field on this form that cannot be read back
+# — `/integrations` returns whether one exists, never what it is. So a blank
+# box means "I did not touch this", and reading it as "clear it" would let
+# somebody drop the key by renaming the sender ID. That failure does not show
+# up on save; it shows up on the next customer's message.
+
+
+_PW = "pytest-fixture-value-7"
+
+
+@pytest.fixture()
+def boss(client: TestClient, cbe_bank: Any) -> TestClient:
+    from conftest import create_user
+
+    create_user(client, cbe_bank, "boss@cbe.test", password=_PW, role="admin",
+                slug=cbe_bank.slug)
+    signed_in = client.post(f"/admin/api/{cbe_bank.slug}/login",
+                            json={"email": "boss@cbe.test", "password": _PW})
+    assert signed_in.status_code == 200, signed_in.text
+    return client
+
+
+def _reload(db: Any, bank_id: str) -> Any:
+    from bankassist.models import Bank
+
+    db.expire_all()
+    return db.get(Bank, bank_id)
+
+
+def _sms_connect(client: TestClient, **body: Any) -> Any:
+    return client.post("/admin/api/cbe/sms/connect", json=body)
+
+
+def test_an_omitted_auth_header_keeps_the_stored_one(
+    boss: TestClient, cbe_bank: Any, db_session: Any
+) -> None:
+    _sms_connect(boss, send_url="https://gw.example/send",
+                 auth_header="Bearer secret-key", sender_id="CBE")
+    _sms_connect(boss, send_url="https://gw.example/send", sender_id="CBE BANK")
+
+    bank = _reload(db_session, cbe_bank.id)
+    assert bank.sms_auth_header == "Bearer secret-key"
+    assert bank.sms_sender_id == "CBE BANK"
+
+
+def test_an_explicit_empty_auth_header_clears_it(
+    boss: TestClient, cbe_bank: Any, db_session: Any
+) -> None:
+    """Omitted and empty have to mean different things, or there is no way
+    back for a gateway that stops needing authentication."""
+    _sms_connect(boss, send_url="https://gw.example/send", auth_header="Bearer k")
+    _sms_connect(boss, send_url="https://gw.example/send", auth_header="")
+
+    assert _reload(db_session, cbe_bank.id).sms_auth_header is None
+
+
+def test_the_inbound_secret_is_returned_once_and_never_read_back(
+    boss: TestClient, cbe_bank: Any
+) -> None:
+    """The connect response is the only place it appears. `/integrations` says
+    a secret exists so the panel can be honest, and nothing more — the screen
+    that could re-display it is the screen it leaks from."""
+    first = _sms_connect(boss, send_url="https://gw.example/send").json()
+    assert first["inbound_secret"]
+
+    cfg = boss.get("/admin/api/cbe/integrations").json()["sms"]
+    assert cfg["has_secret"] is True
+    assert first["inbound_secret"] not in json.dumps(cfg)
+
+
+def test_reconnecting_keeps_the_same_inbound_secret(
+    boss: TestClient, cbe_bank: Any
+) -> None:
+    """It lives in the aggregator's dashboard. Minting a new one because
+    somebody corrected the send URL would silently refuse every inbound SMS."""
+    first = _sms_connect(boss, send_url="https://gw.example/send").json()
+    again = _sms_connect(boss, send_url="https://gw.example/v2/send").json()
+    assert first["inbound_secret"] == again["inbound_secret"]
+
+
+def test_the_panel_can_say_whether_an_auth_header_is_set(
+    boss: TestClient, cbe_bank: Any
+) -> None:
+    """So "leave blank to keep it" appears only where it is true, rather than
+    as boilerplate under a field that was never filled in."""
+    before = boss.get("/admin/api/cbe/integrations").json()["sms"]
+    assert before["has_auth_header"] is False
+
+    _sms_connect(boss, send_url="https://gw.example/send", auth_header="Bearer k")
+    after = boss.get("/admin/api/cbe/integrations").json()["sms"]
+    assert after["has_auth_header"] is True
+    assert "Bearer k" not in json.dumps(after)

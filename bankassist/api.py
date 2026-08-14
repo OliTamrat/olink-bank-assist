@@ -1137,9 +1137,18 @@ def _meta_sender(bank: Bank, channel: str) -> Callable[[str, str], object] | Non
 
 class MetaConnectIn(BaseModel):
     """Credentials for a Meta app. Every send-side field is optional so a bank
-    can switch on whichever products its review actually cleared."""
+    can switch on whichever products its review actually cleared.
 
-    app_secret: str = Field(min_length=10)
+    `app_secret` is optional only in the sense that omitting it keeps the one
+    already stored. Meta's three channels share a single app, so a bank that
+    connects WhatsApp in March and Messenger in June is connecting the second
+    product of the *same* app — and requiring the secret again would mean
+    fetching it out of Meta's dashboard to re-type a value we already hold, or
+    worse, giving up and pasting something wrong over a working channel.
+    Connecting the first Meta product still requires it; see `meta_connect`.
+    """
+
+    app_secret: str | None = Field(default=None, min_length=10)
     whatsapp_phone_number_id: str | None = None
     whatsapp_access_token: str | None = None
     messenger_page_token: str | None = None
@@ -1159,7 +1168,12 @@ def meta_connect(
     rather than typed, so it cannot be a guessable one somebody chose.
     """
     bank = principal.bank
-    bank.meta_app_secret = payload.app_secret
+    if payload.app_secret:
+        bank.meta_app_secret = payload.app_secret
+    elif not bank.meta_app_secret:
+        # Without it every inbound delivery fails signature verification, so a
+        # channel connected this way would look connected and answer nobody.
+        raise HTTPException(status_code=422, detail="An app secret is required")
     if not bank.meta_verify_token:
         bank.meta_verify_token = new_token()
     for field in (
@@ -1227,6 +1241,14 @@ async def sms_webhook(
 class SmsConnectIn(BaseModel):
     send_url: str = Field(min_length=8)
     auth_header: str | None = None
+    """Omitted keeps the stored one; `""` clears it.
+
+    The distinction matters because this is the one field the screen cannot
+    show back. Treating an absent value as "clear" means changing the sender
+    ID silently drops the gateway's API key, and the channel then fails on the
+    next customer message rather than on save.
+    """
+
     sender_id: str | None = None
 
 
@@ -1237,7 +1259,8 @@ def sms_connect(
 ) -> dict[str, Any]:
     bank = principal.bank
     bank.sms_send_url = payload.send_url
-    bank.sms_auth_header = payload.auth_header
+    if payload.auth_header is not None:
+        bank.sms_auth_header = payload.auth_header or None
     bank.sms_sender_id = payload.sender_id
     if not bank.sms_inbound_secret:
         bank.sms_inbound_secret = new_token()
@@ -3575,12 +3598,24 @@ def integration_settings(
             ),
             "messenger": bool(bank.messenger_page_token),
             "instagram": bool(bank.instagram_access_token),
+            # The phone number id is an identifier, not a credential — Meta
+            # prints it on the dashboard beside the number. Returning it lets
+            # the form show what is configured; the access token beside it
+            # never comes back, only the fact that one exists.
+            "whatsapp_phone_number_id": bank.whatsapp_phone_number_id,
+            "has_whatsapp_token": bool(bank.whatsapp_access_token),
+            "has_messenger_token": bool(bank.messenger_page_token),
+            "has_instagram_token": bool(bank.instagram_access_token),
         },
         "sms": {
             "connected": bool(bank.sms_send_url),
             "callback_url": f"{get_settings().app_base_url}/webhooks/sms/{bank.slug}",
             "has_secret": bool(bank.sms_inbound_secret),
             "sender_id": bank.sms_sender_id,
+            "send_url": bank.sms_send_url,
+            # So the form can say "leave blank to keep it" truthfully rather
+            # than as boilerplate on a field that was never set.
+            "has_auth_header": bool(bank.sms_auth_header),
         },
         # Every channel, with what each actually requires. Served rather than
         # written into the page so the answer to "can you do WhatsApp" is one

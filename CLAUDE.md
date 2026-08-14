@@ -78,7 +78,16 @@ other repo.
   for Telegram, Viber, the Meta trio (one module — `meta.py`) and SMS
   (`sms.py`, an aggregator contract). `channels.py` is the honest catalogue;
   `_channel_reply()` in `api.py` owns the shared conversation/disclaimer/agent
-  steps so an adapter is only transport
+  steps so an adapter is only transport.
+  **Every catalogued channel has a connect form on the Channels page.** Five
+  of the seven shipped without one — the backend routes were written, tested
+  and deployed the whole time, so the product looked half-built from the one
+  screen a bank uses to set it up. `tests/test_channel_connect_ui.py` walks
+  `channels.CATALOGUE` and fails on a channel the page describes and cannot
+  connect, which is how the eighth would otherwise repeat it.
+  **Telegram and Viber are the two a bank can switch on today** with no
+  approval from anyone; the Meta trio needs a business verification and SMS
+  needs an aggregator agreement, which `needs` states on each page.
 - **Admin:** single-page panel (`static/admin.html`) — KB CRUD + bulk import,
   transcripts, handoff queue, **Content Gaps**, **Overview** (the landing tab)
 

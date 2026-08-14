@@ -410,3 +410,104 @@ def test_replies_are_declared_as_responses_not_unsolicited_sends() -> None:
         mp.setattr(httpx, "post", fake_post)
         meta.send_messaging("t", "psid-1", "hello", channel=meta.MESSENGER)
     assert captured["messaging_type"] == "RESPONSE"
+
+
+# ---------------------------------------------------- connecting the products
+#
+# One Meta app serves three products, and a bank connects them as its review
+# clears them — WhatsApp in March, Messenger in June. That makes the *second*
+# connect the interesting one: it is a partial update to credentials that are
+# already working, submitted from a form that cannot read any of them back.
+
+
+_PW = "pytest-fixture-value-9"
+
+
+@pytest.fixture()
+def boss(client: TestClient, cbe_bank: Any) -> TestClient:
+    """A signed-in administrator on the CBE tenant.
+
+    Not the break-glass token: it stops authenticating the moment a tenant has
+    a user, and connecting a channel is exactly the kind of thing it must no
+    longer be able to do (ADR-0031).
+    """
+    from conftest import create_user
+
+    create_user(client, cbe_bank, "boss@cbe.test", password=_PW, role="admin",
+                slug=cbe_bank.slug)
+    signed_in = client.post(f"/admin/api/{cbe_bank.slug}/login",
+                            json={"email": "boss@cbe.test", "password": _PW})
+    assert signed_in.status_code == 200, signed_in.text
+    return client
+
+
+def _reload(db: Any, bank_id: str) -> Any:
+    """The connect route commits on its own connection, so the fixture object
+    this test holds is stale by the time it is asserted against."""
+    from bankassist.models import Bank
+
+    db.expire_all()
+    return db.get(Bank, bank_id)
+
+
+def _connect(client: TestClient, slug: str, **body: Any) -> Any:
+    return client.post(f"/admin/api/{slug}/meta/connect", json=body)
+
+
+def test_the_first_connect_requires_an_app_secret(
+    boss: TestClient, cbe_bank: Any
+) -> None:
+    """Without it every inbound delivery fails signature verification, so a
+    channel connected this way would read as live and answer nobody."""
+    assert _connect(boss, cbe_bank.slug, messenger_page_token="page-tok").status_code == 422
+
+
+def test_adding_a_second_product_does_not_re_ask_for_the_app_secret(
+    boss: TestClient, cbe_bank: Any, db_session: Any
+) -> None:
+    """The secret is not readable from the screen, so requiring it again would
+    mean fetching it out of Meta's dashboard to retype a value we already
+    hold — or giving up and pasting something wrong over a working channel."""
+
+    first = _connect(boss, cbe_bank.slug, app_secret=SECRET,
+                     whatsapp_phone_number_id="123", whatsapp_access_token="wa-tok")
+    assert first.status_code == 200
+
+    second = _connect(boss, cbe_bank.slug, messenger_page_token="page-tok")
+    assert second.status_code == 200
+
+    bank = _reload(db_session, cbe_bank.id)
+    assert bank.meta_app_secret == SECRET
+    assert bank.messenger_page_token == "page-tok"
+    # And the March credential is still there in June.
+    assert bank.whatsapp_access_token == "wa-tok"
+    assert bank.whatsapp_phone_number_id == "123"
+
+
+def test_the_verify_token_survives_a_second_connect(
+    boss: TestClient, cbe_bank: Any, db_session: Any
+) -> None:
+    """It is pasted into Meta's dashboard by hand. Minting a new one on every
+    save would break the callback of every product already connected, silently,
+    at the moment somebody added another."""
+
+    first = _connect(boss, cbe_bank.slug, app_secret=SECRET).json()
+    second = _connect(boss, cbe_bank.slug, instagram_access_token="ig-tok").json()
+    assert first["verify_token"] == second["verify_token"]
+
+
+def test_the_panel_is_told_which_tokens_exist_but_never_what_they_are(
+    boss: TestClient, cbe_bank: Any
+) -> None:
+    """The form says "leave blank to keep it" only where that is true, and a
+    value the API will re-display is a value that ends up in a screenshot."""
+    _connect(boss, cbe_bank.slug, app_secret=SECRET,
+             whatsapp_phone_number_id="123", whatsapp_access_token="wa-tok")
+
+    meta_cfg = boss.get(f"/admin/api/{cbe_bank.slug}/integrations").json()["meta"]
+    assert meta_cfg["has_whatsapp_token"] is True
+    assert meta_cfg["has_messenger_token"] is False
+    # The phone number id is an identifier Meta prints on its own dashboard.
+    assert meta_cfg["whatsapp_phone_number_id"] == "123"
+    assert SECRET not in json.dumps(meta_cfg)
+    assert "wa-tok" not in json.dumps(meta_cfg)
