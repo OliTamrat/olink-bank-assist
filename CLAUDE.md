@@ -1331,6 +1331,33 @@ lender (smaller, faster procurement, hungrier).
 9. **One concern per branch.** Two unrelated changes were committed onto one
    branch here and had to be split back out before review; check
    `git branch --show-current` before committing, not after.
+10. **Green CI means ship it. Do not wait to be told** (founder, 2026-08-14).
+   Once all four checks pass on a PR whose work was already asked for, merge
+   it and let it deploy. Report the revision afterwards; do not park it as a
+   draft pending a word.
+
+   The rule exists because of a specific failure, not as a general
+   preference. The recovery-code rotation was requested, built, tested and
+   green — and then sat in an open draft while the founder went looking for
+   the button on the live site and reported it as a missing feature. He had
+   approved the work; the gate was invented. **Finished work that nobody can
+   use is not finished**, and asking twice for the same thing is a cost paid
+   by the person who already said yes.
+
+   Still stop and ask, because these are not "the work already asked for":
+   - a migration that drops or rewrites data, or one whose `downgrade()` is
+     lossy;
+   - weakening any guardrail — the prospect-tenant disclaimers (ADR-0009),
+     the account rule, the auto-reply allowlist, the education-not-advice
+     line;
+   - anything that changes what a *prospect* tenant shows the public;
+   - a fix whose mechanism is a hypothesis rather than something measured,
+     where shipping it is really a request to test in production. Say so and
+     let the founder decide.
+
+   And green CI is the floor, not the ceiling: it does not know whether the
+   change does what was asked. Drive the real thing first — see the browser
+   gotchas below.
 
 ## Gotchas
 
