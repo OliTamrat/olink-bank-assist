@@ -226,3 +226,35 @@ def test_the_viber_page_does_not_promise_a_token_in_minutes() -> None:
             f"docs/integrations/viber.md still says {stale!r} — bot accounts "
             f"have not been self-created since 5 February 2024."
         )
+
+
+def test_a_proposed_integration_page_says_so_until_it_is_in_the_catalogue() -> None:
+    """`docs/integrations/` otherwise means "shipped", and USSD is not.
+
+    The directory's every other page documents working code, so a reader — or
+    a future agent reading the tree as context — reasonably takes a page here
+    as a description of something that exists. `ussd.md` is a design argument
+    with no code behind it, and the honest signal is cheap: the page is marked
+    proposed exactly while the channel is absent from `channels.CATALOGUE`,
+    and the day the adapter lands the marking has to come off.
+
+    The failure this prevents is quiet and expensive: a spec that ages into
+    looking like a feature, which is the same shape as the Viber page claiming
+    self-serve eighteen months after it stopped being true.
+    """
+    catalogued = {str(e["key"]) for e in channels.CATALOGUE}
+    page = ROOT / "docs" / "integrations" / "ussd.md"
+    if not page.exists():
+        return  # deleted along with the proposal — fine
+    text = page.read_text(encoding="utf-8")
+    if "ussd" in catalogued:
+        assert "proposed, not built" not in text.lower(), (
+            "USSD is in channels.CATALOGUE now, so docs/integrations/ussd.md "
+            "must stop describing itself as a proposal"
+        )
+    else:
+        assert "proposed, not built" in text.lower(), (
+            "docs/integrations/ussd.md describes a channel that is not in "
+            "channels.CATALOGUE — say so at the top, or this page reads as a "
+            "feature the product does not have"
+        )
