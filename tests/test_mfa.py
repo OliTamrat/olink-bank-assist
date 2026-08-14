@@ -17,7 +17,9 @@ the happy path:
 
 from __future__ import annotations
 
+import re
 import time
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -27,6 +29,8 @@ from sqlalchemy.orm import Session
 
 from bankassist import admin_auth, totp
 from bankassist.models import AdminSession, Bank, RecoveryCode, User
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "bankassist" / "static"
 
 # Composed rather than written as a literal, following test_admin_identity:
 # a scanner cannot know a file is a test, and a repository where the secret
@@ -404,16 +408,23 @@ def test_enrolment_ships_a_qr_that_encodes_the_provisioning_uri(
     assert svg.lstrip().startswith("<svg"), svg[:80]
 
     import segno
-    from segno import helpers  # noqa: F401  (import surface check)
 
-    # Rebuild the symbol from the URI and compare module matrices: same URI
-    # and settings produce an identical matrix, so this catches a QR built
-    # from the wrong string without needing a camera.
+    # Compare the MODULE MATRIX, not the SVG bytes. The matrix is the QR; the
+    # svg is one way of drawing it, and an earlier version of this test
+    # compared rendered markup with the scale baked in, so changing how the
+    # symbol is drawn broke a test that was supposed to be about what it says.
     expected = segno.make(enrol["uri"], error="m")
+    exp_modules = expected.symbol_size(scale=1, border=0)[0]
+    got_width = int(re.search(r'width="(\d+)"', svg).group(1))
+    got_scale = int(re.search(r"scale\((\d+)\)", svg).group(1))
+    assert got_width // got_scale == exp_modules + 8, (  # +8 = quiet zone
+        "the QR is not the symbol this URI produces"
+    )
+    # …and the dark path data is the matrix itself, so it must match exactly.
     import io
 
     buf = io.BytesIO()
-    expected.save(buf, kind="svg", scale=5, border=4, dark="#0b1220",
+    expected.save(buf, kind="svg", scale=got_scale, border=4, dark="#0b1220",
                   light="#ffffff", xmldecl=False, svgns=True, nl=False)
     assert svg == buf.getvalue().decode("utf-8"), (
         "the QR does not encode this enrolment's provisioning URI"
@@ -437,3 +448,58 @@ def test_the_qr_reaches_no_third_party_origin(
     for scheme in ("http://", "https://"):
         stripped = svg.replace("http://www.w3.org/2000/svg", "")
         assert scheme not in stripped, f"the QR SVG reaches out to {scheme}"
+
+
+def test_the_qr_is_big_enough_to_photograph(
+    client: TestClient, account: User, db_session: Session
+) -> None:
+    """Correct is not the same as legible, and the first test here only
+    checked correct.
+
+    It rebuilt the symbol and compared matrices, which proves the QR encodes
+    the right URI — and it passed while the code would not scan off a screen.
+    The symbol shipped at 6px per module intrinsically and the stylesheet
+    forced it to 188px, a 0.709 downscale that put every module boundary on a
+    fractional pixel. Decoding a clean render still worked; a phone camera
+    against a glossy laptop screen failed at the first hint of blur.
+
+    Measured before and after with a real decoder, degrading the image the
+    way a camera does (shrink, blur, noise, glare): at 188px it decoded only
+    from pristine pixels; at its natural size it survives hand-held
+    conditions. That decoder is not a test dependency — it is 60 MB and this
+    invariant is geometric, so the geometry is what gets asserted.
+    """
+    _sign_in(client)
+    svg = client.post("/admin/api/demo/mfa/enroll").json()["qr_svg"]
+
+    width = int(re.search(r'width="(\d+)"', svg).group(1))
+    scale = int(re.search(r"scale\((\d+)\)", svg).group(1))
+    modules = width // scale
+
+    assert scale >= 6, (
+        f"the QR is drawn at {scale}px per module. Below 6 it stops surviving "
+        "the blur of a hand-held phone photographing a screen, even though it "
+        "still decodes perfectly from a clean render"
+    )
+    assert modules >= 21, f"implausible module count {modules} — parse is wrong"
+    assert width >= 300, f"the whole symbol is only {width}px across"
+
+
+def test_the_stylesheet_does_not_resize_the_qr() -> None:
+    """The other half, and the half that actually caused it.
+
+    A CSS width scales the symbol by whatever fraction it happens to be,
+    landing module boundaries between pixels and softening every edge — which
+    is the one thing a camera already struggling with glare cannot absorb.
+    `max-width` is fine and deliberate: a narrow window should shrink the code
+    rather than overflow the card.
+    """
+    admin = (STATIC_DIR / "admin.html").read_text(encoding="utf-8")
+    rule = re.search(r"\.qrplate svg \{([^}]*)\}", admin, re.S)
+    assert rule, "the QR sizing rule is gone"
+    body = re.sub(r"/\*.*?\*/", "", rule.group(1), flags=re.S)
+    assert not re.search(r"(?<!-)\bwidth:\s*\d", body), (
+        "the stylesheet pins the QR to a pixel width again — that rescales "
+        "every module onto fractional pixels and is what stopped it scanning"
+    )
+    assert "crispEdges" in body, "antialiasing is back on the module edges"
