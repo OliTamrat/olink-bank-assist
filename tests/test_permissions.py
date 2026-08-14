@@ -331,31 +331,104 @@ def test_a_persons_action_is_audited_against_them(
     assert entry.actor != "admin"
 
 
-def test_closing_a_handoff_records_who_and_stays_null_for_the_token(
+def test_closing_a_handoff_records_who(
     client: TestClient, demo_bank: Any, db_session: Session
 ) -> None:
-    """Null is a true statement about a tenant-wide token. "admin" would not be."""
+    """A person's action names the person.
+
+    This test used to close a second handoff with the break-glass token and
+    assert `resolved_by is None` — "null is a true statement about a
+    tenant-wide token, and admin would not be". That property still holds and
+    still matters; the token simply cannot reach this route any more (see the
+    retirement tests below), so the attribution is asserted on the one path
+    the token still has, which is bootstrap.
+    """
     c = _signed_in(client, demo_bank, "admin")
     user = db_session.execute(
         select(User).where(User.email == "admin@bank.et")
     ).scalar_one()
 
     by_person = Handoff(bank_id=demo_bank.id, conversation_id="c1", reason="other")
-    by_token = Handoff(bank_id=demo_bank.id, conversation_id="c2", reason="other")
-    db_session.add_all([by_person, by_token])
+    db_session.add(by_person)
     db_session.commit()
 
     assert c.post(f"/admin/api/demo/handoffs/{by_person.id}/close").status_code == 200
-    assert (
-        client.post(
-            f"/admin/api/demo/handoffs/{by_token.id}/close",
-            headers=_headers(demo_bank),
-        ).status_code
-        == 200
-    )
     db_session.expire_all()
     assert db_session.get(Handoff, by_person.id).resolved_by == user.id  # type: ignore[union-attr]
-    assert db_session.get(Handoff, by_token.id).resolved_by is None  # type: ignore[union-attr]
+
+
+# ------------------------------------------- the break-glass token, retired
+#
+# The token is not a person: it cannot hold a second factor. So every route it
+# reached was a route where two-factor could be walked past by anyone holding
+# one shared string, and an account with two-factor on it was only ever as
+# strong as its bank's token was secret. That is not what turning two-factor
+# on is understood to mean (founder decision, 2026-08-14).
+
+
+def test_the_token_authenticates_nothing_once_the_tenant_has_a_user(
+    client: TestClient, demo_bank: Any
+) -> None:
+    _make_user(client, demo_bank, email="first@bank.et", role="admin")
+    r = client.get("/admin/api/demo/analytics?days=1", headers=_headers(demo_bank))
+    assert r.status_code == 403, (
+        "a valid admin token still reached an admin route on a tenant that has "
+        "users — the MFA bypass is back"
+    )
+    assert "no longer sign in" in r.json()["detail"]
+
+
+def test_the_token_can_still_bootstrap_the_first_user(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """Deleting the token outright does not work, and this is why.
+
+    A tenant with no users has nobody who could authorise creating the first
+    one. The token keeps exactly that job and loses every other.
+    """
+    created = client.post(
+        "/admin/api/demo/users",
+        headers=_headers(demo_bank),
+        json={"email": "bootstrap@bank.et", "password": PW, "role": "admin"},
+    )
+    assert created.status_code == 201, created.text
+
+
+def test_the_bootstrap_door_shuts_behind_the_first_user(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """One use, not a standing power to mint administrators.
+
+    Without this the retirement would be theatre: the token could create an
+    admin at any time and sign in as them, which is the same bypass with an
+    extra step.
+    """
+    assert client.post(
+        "/admin/api/demo/users",
+        headers=_headers(demo_bank),
+        json={"email": "first@bank.et", "password": PW, "role": "admin"},
+    ).status_code == 201
+    second = client.post(
+        "/admin/api/demo/users",
+        headers=_headers(demo_bank),
+        json={"email": "second@bank.et", "password": PW, "role": "admin"},
+    )
+    assert second.status_code == 403, (
+        "the token minted a second administrator — it is still a skeleton key"
+    )
+
+
+def test_a_wrong_token_is_still_401_not_403(
+    client: TestClient, demo_bank: Any
+) -> None:
+    """The retirement refusal must not become an oracle. A wrong token is
+    rejected the way it always was, before the tenant's user count is
+    consulted at all."""
+    _make_user(client, demo_bank, email="first@bank.et", role="admin")
+    r = client.get(
+        "/admin/api/demo/analytics?days=1", headers={"X-Admin-Token": "wrong"}
+    )
+    assert r.status_code == 401
 
 
 # --------------------------------------------------- the policy cannot drift

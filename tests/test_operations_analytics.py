@@ -22,14 +22,74 @@ from bankassist.models import Handoff, Role, TellerSession, User, UserCredential
 
 
 def _ops(client: TestClient, bank: Any, **params: Any) -> dict[str, Any]:
-    resp = client.get(
-        f"/admin/api/{bank.slug}/analytics/operations",
-        headers={"X-Admin-Token": bank.admin_token},
-        params=params,
+    """Read the report as an administrator.
+
+    This used the break-glass token, which is retired: once a tenant has any
+    user the token authenticates nothing. Several of these tests create staff
+    in order to have staffing to report on, so the token stopped working for
+    exactly the cases the report is about.
+    """
+    resp = _reader(client, bank).get(
+        f"/admin/api/{bank.slug}/analytics/operations", params=params
     )
     assert resp.status_code == 200, resp.text
     data: dict[str, Any] = resp.json()
     return data
+
+
+_READERS: dict[str, TestClient] = {}
+
+
+@pytest.fixture(autouse=True)
+def _forget_readers() -> Any:
+    """Seeded bank ids repeat across tests, so a cached client from a previous
+    test would be consulted — signed in against a database that no longer
+    exists."""
+    _READERS.clear()
+    yield
+    _READERS.clear()
+
+
+def _reader(client: TestClient, bank: Any) -> TestClient:
+    """One signed-in admin per bank, reused — the roster is a thing these
+    tests assert on, so this must not add a colleague per call."""
+    existing = _READERS.get(bank.id)
+    if existing is not None:
+        return existing
+    from sqlalchemy.orm import sessionmaker
+
+    from bankassist.db import get_engine
+
+    session = sessionmaker(bind=get_engine(), expire_on_commit=False)()
+    try:
+        role = session.execute(
+            select(Role).where(
+                Role.bank_id == bank.id, Role.name == permissions.ADMIN
+            )
+        ).scalar_one()
+        user = User(
+            bank_id=bank.id, email=f"report-reader@{bank.slug}.test",
+            display_name="Report Reader", role_id=role.id,
+        )
+        session.add(user)
+        session.flush()
+        session.add(
+            UserCredential(
+                user_id=user.id, kind="password",
+                secret_hash=passwords.hash_password("CorrectHorse9!x"),
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+    c = TestClient(client.app)
+    assert c.post(
+        f"/admin/api/{bank.slug}/login",
+        json={"email": f"report-reader@{bank.slug}.test",
+              "password": "CorrectHorse9!x"},
+    ).status_code == 200
+    _READERS[bank.id] = c
+    return c
 
 
 def test_a_fresh_tenant_reports_nulls_not_zeros(

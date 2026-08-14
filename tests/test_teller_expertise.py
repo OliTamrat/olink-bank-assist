@@ -284,9 +284,9 @@ def test_a_manager_cannot_assign_desks_to_a_non_teller(
     )
     db_session.add(user)
     db_session.commit()
-    resp = client.put(
+    manager = _admin_client(client, db_session, demo_bank, "boss@bank.et")
+    resp = manager.put(
         f"/admin/api/demo/users/{user.id}/expertise",
-        headers={"X-Admin-Token": demo_bank.admin_token},
         json={"departments": [CARDS]},
     )
     assert resp.status_code == 409
@@ -384,10 +384,9 @@ def test_the_team_list_says_who_can_actually_serve(
     """The Desk Teams view counts only people routing can offer work to —
     by permission, not role name, so a renamed teller role keeps working."""
     _teller_client(client, db_session, demo_bank, "serves@bank.et")
-    users = client.get(
-        "/admin/api/demo/users",
-        headers={"X-Admin-Token": demo_bank.admin_token},
-    ).json()
+    users = _admin_client(
+        client, db_session, demo_bank, "roster-reader@bank.et"
+    ).get("/admin/api/demo/users").json()
     by_email = {u["email"]: u for u in users}
     assert by_email["serves@bank.et"]["can_serve"] is True
 
@@ -422,10 +421,9 @@ def test_the_team_list_shows_each_persons_declared_coverage(
         "/admin/api/demo/teller/languages", json={"languages": ["am"]}
     ).status_code == 200
 
-    users = client.get(
-        "/admin/api/demo/users",
-        headers={"X-Admin-Token": demo_bank.admin_token},
-    ).json()
+    users = _admin_client(
+        client, db_session, demo_bank, "roster-reader@bank.et"
+    ).get("/admin/api/demo/users").json()
     mine = next(u for u in users if u["email"] == "cover@bank.et")
     assert mine["teller_departments"] == [FRAUD]
     assert mine["teller_languages"] == ["am"]

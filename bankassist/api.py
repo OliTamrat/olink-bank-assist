@@ -209,6 +209,42 @@ def require_admin(
     return bank
 
 
+def _token_is_still_a_credential(db: Session, bank: Bank) -> bool:
+    """Whether the break-glass token may authenticate anything on this tenant.
+
+    Only while the tenant has NO users. Once one exists, the token stops being
+    a credential entirely.
+
+    This is the retirement of the MFA bypass (founder, 2026-08-14), and the
+    shape matters. The token is not a person: it cannot hold a second factor,
+    so every route it reached was a route where two-factor could be walked
+    past by anyone holding one shared string. An account with two-factor on it
+    was therefore only ever as strong as its bank's token was secret — which
+    is not what turning two-factor on is understood to mean.
+
+    Deleting the token outright was the other option and it does not work: a
+    tenant with no users has nobody who could authorise creating the first
+    one, and that circle is why the token existed. So it keeps exactly that
+    job and loses every other. On a fresh tenant it can still create the first
+    administrator; the moment that person exists, it authenticates nothing.
+
+    Note this needs no separate allowlist of permitted routes. Bootstrap is
+    `POST /users`, which is the only thing anyone can usefully do on a tenant
+    with no users — every other route is about content, conversations or
+    colleagues that a brand-new tenant does not have yet. Scoping by tenant
+    state rather than by route list means a new route cannot accidentally
+    become reachable by the token later.
+    """
+    return db.execute(
+        select(func.count()).select_from(User).where(User.bank_id == bank.id)
+    ).scalar_one() == 0
+
+
+RETIRED_TOKEN = (
+    "The admin token can no longer sign in to a bank that has user accounts. "
+    "Sign in with your email and password."
+)
+
 TOKEN_ACTOR = "admin-token"
 """What the audit log records when the break-glass token acted.
 
@@ -311,6 +347,10 @@ def require(permission: str) -> Callable[..., Principal]:
                 if x_admin_token and hmac.compare_digest(
                     x_admin_token, bank.admin_token
                 ):
+                    if not _token_is_still_a_credential(db, bank):
+                        log_event(logger, "admin_token_retired_denied",
+                                  bank=slug, permission=permission)
+                        raise HTTPException(status_code=403, detail=RETIRED_TOKEN)
                     return Principal(bank=bank, user=None)
                 # Deliberately 403 and not 404. Hiding the tenant's existence
                 # from someone already authenticated elsewhere buys nothing —
@@ -332,7 +372,15 @@ def require(permission: str) -> Callable[..., Principal]:
                 )
                 raise HTTPException(status_code=403, detail="Not permitted")
             return Principal(bank=bank, user=user)
-        return Principal(bank=require_admin(slug, request, x_admin_token, db), user=None)
+        # The token still has to be the right one for this bank — require_admin
+        # rate-limits and logs a wrong one exactly as before. What changed is
+        # that being right is no longer sufficient.
+        bank = require_admin(slug, request, x_admin_token, db)
+        if not _token_is_still_a_credential(db, bank):
+            log_event(logger, "admin_token_retired_denied", bank=slug,
+                      permission=permission)
+            raise HTTPException(status_code=403, detail=RETIRED_TOKEN)
+        return Principal(bank=bank, user=None)
 
     return dependency
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from conftest import create_user
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,14 +23,7 @@ def _headers(bank: Any) -> dict[str, str]:
 def _make_user(
     client: TestClient, bank: Any, email: str, role: str = "operator"
 ) -> dict[str, Any]:
-    resp = client.post(
-        "/admin/api/demo/users",
-        headers=_headers(bank),
-        json={"email": email, "password": PW, "role": role},
-    )
-    assert resp.status_code == 201, resp.text
-    data: dict[str, Any] = resp.json()
-    return data
+    return create_user(client, bank, email, password=PW, role=role)
 
 
 def _signed_in(client: TestClient, bank: Any, email: str, role: str) -> TestClient:
