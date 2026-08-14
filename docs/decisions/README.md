@@ -41,3 +41,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0029 | The sign-in card plays, and the headline is composed six times |
 | 0030 | The public page runs the product, and is English |
 | 0031 | The break-glass token stops being a login |
+| 0032 | USSD rides the bank's short code, and starts as a menu |

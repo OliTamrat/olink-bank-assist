@@ -22,11 +22,48 @@ screen.**
 
 Two separate unknowns hide in there.
 
-**Encoding is knowable and fine.** A USSD string is at most 182 octets. Latin
-text packs into GSM 03.38 7-bit, giving ~182 characters per screen. Ge'ez has
-no GSM-7 representation, so it goes as UCS-2 at two bytes per character —
-about **91 characters per screen**. Tight, and workable: 91 characters is a
-sentence, and a sentence per screen is what USSD is for.
+**Encoding is knowable, and it is better than it first looks.** Measured, not
+asserted: run `python scripts/ussd_budget.py`, which computes the table below
+from this repo's own six-language string tables so it moves when they do.
+
+A USSD string is at most 182 octets. Latin packs into GSM 03.38 at seven bits
+per character (182 per screen); Ge'ez has no GSM-7 representation and goes as
+UCS-2 at two bytes (91 per screen). The naive reading — "Amharic gets half a
+screen" — is wrong twice over, and both corrections matter:
+
+**Ge'ez is denser than Latin, which claws back most of the penalty.** Amharic
+and Tigrinya are abugidas: one glyph per consonant-vowel syllable. The same
+sentence runs about **0.68×** the character count of its English translation,
+so 91 Ge'ez characters carry roughly 134 English characters' worth of meaning.
+Meanwhile Afaan Oromo, Somali and Swahili *expand* against English (1.11–1.19×),
+spending part of their larger budget on being longer.
+
+Every language therefore lands within a factor of ~1.4 of every other:
+
+| | screen | vs en | effective |
+|---|---|---|---|
+| English | 182 | 1.00 | 182 |
+| Swahili | 182 | 1.11 | 164 |
+| Somali | 182 | 1.13 | 161 |
+| Afaan Oromo | 182 | 1.19 | 153 |
+| Tigrinya | 91 | 0.68 | 135 |
+| Amharic | 91 | 0.68 | 133 |
+
+**One budget serves all six.** Design to ~133 English characters per screen and
+no language is shortchanged — which is a far easier constraint than maintaining
+two layouts.
+
+**But the Latin languages are one em dash from losing half their screen.**
+Afaan Oromo, Somali and Swahili are GSM-7 clean *in their own letters*. Every
+offender the script finds in them is punctuation **we** chose — `—`, `…`, `·`,
+and an emoji in the language-signal greeting. A single decorative dash drops
+that reply from 182 characters to 91, and it does not look like a bug: the text
+still sends, there is just half as much of it.
+
+So a USSD adapter needs a normaliser — em dash to hyphen, ellipsis to three
+dots, no emoji — and **that normaliser is load-bearing, not cosmetic.** It is
+the cheapest capacity doubling available on this channel and the easiest thing
+to leave out.
 
 **Rendering is not knowable from a desk.** Whether a 1,200-birr feature phone
 sold in Adama ships an Ethiopic font, and whether its USSD dialog uses that
@@ -221,8 +258,13 @@ is the *decision* — continue or terminate — and the transport spells it.
 
 ## 7. Screen design
 
-Under 91 characters per screen, because the Ge'ez budget is the real one and
-designing to the Latin budget guarantees a rewrite.
+**One budget: ~133 English characters of content per screen** (§0). In raw
+characters that is 91 for Ge'ez and 182 for the Latin scripts, but designing
+against the *effective* number means one layout serves all six languages
+instead of two that drift apart.
+
+Every outbound string passes the GSM-7 normaliser first (§0), or three of the
+six languages quietly lose half the screen to a dash.
 
 - **Menu screens** are numbered, one item per line, no prose. The bank's
   published `Faq` entries in the customer's language, most-asked first.
@@ -272,18 +314,30 @@ was to point at the vendor's own pricing screen instead of restating it here.
 
 ---
 
-## 10. Open questions — founder's call
+## 10. Decisions taken, and what is still outstanding
 
-1. **Ride the bank's short code, or apply for our own?** §2 argues strongly for
-   riding. Confirm with Awash or Dashen whether adding a menu item to their
-   existing code is something their USSD vendor will do.
-2. **Does Ge'ez render?** §0. Half a day, and it gates everything.
-3. **Menu-only for v1, or menu plus free text?** Menu-only ships far sooner,
-   has no latency risk, and cannot hallucinate. Free text is the differentiator.
-   Recommendation: **build menu-only first**, add free text once real session
-   data shows whether anyone would type.
-4. **Does the gateway send accumulated input or just the latest?** §5. One
-   question to the bank's integration team, and it deletes a table.
+**Decided 2026-08-14 (founder), recorded in ADR-0032:**
+
+1. **Ride the bank's existing short code.** Use the number customers already
+   know, and add a menu code to it as part of the pilot agreement rather than
+   applying for a separate one. §2.
+2. **Menu-only for v1.** Free text is deferred until real session data shows
+   whether anyone types. §1, §4 — the deadline-race design stays in this
+   document because it is what free text will need, not because v1 needs it.
+
+**Still outstanding, and both are measurements rather than opinions:**
+
+3. **Does Ge'ez render on a cheap handset?** §0. Half a day with three kiosk
+   phones. Gates the script decision, not the architecture — the budget work in
+   §0 holds either way, because Latin transliteration is GSM-7 and therefore
+   *more* generous than Ge'ez, not less.
+4. **Does the gateway send accumulated input (`"7*2*1"`) or only the latest
+   keystroke?** §5. One question to the bank's integration team. If accumulated,
+   the session state is already in the request and the session table never gets
+   written.
+
+Neither blocks the other, and neither blocks the normaliser or the screen
+budget, which are settled and measured.
 
 ---
 
