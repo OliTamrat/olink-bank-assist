@@ -301,6 +301,46 @@ _DOCS: list[dict[str, str]] = [
         ),
     },
     {
+        "title": "How Do I Close My Account",
+        "category": "general",
+        "language": "en",
+        "content": (
+            "Closing an account is done at a branch, not from the app, because "
+            "the bank has to confirm your identity face to face before it "
+            "acts.\n\n"
+            "Bring your original ID and the account's passbook or card. If "
+            "there is money left in the account you can withdraw it or move "
+            "it to another account at the same time. Any cheque book issued "
+            "on the account has to be handed back, and any standing "
+            "instruction or salary payment pointing at the account should be "
+            "moved first so nothing is sent to a closed account.\n\n"
+            "If the account is joint, every holder has to agree to the "
+            "closure. If it is a business account, whoever asks must be an "
+            "authorised signatory."
+        ),
+    },
+    {
+        "title": "My Account Is Dormant — How to Reactivate It",
+        "category": "general",
+        "language": "en",
+        "content": (
+            "An account with no customer-initiated activity for a long period "
+            "is marked dormant. Interest already earned is not lost and the "
+            "money remains yours — dormancy stops transactions, it does not "
+            "take the balance.\n\n"
+            "To reactivate it, go to a branch with your original ID. It is "
+            "usually the branch where the account was opened that can do this "
+            "fastest, though any branch can start it. Bring the passbook or "
+            "card if you still have them. You may be asked to update the "
+            "details held on file — a current phone number and address — "
+            "because those are often what went out of date while the account "
+            "sat unused.\n\n"
+            "Reactivation cannot be done over the phone or in the app: the "
+            "point of the dormancy rule is that the bank confirms face to "
+            "face that the account holder is the one asking."
+        ),
+    },
+    {
         "title": "Saving and Budgeting Basics",
         "category": "financial-education",
         "language": "en",
