@@ -38,7 +38,7 @@ Three rules keep this tree true:
 |---|---|
 | `overview.md` | What the product is, who it serves, the three-tier answer model |
 | `architecture.md` | Stack, modules, data model, how a message flows |
-| `runbooks/` | How to do operational things: deploy, connect channels, run the translation loops |
+| `runbooks/` | How to do operational things: deploy, connect channels, run the translation loops. **`needs-a-human.md` is the short list of what is blocked on credentials rather than on code.** |
 | `integrations/` | One page per external service: what it needs, what it signs, what fails silently |
 | `decisions/` | ADRs — the *why* behind every load-bearing choice, with PR references |
 | `market-position.md` | Competitive landscape, positioning, language-expansion order |
