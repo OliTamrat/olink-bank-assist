@@ -68,3 +68,35 @@ as the CBE and Awash tenants.
 negative press, financial losses, fraud incidents, or regulatory issues —
 this demo is built to pitch *to* Dashen, and surfacing a prospect's own
 negative coverage in their own product demo would be inappropriate.
+
+---
+
+## Card limits — added 2026-08-14
+
+Added because the live demo could not answer "what's my daily limit", which
+`scripts/corpus_gaps.py` had already flagged as a measured gap.
+
+- **Green debit card: 15,000 birr per day at ATMs. Gold debit card: 30,000
+  birr per day.** — American Express's own Ethiopia product pages for the
+  Dashen-issued cards
+  (`americanexpress.com/en-et/network/credit-cards/dashen-bank/`, Green and
+  Gold pages, plus the `/et/network/product/` variant). **Confidence: good.**
+  Amex is the card network publishing the terms of its own product, and the
+  same two figures appear consistently across the network's separate product
+  pages. Not the bank's own tariff page, which is the one caveat.
+
+- **Green: 25 birr annual fee, 10 birr joining fee. Gold: 100 birr annual,
+  15 birr joining.** — same source, **confidence: good**, but **deliberately
+  NOT written into the seed document.** The first draft included them and
+  measurably made Dashen worse (75% to 71% coverage): a document covering
+  limits *and* fees *and* a tariff pointer shares vocabulary with too many
+  queries and displaces the documents that were answering them. Cut to the
+  one question, the same file improved Dashen to 76%. See ADR-0034. These
+  figures are recorded here so they are not re-researched, and belong in
+  their own narrow document if fees are ever worth their own page.
+
+- **ATM replacement-card fee, and the charge for using another bank's ATM** —
+  **not found.** Both are in Dashen's published tariff, and
+  `dashenbanksc.com` is unreachable from the research sandbox (the same
+  session-wide fetch block noted at the top of this file), so neither is
+  stated anywhere in the corpus. These need the bank's own tariff sheet.

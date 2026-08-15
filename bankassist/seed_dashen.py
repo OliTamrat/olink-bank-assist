@@ -341,6 +341,20 @@ _DOCS: list[dict[str, str]] = [
         ),
     },
     {
+        "title": "Daily ATM Withdrawal Limit on Your Card",
+        "category": "general",
+        "language": "en",
+        "content": (
+            "How much you can take out in one day depends on which card you "
+            "hold, not on your balance.\n\n"
+            "The American Express Green debit card allows up to 15,000 birr a "
+            "day. The Gold debit card allows up to 30,000 birr a day.\n\n"
+            "If you need more than your card allows, you can spread it over "
+            "two days, upgrade the card, or withdraw the amount over a branch "
+            "counter instead."
+        ),
+    },
+    {
         "title": "Saving and Budgeting Basics",
         "category": "financial-education",
         "language": "en",
