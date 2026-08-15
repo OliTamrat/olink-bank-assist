@@ -563,12 +563,57 @@ def popular_questions(
     db: Session, bank_id: str, language: str, limit: int = 3
 ) -> list[Suggestion]:
     """The published questions this bank's customers ask most, in this
-    language. The cold-start offer when nothing matched at all."""
+    language — **on different subjects**. The cold-start offer when nothing
+    matched at all.
+
+    Most-served first is the right ranking and it is not sufficient, because
+    this menu feeds itself: the three it offers get tapped, their `served`
+    goes up, and they are the three it offers next time. Whatever is asked
+    first owns the slots. Found on the live Dashen tenant — three consecutive
+    Card questions out of 160 published, because cards happened to be what
+    got tapped first, and nothing about that loop would ever have surfaced
+    the other 157.
+
+    So after the first pick, a candidate sharing a content word with one
+    already chosen is skipped. A bank with three slots and one subject in
+    them is answering "what can you do?" with "cards", which is both wrong
+    and the first impression a demo makes.
+
+    Only here. When a question actually MATCHES what the customer asked
+    (`suggest_questions`), three results on one subject is the correct
+    answer — they asked about that subject.
+
+    If the table is too small or too uniform to fill the menu with distinct
+    subjects, the rest is topped up in plain rank order: an offer the
+    customer can tap beats an empty slot, and a bank with four published
+    questions about cards genuinely has nothing else to show.
+    """
     rows = sorted(
         _published_questions(db, bank_id, language),
         key=lambda row: (-row.served, row.question.casefold()),
     )
-    return [Suggestion(None, row.question, faq_id=row.id) for row in rows[:limit]]
+
+    picked: list[Faq] = []
+    covered: set[tuple[str, ...]] = set()
+    for row in rows:
+        words = _content_groups(row.question)
+        if picked and words & covered:
+            continue
+        picked.append(row)
+        covered |= words
+        if len(picked) == limit:
+            break
+
+    if len(picked) < limit:
+        chosen = {row.id for row in picked}
+        for row in rows:
+            if row.id in chosen:
+                continue
+            picked.append(row)
+            if len(picked) == limit:
+                break
+
+    return [Suggestion(None, row.question, faq_id=row.id) for row in picked]
 
 
 def suggest(

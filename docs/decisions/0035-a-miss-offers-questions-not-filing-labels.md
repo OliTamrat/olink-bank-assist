@@ -94,6 +94,31 @@ a topic in common.
   thousands, this is where to add an index rather than the place to be
   surprised.
 
+## Addendum, same day: the cold-start menu feeds itself
+
+Driving the shipped feature on the live `dashen` tenant produced three
+consecutive **Card** questions out of 160 published — and then a second
+gibberish query re-ranked them, which proved `served` was working exactly as
+designed and was the problem rather than the reassurance.
+
+Step 3 is a loop. The three it offers get tapped, their `served` goes up, and
+they are the three it offers next time. Whatever is asked first owns every
+slot for good, and nothing in the design would ever have surfaced the other
+157. At a real bank with real traffic that loop is correct — popular questions
+are popular. At cold start it locks in an accident of the alphabet, on the
+screen a prospect sees in the first five minutes of a demo, and answers "what
+can you do?" with "cards".
+
+So `popular_questions` now takes the most-served question and then **skips any
+candidate sharing a content word with one already chosen**, topping up in
+plain rank order if the table is too small or too uniform to fill three
+distinct subjects. The most-asked question still leads; variety only reorders
+what sits under it.
+
+Deliberately **not** applied to step 1: when a question matches what the
+customer actually asked, three results on one subject is the right answer,
+because that is the subject they asked about.
+
 ## References
 
 - `bankassist/retrieval.py` — `suggest`, `suggest_questions`, `popular_questions`
