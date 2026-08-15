@@ -44,3 +44,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0032 | USSD rides the bank's short code, and starts as a menu |
 | 0033 | The corpus is not the only ceiling |
 | 0034 | Narrow documents add, broad ones displace |
+| 0035 | A miss offers questions, not filing labels |

@@ -13,9 +13,10 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Chunk, Document
+from .models import Chunk, Document, Faq
 
 _TOKEN = re.compile(r"\w+", re.UNICODE)
 
@@ -148,12 +149,20 @@ class RetrievedChunk:
 
 @dataclass(frozen=True)
 class Suggestion:
-    """A topic the customer may have meant. Always a real document title from
-    this bank's own knowledge base — never generated text, so offering one
-    can't invent a product or a figure that doesn't exist."""
+    """Something the customer may have meant, offered as a chip they can tap.
 
-    document_id: str
+    Always text this bank already wrote — a document title, or a published FAQ
+    question in the bank's own approved wording. Never generated, so offering
+    one can't invent a product, a rate or a requirement.
+
+    Exactly one of `document_id` / `faq_id` is set, and which one is set is
+    what the caller reads to decide how to introduce the list: a question is
+    something to ask, a title is something to browse.
+    """
+
+    document_id: str | None
     title: str
+    faq_id: str | None = None
 
 
 # Query-side vocabulary bridges.
@@ -419,6 +428,15 @@ def suggest_topics(
     `retrieve()`'s signature untouched is worth more than threading state
     between them.
     """
+    return _near_miss_titles(db, bank_id, query, limit) or _broadest_titles(
+        db, bank_id, limit
+    )
+
+
+def _near_miss_titles(
+    db: Session, bank_id: str, query: str, limit: int
+) -> list[Suggestion]:
+    """Titles of the documents that scored but failed the gate. May be empty."""
     from . import index as index_module
 
     idx = index_module.get(db, bank_id)
@@ -437,12 +455,19 @@ def suggest_topics(
         if score > best.get(payload.document_id, (0.0, ""))[0]:
             best[payload.document_id] = (score, payload.title)
 
-    if best:
-        ranked = sorted(best.items(), key=lambda kv: kv[1][0], reverse=True)
-        return [Suggestion(doc_id, title) for doc_id, (_s, title) in ranked[:limit]]
+    ranked = sorted(best.items(), key=lambda kv: kv[1][0], reverse=True)
+    return [Suggestion(doc_id, title) for doc_id, (_s, title) in ranked[:limit]]
 
-    # Nothing matched at all. Offer the documents with the most chunks — the
-    # broadest topics this bank actually covers — as a stable starting point.
+
+def _broadest_titles(db: Session, bank_id: str, limit: int) -> list[Suggestion]:
+    """The documents with the most chunks — the broadest topics this bank
+    actually covers — as a stable starting point when nothing matched."""
+    from . import index as index_module
+
+    idx = index_module.get(db, bank_id)
+    if not idx.corpus:
+        return []
+
     breadth: Counter[str] = Counter()
     titles: dict[str, str] = {}
     for payload in idx.payloads.values():
@@ -450,3 +475,128 @@ def suggest_topics(
         titles[payload.document_id] = payload.title
     widest = sorted(breadth.items(), key=lambda kv: (-kv[1], titles[kv[0]]))
     return [Suggestion(doc_id, titles[doc_id]) for doc_id, _n in widest[:limit]]
+
+
+# ------------------------------------------------------- questions to offer
+#
+# A topic title is a filing label — "ATM and Debit Cards" — and a customer who
+# has just failed to get an answer has to translate it back into a question
+# before it is worth tapping. A published FAQ question is already the thing
+# they wanted to type, and tapping it lands on an answer the bank approved
+# word for word with no model in the path. So when a bank has curated
+# questions, those are what get offered.
+#
+# What does NOT change: a suggestion is still text the bank wrote, offered
+# verbatim. `Faq.question` is stored as a customer would type it, which is
+# exactly what makes it safe to hand back — nothing here composes a sentence.
+
+
+def _content_groups(text: str) -> set[tuple[str, ...]]:
+    """The synonym groups of a text's content words.
+
+    Stopwords are dropped from the QUERY side only, and that is what keeps
+    this from matching everything: "how" and "my" appear in most questions a
+    bank has ever published, so a match on one of them is not a topic in
+    common. The question side keeps every token, because a stopword there can
+    still be the word the query genuinely shares.
+    """
+    tokens = tokenize(text)
+    return {
+        group
+        for token, group in zip(tokens, expand_query(tokens), strict=True)
+        if token not in _STOPWORDS
+    }
+
+
+def _published_questions(db: Session, bank_id: str, language: str) -> list[Faq]:
+    """Every published FAQ this bank has in this language.
+
+    Language is part of the filter rather than a nicety: a chip is offered to
+    be TAPPED, which sends the question straight back as the next message, and
+    a question in another language would take the reply with it. Offering an
+    English question to somebody writing Amharic answers them in English
+    through the one path that has no gate after it.
+
+    `draft` is excluded here for the same reason `_curated_answer` excludes
+    it — an answer half-written at 16:55 must not be advertised at 16:56.
+    """
+    rows = db.execute(
+        select(Faq).where(
+            Faq.bank_id == bank_id,
+            Faq.status == "published",
+            Faq.language == language,
+        )
+    ).scalars().all()
+    return list(rows)
+
+
+def suggest_questions(
+    db: Session, bank_id: str, query: str, language: str, limit: int = 3
+) -> list[Suggestion]:
+    """Published questions of this bank that share a content word with the
+    query — the best-matching first. Empty when none do.
+
+    Ranked by how much of the question the query actually touches, then by how
+    often the answer has been served, then alphabetically so two equal
+    candidates do not swap places between requests for no reason.
+
+    Deliberately NOT the retrieval scorer. That one is tuned to decide whether
+    a chunk answers a question, and its corpus statistics describe documents,
+    not a table of one-line questions. Here the job is only "does this share a
+    subject with what was asked" — a bar low enough to be useful as navigation
+    and blunt enough that nobody will mistake it for an answer.
+    """
+    asked = _content_groups(query)
+    if not asked:
+        return []
+
+    scored: list[tuple[tuple[int, int, str], Faq]] = []
+    for row in _published_questions(db, bank_id, language):
+        overlap = len(asked & _content_groups(row.question))
+        if overlap:
+            scored.append(((-overlap, -row.served, row.question.casefold()), row))
+    scored.sort(key=lambda item: item[0])
+    return [Suggestion(None, row.question, faq_id=row.id) for _rank, row in scored[:limit]]
+
+
+def popular_questions(
+    db: Session, bank_id: str, language: str, limit: int = 3
+) -> list[Suggestion]:
+    """The published questions this bank's customers ask most, in this
+    language. The cold-start offer when nothing matched at all."""
+    rows = sorted(
+        _published_questions(db, bank_id, language),
+        key=lambda row: (-row.served, row.question.casefold()),
+    )
+    return [Suggestion(None, row.question, faq_id=row.id) for row in rows[:limit]]
+
+
+def suggest(
+    db: Session, bank_id: str, query: str, language: str, limit: int = 3
+) -> list[Suggestion]:
+    """What to offer a customer whose question was not answered.
+
+    Four steps, first non-empty wins, and the order is the whole design:
+
+    1. **A published question that matches.** Best of all — it is phrased the
+       way a customer speaks, and tapping it returns the bank's own approved
+       answer with no model in the path.
+    2. **A near-miss document title.** A relevant title beats an irrelevant
+       question: relevance is worth more than shape.
+    3. **The most-served published questions.** Nothing matched, so this is a
+       cold start, and a menu of what people actually ask is a better one
+       than a list of the bank's longest documents.
+    4. **The broadest document titles**, as before, for a bank that has
+       curated nothing.
+
+    One kind per turn, never a blend. The caller introduces the list with a
+    sentence — "you can ask me any of these" or "these related topics may
+    help" — and a row mixing questions with filing labels makes whichever
+    sentence it chose wrong about half of what is under it.
+    """
+    return (
+        suggest_questions(db, bank_id, query, language, limit)
+        or _near_miss_titles(db, bank_id, query, limit)
+        or popular_questions(db, bank_id, language, limit)
+        or _broadest_titles(db, bank_id, limit)
+    )

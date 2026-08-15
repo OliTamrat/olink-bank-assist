@@ -168,14 +168,15 @@ a message takes, not about the branch's own logic.
    search text is rewritten, so a bad rewrite costs a miss, never a wrong
    answer.
 10. **Clarify, if the rewrite was different and still found nothing** — offer
-   the near-miss document titles as chips the customer can TAP rather than
-   fetching a teller. Gated on the rewrite having *changed* something, which
-   is the model's own verdict that the message was unclear: a clearly-written
+   the suggestions as chips the customer can TAP rather than fetching a
+   teller. Gated on the rewrite having *changed* something, which is the
+   model's own verdict that the message was unclear: a clearly-written
    question the bank has no content for must get the honest I-don't-know, not
    a question about its own typing. One per conversation.
 11. **Miss** → `Handoff` row + `unknown` template + **the contact request**
-   + **suggested topics** (`retrieval.suggest_topics`, real document titles
-   only, never invented). That order is deliberate — see below.
+   + **suggestions** (`retrieval.suggest` — this bank's own published FAQ
+   questions where it has a relevant one, its real document titles otherwise,
+   never invented either way; ADR-0035). That order is deliberate — see below.
 
 ### `LLMUnavailable` vs `LLMDeclined` — keep these distinct
 
@@ -391,14 +392,14 @@ advantage away for the sake of whatever shortcut was taken that afternoon.
 
 ### Where this stands — updated 2026-08-12
 
-**All three string tables are complete: 484 strings × 6 languages, no gaps,
+**All three string tables are complete: 485 strings × 6 languages, no gaps,
 nothing silently left in English.** Swahili (`sw`) is the newest column —
 first-pass drafted, not yet native-reviewed, exactly the status OM/TI/SO
 carry. See ADR-0018.
 
 | Table | Strings | Covers |
 |---|---|---|
-| `strings.json` | 22 | what the assistant says to a customer |
+| `strings.json` | 23 | what the assistant says to a customer |
 | `ui_strings.json` | 52 | the widget's own buttons and labels |
 | `admin_strings.json` | 410 | the staff panel, teller console included |
 
@@ -449,7 +450,7 @@ appears in no table anywhere.
 
 | | Where it lives | How it gets fixed |
 |---|---|---|
-| **Table text** — buttons, labels, the assistant's fixed templates, empty states, errors | `strings.json`, `ui_strings.json`, `admin_strings.json`; 484 rows in the workbook | A reviewer edits the row. Permanent, diffable, testable. |
+| **Table text** — buttons, labels, the assistant's fixed templates, empty states, errors | `strings.json`, `ui_strings.json`, `admin_strings.json`; 485 rows in the workbook | A reviewer edits the row. Permanent, diffable, testable. |
 | **Generated prose** — the AI Insights brief, every answer written from retrieved documents, the general-guidance replies | Nowhere. Written by Gemini per request, in the customer's language | Only the **prompt** can move it. No row to edit; the same question asked twice produces two different sentences. |
 
 So the review brief has to say which is which. Sheet-by-sheet corrections
@@ -516,7 +517,9 @@ was. Both were caught by re-running rather than by re-reading.
    ECMA-licensed activity.
 5. **Unknown → handoff, not guessing.** Every miss files a `Handoff` row
    carrying the customer's own words, so every gap becomes visible content
-   work. Suggestions offered alongside are real document titles only.
+   work. Suggestions offered alongside are text this bank already wrote —
+   a published FAQ question or a real document title, verbatim, never
+   composed (ADR-0035).
 6. **Multi-tenant from day one.** Every query filters `bank_id`; tests assert
    cross-tenant isolation (documents, chats, conversations, admin tokens).
 7. **Secrets fail closed, compare constant-time** (`hmac.compare_digest` for
@@ -1138,7 +1141,17 @@ Two properties that must not be relaxed:
   optimisation and would let a bank publish an answer to "what is my balance".
   `classifier.CURATABLE_INTENTS` is narrower than the auto-answer allowlist for
   exactly this reason, and a test proves `respond()` does not serve the
-  excluded intents.
+  excluded intents. Being *suggested* changes none of that: a chip is an
+  ordinary message when tapped, so a question a bank should never have
+  published still meets the account refusal rather than its own answer.
+
+**A published question is also what a miss offers** (ADR-0035). The chips under
+an I-don't-know are this bank's own questions where it has a relevant one —
+tapping one sends it verbatim, which is exactly the lookup key, so the customer
+who could not phrase the question reaches the approved answer in one tap.
+`served` counts servings and never offers: it is the number that tells a bank
+whether curating more is worth an afternoon, and it is also how the cold-start
+menu ranks itself.
 
 ### The 160 Dashen answers are English-only — the one open language gap
 
@@ -1284,34 +1297,29 @@ Remaining polish, not blockers:
       `docs/runbooks/ask-okm-refresh.md` has the two-command loop: sync
       `olink-knowledge`'s content, then seed the `okm` tenant against
       `BANKASSIST_DATABASE_URL`.
-- [ ] **Suggest published FAQ *questions* on a miss, not document titles.**
-      Next task, designed 2026-08-15 from the founder's screenshots of CBE's
-      own "Selam" bot on `combanketh.et`. Selam offers follow-ups phrased as
-      questions — "SWIFT code for Commercial Bank of Ethiopia (CBE)" — where
-      ours offers filing labels: "ATM and Debit Cards". A question is a thing
-      a customer clicks; a topic is a thing they have to translate back into a
-      question first, on the one screen where they have already failed once.
+- [x] **Suggest published FAQ *questions* on a miss, not document titles** —
+      shipped 2026-08-15, ADR-0035. `retrieval.suggest()` runs a four-step
+      cascade: a published question of this bank and language that shares a
+      content word with what was asked, else a near-miss document title, else
+      the most-served questions as a cold start, else the broadest titles as
+      before. One kind per turn, introduced by `related_questions` or
+      `related_topics` accordingly. Tapping a chip sends the question verbatim,
+      which is exactly the curated lookup's key — so the customer who could not
+      phrase it gets the bank's own approved answer in one tap. A tenant that
+      has curated nothing behaves exactly as it did.
 
-      **The material exists.** `Faq` holds real customer-phrased questions,
-      published per row, per language, served verbatim with no model in the
-      path. So the change is in `agent.suggestions_for()` /
-      `retrieval.suggest_topics()`: prefer published FAQ questions for this
-      bank and language, fall back to document titles when a bank has written
-      none. Same machinery the USSD menu needs (ADR-0032), so it is one build
-      serving two channels.
+      **What it does not change**, each held by a test in
+      `tests/test_faq_suggestions.py`: nothing is generated, drafts are never
+      advertised, questions never cross a tenant or a language, `served` counts
+      servings and not offers, and a tapped chip runs the whole pipeline again
+      so no guardrail is anywhere near this path.
 
-      **Watch the guardrail.** This path is what a customer sees after a miss,
-      and `test_a_customer_we_cannot_reach_is_never_promised_a_callback` plus
-      the contact-capture suite cover it — the account-closure document broke
-      that test by matching "person" (PR #168). Suggestions are navigation,
-      never answers: `suggest_topics` invents nothing today and must keep that
-      property, so offer a stored question verbatim, never a generated one.
-
-      Two smaller ideas from the same screenshots, not yet scheduled: an
+      Two smaller ideas from the same screenshots, still not scheduled: an
       optional `source_url` per document so a citation is clickable the way
       Selam links `combanketh.et/en/trade-service`, and a browse path beside
       free text (Selam's Next / Go Back / Main Menu), which is again the USSD
-      menu shape.
+      menu shape (ADR-0032) — and that menu can now read the same published
+      questions this cascade offers.
 
 - [ ] **Trigger the branch-prune workflow once** —
       `.github/workflows/prune-merged-branches.yml` (PR #114) has never

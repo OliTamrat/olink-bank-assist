@@ -33,7 +33,7 @@ from .llm import (
 )
 from .logging_config import log_event
 from .models import AuditLog, Bank, Conversation, Document, Faq, Handoff, Message
-from .retrieval import RetrievedChunk, retrieve, suggest_topics
+from .retrieval import RetrievedChunk, retrieve, suggest
 
 logger = logging.getLogger(__name__)
 
@@ -122,12 +122,26 @@ HANDOFF_REASONS = (
 RESOLVED = (ANSWERED, GENERAL_GUIDANCE, ACCOUNT_BLOCKED, COMPARISON)
 
 
-def suggestions_for(db: Session, bank_id: str, query: str) -> list[dict[str, Any]]:
-    """Near-miss document titles, in the shape a channel renders."""
+def suggestions_for(
+    db: Session, bank_id: str, query: str, language: str
+) -> list[dict[str, Any]]:
+    """What to offer after a miss, in the shape a channel renders.
+
+    A published FAQ question when this bank has a relevant one, a near-miss
+    document title otherwise — see `retrieval.suggest` for the order and why
+    it is that order. Both keys are always present so a channel can tell the
+    two apart without checking whether a field exists.
+    """
     return [
-        {"document_id": s.document_id, "title": s.title}
-        for s in suggest_topics(db, bank_id, query)
+        {"document_id": s.document_id, "title": s.title, "faq_id": s.faq_id}
+        for s in suggest(db, bank_id, query, language)
     ]
+
+
+def _offer_intro(suggestions: list[dict[str, Any]]) -> str:
+    """Which sentence introduces the list. A question is something to ask; a
+    title is something to browse, and the two do not read the same."""
+    return "related_questions" if suggestions[0]["faq_id"] else "related_topics"
 
 
 def _may_clarify(db: Session, conversation: Conversation) -> bool:
@@ -173,8 +187,9 @@ class ChatResult:
     language: str
     handoff_created: bool = False
     sources: list[dict[str, Any]] = field(default_factory=list)
-    # Topics offered when nothing confident was found. Real document titles
-    # from this bank only — see retrieval.suggest_topics.
+    # Offered when nothing confident was found: this bank's own published
+    # questions, or its real document titles — never generated text, and
+    # never another tenant's. See retrieval.suggest.
     suggestions: list[dict[str, Any]] = field(default_factory=list)
     # True when the reply is universally-standard banking guidance rather than
     # this bank's own published content. Surfaced so it is never mistaken for
@@ -723,7 +738,7 @@ def handle_message(
         # clarifying question and the plain miss. Only on the paths that
         # failed, so an answered turn never runs it.
         near_misses = (
-            suggestions_for(db, bank.id, query)
+            suggestions_for(db, bank.id, query, language)
             if answer is None and general is None
             else []
         )
@@ -779,11 +794,12 @@ def handle_message(
             #
             # The customer who most needs this is the one who cannot easily
             # rephrase — so the offer has to be answerable by TAPPING, not by
-            # typing again. These are real document titles from this bank
-            # (suggest_topics invents nothing), the widget renders them as
-            # chips, and every other channel gets them listed in the reply
-            # text because a chip that only exists in a JSON field is
-            # invisible on Telegram.
+            # typing again. These are this bank's own published questions, or
+            # its real document titles where it has curated none — `suggest`
+            # invents nothing either way. The widget renders them as chips,
+            # and every other channel gets them listed in the reply text
+            # because a chip that only exists in a JSON field is invisible on
+            # Telegram.
             #
             # No handoff is filed with `needs_person`: nobody is waiting for a
             # callback, and putting a question we have not understood yet into
@@ -830,10 +846,11 @@ def handle_message(
             # differently from the knowledge base gets nothing — and most
             # people will not rephrase to match a corpus they can't see.
             # Rather than loosening the informativeness gate (which is what
-            # stops confidently-wrong answers), offer the near misses as
-            # topics. These are real document titles, so this can't invent
-            # a product or figure; the handoff is still filed either way,
-            # so a genuine knowledge gap stays visible to the bank.
+            # stops confidently-wrong answers), offer somewhere to go: a
+            # published question this bank has already answered, or a
+            # near-miss document title. Both are text the bank wrote, so this
+            # can't invent a product or figure; the handoff is still filed
+            # either way, so a genuine knowledge gap stays visible to the bank.
             suggestions = near_misses
             if suggestions:
                 # The titles go in the reply *text*, not only in the
@@ -844,7 +861,7 @@ def handle_message(
                 # arrives. The widget showing both is mild redundancy; the
                 # alternative is a whole channel that reads as broken.
                 listed = "\n".join(f"• {s['title']}" for s in suggestions)
-                reply = f"{reply}\n\n{t(language, 'related_topics')}\n{listed}"
+                reply = f"{reply}\n\n{t(language, _offer_intro(suggestions))}\n{listed}"
             # The disclaimer is triggered by intent (a regex match, decided
             # before retrieval ever runs), not by whether specific content
             # was found — it must never be skippable just because a pressure

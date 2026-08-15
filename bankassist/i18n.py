@@ -163,6 +163,12 @@ _NOTES: dict[str, str] = {
         "about one of these?', which competed with the contact request below it "
         "and meant customers answered the wrong question. Ends with a colon."
     ),
+    "related_questions": (
+        "The same job as 'related_topics', but the list below it is made of whole "
+        "QUESTIONS the bank has published — the customer taps one and it is asked "
+        "as their next message. So this must invite asking, not browsing. Same "
+        "two rules: a statement rather than a question, ending in a colon."
+    ),
     "ask_contact": (
         "The one question the turn is for. It is always the LAST thing in the "
         "message, so it must work as a closing line. Asks for a name and a phone "
