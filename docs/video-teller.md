@@ -271,6 +271,17 @@ gotchas list.
    channel indefinitely.
 6. **The customer initiates. Always.** No API path exists that creates a
    session addressed at a customer.
+7. **A live camera always has an off switch on screen.** Found on a real call
+   (2026-08-15): on an *audio* session the customer pressed "Show my ID", the
+   camera came on — the teller's dashboard showed the video — and no control
+   anywhere turned it off, because every camera control was keyed on the media
+   the customer had CHOSEN rather than on what the camera was doing. The
+   customer's own screen meanwhile read "your camera is not available", since
+   `setCameraEnabled(true)` had rejected after the track was already
+   published, and the code took that rejection as proof the camera was off.
+   A camera pointed at somebody's home is not a state this product may enter
+   without an exit, and "the session type says this cannot be happening" is
+   exactly the reasoning that produced it. `tests/test_call_camera_controls.py`.
 
 ---
 

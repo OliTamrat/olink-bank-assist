@@ -1929,12 +1929,21 @@
     // exists yet. Reading it off `room` hid the camera button for the whole
     // connect on a video call — the control was missing exactly while the
     // customer was watching the screen waiting for something to happen.
-    var hasCam = !!session && session.media === "video";
-    var micOn = true, camOn = hasCam;
+    var chose = !!session && session.media === "video";
+    var micOn = true, camOn = chose;
     if (room) {
       micOn = room.localParticipant.isMicrophoneEnabled;
       camOn = room.localParticipant.isCameraEnabled;
     }
+    // ...but a LIVE camera always gets a button to turn it off, whatever the
+    // customer chose at the start. Reported from the field: on an audio call
+    // the ID share put the camera on, the teller saw video, and the only
+    // control that could have closed it was hidden because the session said
+    // "audio" — so the camera stayed on with nothing on screen to stop it.
+    // A camera pointed at somebody's home is not a state the product may
+    // enter without an exit, and "the session type says this cannot be
+    // happening" is exactly the reasoning that produced it.
+    var hasCam = chose || camOn;
     var mic = document.getElementById("btnMic");
     mic.innerHTML = callIcon(micOn ? "mic" : "micoff");
     mic.classList.toggle("off", !micOn);
@@ -1976,9 +1985,14 @@
   });
   document.getElementById("btnCam").addEventListener("click", function () {
     if (!room) return;
+    // Turning the camera off by hand ends an ID share too. Leaving the timer
+    // running would keep a countdown on screen for a camera that is already
+    // off, and then "turn it off" a second time a minute later — on a video
+    // call, where the customer had meanwhile turned it back on deliberately.
+    if (room.localParticipant.isCameraEnabled && idTimer) stopIdShare();
     room.localParticipant
       .setCameraEnabled(!room.localParticipant.isCameraEnabled)
-      .then(paintControls);
+      .then(paintControls, paintControls);
   });
   /* ------------------------------------------------------- showing an ID
    *
@@ -2012,7 +2026,13 @@
   function stopIdShare() {
     if (idTimer) { clearInterval(idTimer); idTimer = null; }
     document.getElementById("idHint").classList.remove("on");
-    if (room && !camWasOn) {
+    // `camWasOn` is only a reason to LEAVE the camera on when the customer
+    // asked for a video call in the first place. On an audio call there is no
+    // state in which they wanted it running, so stopping the share always
+    // stops the camera — including after a first attempt that failed, turned
+    // it on anyway, and left `camWasOn` true for the second.
+    var keep = camWasOn && session && session.media === "video";
+    if (room && !keep) {
       room.localParticipant.setCameraEnabled(false).then(paintControls, paintControls);
     } else {
       paintControls();
@@ -2029,6 +2049,12 @@
     }
     camWasOn = room.localParticipant.isCameraEnabled;
     room.localParticipant.setCameraEnabled(true).then(function () {
+      // Clear whatever the last attempt said. A first press that failed left
+      // "your camera is not available" on screen, and nothing ever took it
+      // down — so the customer read that while the teller was looking at
+      // their face. A stale error is worse than no message: it describes a
+      // state the product is demonstrably not in.
+      callStatus("");
       idLeft = ID_SECONDS;
       paintIdHint();
       document.getElementById("idHint").classList.add("on");
@@ -2041,16 +2067,36 @@
         paintIdHint();
         if (idLeft <= 0) stopIdShare();
       }, 1000);
-    }).catch(function () {
+    // The rejection handler is the SECOND argument to then(), never a
+    // trailing .catch(). A .catch() there also swallows anything thrown by
+    // the success handler above it — so one broken line in the block that
+    // runs when the camera came on would report "your camera is not
+    // available" about a camera that is, at that moment, live on the
+    // teller's screen. Two opposite states, one message, and the button left
+    // in neither.
+    }, function () {
       // Denied permission, or no camera at all. Say so where they are looking
       // rather than leaving a button that does nothing.
       document.getElementById("callStatus").textContent =
         "Your camera is not available — read the number on your ID to the teller instead.";
+      // The attempt can fail with the camera already publishing. Repaint from
+      // what is actually true rather than from what was asked for, so the
+      // off switch appears if there is now something to switch off.
+      paintControls();
     });
   }
 
   document.getElementById("btnId").addEventListener("click", function () {
-    if (idTimer) { stopIdShare(); return; }
+    // A running timer is not the only way the camera can be on. If a start
+    // half-succeeded — camera live, timer never set, because the promise
+    // rejected after the track was already published — then the old
+    // `if (idTimer)` test sent the customer back through startIdShare, which
+    // turned an already-on camera on again and looked like a dead button.
+    // The question this control answers is "is my camera on", so ask that.
+    if (idTimer || (room && room.localParticipant.isCameraEnabled)) {
+      stopIdShare();
+      return;
+    }
     startIdShare();
   });
   document.getElementById("idDone").addEventListener("click", stopIdShare);

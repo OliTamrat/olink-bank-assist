@@ -192,6 +192,70 @@ def test_when_nothing_matches_the_most_asked_questions_are_the_cold_start(
     )
 
 
+# The three that were actually on screen on the live Dashen tenant, out of 160
+# published questions, because cards were what happened to get tapped first.
+_CARDS = (
+    ("Can I use my Card in Ethiopia?", "Yes, locally and internationally."),
+    ("How can I raise my Card dispute?", "Call the Contact Center on 6333."),
+    ("How can I secure my Card from fraud?", "Never share your PIN."),
+)
+
+
+def test_the_cold_start_menu_does_not_fill_up_with_one_subject(
+    client: TestClient, db_session: Session, demo_bank: Any
+) -> None:
+    """Found on the live tenant, and it is a feedback loop rather than a bad
+    sort: the three offered get tapped, their `served` goes up, and they are
+    the three offered next time. Whatever is asked first owns every slot, and
+    nothing would ever have surfaced the other 157.
+
+    A bank answering "what can you do?" with three questions about cards has
+    described itself as a card helpdesk.
+    """
+    for question, answer in _CARDS:
+        _publish(client, demo_bank, question, answer)
+    _publish(client, demo_bank, "How do I open a savings account?", "Visit a branch.")
+    _publish(client, demo_bank, "Do you offer a diaspora mortgage?", "Yes.")
+
+    titles = [s.title for s in suggest(db_session, demo_bank.id, "zzzz qqqq", "en")]
+
+    assert len(titles) == 3, "the menu still fills"
+    assert len([t for t in titles if "card" in t.lower()]) == 1, (
+        f"the menu is still one subject wide: {titles}"
+    )
+
+
+def test_the_most_asked_question_still_leads_the_cold_start(
+    client: TestClient, db_session: Session, demo_bank: Any
+) -> None:
+    """Variety reorders the slots below the top one; it does not overrule what
+    customers actually ask. The most-served question is still first."""
+    for question, answer in _CARDS:
+        _publish(client, demo_bank, question, answer)
+    _publish(client, demo_bank, "How do I open a savings account?", "Visit a branch.")
+
+    for _ in range(3):
+        client.post("/chat/demo", json={"message": _CARDS[2][0], "language": "en"})
+
+    titles = [s.title for s in suggest(db_session, demo_bank.id, "zzzz qqqq", "en")]
+    assert titles[0] == _CARDS[2][0], titles
+
+
+def test_a_bank_with_only_one_subject_still_gets_a_full_menu(
+    client: TestClient, db_session: Session, demo_bank: Any
+) -> None:
+    """An offer the customer can tap beats an empty slot. A bank whose whole
+    curated table is about cards genuinely has nothing else to show, and
+    hiding two thirds of it to satisfy a variety rule would be the rule
+    outranking the point of the feature."""
+    for question, answer in _CARDS:
+        _publish(client, demo_bank, question, answer)
+
+    hits = suggest(db_session, demo_bank.id, "zzzz qqqq", "en")
+    assert len(hits) == 3
+    assert {s.title for s in hits} == {q for q, _a in _CARDS}
+
+
 def test_a_bank_that_has_curated_nothing_still_gets_document_titles(
     client: TestClient, cbe_bank: Any
 ) -> None:
