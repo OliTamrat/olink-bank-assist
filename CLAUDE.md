@@ -1284,6 +1284,35 @@ Remaining polish, not blockers:
       `docs/runbooks/ask-okm-refresh.md` has the two-command loop: sync
       `olink-knowledge`'s content, then seed the `okm` tenant against
       `BANKASSIST_DATABASE_URL`.
+- [ ] **Suggest published FAQ *questions* on a miss, not document titles.**
+      Next task, designed 2026-08-15 from the founder's screenshots of CBE's
+      own "Selam" bot on `combanketh.et`. Selam offers follow-ups phrased as
+      questions — "SWIFT code for Commercial Bank of Ethiopia (CBE)" — where
+      ours offers filing labels: "ATM and Debit Cards". A question is a thing
+      a customer clicks; a topic is a thing they have to translate back into a
+      question first, on the one screen where they have already failed once.
+
+      **The material exists.** `Faq` holds real customer-phrased questions,
+      published per row, per language, served verbatim with no model in the
+      path. So the change is in `agent.suggestions_for()` /
+      `retrieval.suggest_topics()`: prefer published FAQ questions for this
+      bank and language, fall back to document titles when a bank has written
+      none. Same machinery the USSD menu needs (ADR-0032), so it is one build
+      serving two channels.
+
+      **Watch the guardrail.** This path is what a customer sees after a miss,
+      and `test_a_customer_we_cannot_reach_is_never_promised_a_callback` plus
+      the contact-capture suite cover it — the account-closure document broke
+      that test by matching "person" (PR #168). Suggestions are navigation,
+      never answers: `suggest_topics` invents nothing today and must keep that
+      property, so offer a stored question verbatim, never a generated one.
+
+      Two smaller ideas from the same screenshots, not yet scheduled: an
+      optional `source_url` per document so a citation is clickable the way
+      Selam links `combanketh.et/en/trade-service`, and a browse path beside
+      free text (Selam's Next / Go Back / Main Menu), which is again the USSD
+      menu shape.
+
 - [ ] **Trigger the branch-prune workflow once** —
       `.github/workflows/prune-merged-branches.yml` (PR #114) has never
       been run. Dry run first from the Actions tab, then tick "write".
