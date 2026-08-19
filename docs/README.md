@@ -42,6 +42,7 @@ Three rules keep this tree true:
 | `integrations/` | One page per external service: what it needs, what it signs, what fails silently |
 | `decisions/` | ADRs — the *why* behind every load-bearing choice, with PR references |
 | `market-position.md` | Competitive landscape, positioning, language-expansion order |
+| `language-ai-foundation.md` | The African language-AI capability layer: build order, what we own vs. adapt, what it refuses |
 | `video-teller.md`, `per-person-logins.md` | Pre-OKM deep dives, kept in place |
 
 ## Writing rules
