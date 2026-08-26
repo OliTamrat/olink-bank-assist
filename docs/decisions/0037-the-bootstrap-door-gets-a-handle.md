@@ -15,14 +15,32 @@ What it shipped without was any way to walk through the door it left. The only
 tooling on that path was `show_token`, which prints a token and leaves the
 operator to hand-write an HTTP call.
 
-The bill arrived on 2026-08-26. Every seeded tenant holds documents and roles
-and **no users** — which is itself correct, since a seeded default account
-with a known password would be far worse — so every email-and-password sign-in
-on all four banks failed with *"that email and password did not match"*. That
-sentence is true and it names nothing: it looks identical to a forgotten
-password, a mistyped address, a broken deploy and a dead database. The founder
-reported it as an outage across every tenant, and diagnosing it took a session
-that ended with no supported command to fix it.
+The bill arrived on 2026-08-26, when sign-in failed on all four banks with
+*"that email and password did not match"*.
+
+**Separate what was measured from what was guessed here, because this ADR
+originally ran them together.** Measured, and reproducible on a clean
+database: a freshly seeded tenant holds documents and roles and **no users**,
+so email-and-password sign-in on it cannot work until somebody bootstraps the
+first administrator. That is itself correct — a seeded default account with a
+known password would be far worse — and it is the whole justification for the
+decision below.
+
+What was *guessed* was that this described the live tenants. Nobody looked:
+production is unreachable from an agent sandbox, and the conclusion came from
+replaying the deploy sequence locally. The founder later recalled having
+created an administrator through the token, which if right means at least one
+live tenant does have users and his lockout was a forgotten password, not an
+empty table. Both causes produce the identical sentence on the identical
+screen, which is the actual finding:
+
+**the sign-in screen cannot distinguish "no account exists here" from "wrong
+password" from "the token retired", and neither could the session spent
+diagnosing it.** It looks identical to a broken deploy and a dead database
+too. That is a defect in its own right, tracked separately.
+
+The decision below is unchanged by which cause it was: a tenant with no users
+needs a way to make the first one, and there wasn't one.
 
 Two properties had to hold for whatever replaced that.
 
@@ -79,8 +97,22 @@ own tenant needs this most, and refusing would only send them to `psql`.
   which is a command-injection hole regardless of who may press the button.
 - `pyyaml` joins the dev dependencies so those checks cannot skip silently,
   the same reason `openpyxl` and `fonttools` are declared.
-- **This is not a password reset.** It creates accounts; it cannot change an
-  existing credential. That remains the Account page.
+- **`create_admin` is not a password reset**, and the gap that leaves is real
+  enough to close in the same breath. `change_own_password` is the only route
+  that writes a password and it requires the current one; on a tenant that has
+  users the token authenticates nothing; no colleague can reset anybody; MFA
+  recovery codes recover the *second* factor. So a forgotten admin password
+  was a total lockout with no supported path back, and the best `create_admin`
+  could offer was "make a second account under a different address and abandon
+  the first" — which is not a recovery. Hence
+  `python -m bankassist.reset_password <slug> --email …`, same discipline,
+  which additionally **revokes every existing session** (as
+  `change_own_password` does — a reset that left them alive keeps whoever knew
+  the old password signed in) and **deliberately does not touch the second
+  factor**: clearing MFA from a command line would make ADR-0027's second
+  factor something one command removes. It reports whether one is enrolled
+  instead, so nobody reads "password reset" as "back in" and then meets a code
+  prompt they cannot answer.
 
 ## What was considered and rejected
 

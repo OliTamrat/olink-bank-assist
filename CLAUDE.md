@@ -368,10 +368,22 @@ The load-bearing parts, none of which are obvious from the diff:
   signs in as that person for everyone after.
 
   **And a door needs a handle.** ADR-0031 shipped without one, and the bill
-  came on 2026-08-26: a seeded tenant holds documents and roles and **no
-  users**, so every sign-in on all four banks failed with "that email and
-  password did not match" — true, and it names nothing — with no supported
-  command to fix it. There are two now, and neither ever puts a password on a
+  came on 2026-08-26, when sign-in failed on all four banks with "that email
+  and password did not match" — true, and it names nothing.
+
+  **Two different faults produce that one sentence, and the session spent
+  diagnosing it could not tell them apart either.** A freshly seeded tenant
+  holds documents and roles and **no users** (measured, reproducible), so
+  sign-in on it cannot work until somebody bootstraps the first
+  administrator. A tenant that *does* have users produces the same sentence
+  for a forgotten password — and there was no reset path in the product at
+  all. Do not record either as *the* cause of that day: production was never
+  observed from the sandbox, and the founder later recalled creating an
+  administrator through the token. **The real finding is that the sign-in
+  screen cannot distinguish "no account here" from "wrong password" from "the
+  token retired"** — nor from a broken deploy or a dead database.
+
+  Both holes are now closed, and neither command ever puts a password on a
   command line: `python -m bankassist.create_admin <slug> --email you@bank.et`
   prompts for it twice via `getpass`, and the **Create first administrator**
   workflow reads it from the `BOOTSTRAP_ADMIN_PASSWORD` repository secret and
@@ -382,7 +394,17 @@ The load-bearing parts, none of which are obvious from the diff:
   absence and the workflow's agreement with the code it calls — its role menu
   offered a `viewer` role this product does not have, which would have
   authenticated, fetched the database secret, and failed on the last line.
-  Runbook: `docs/runbooks/create-the-first-administrator.md`.
+
+  `python -m bankassist.reset_password <slug> --email you@bank.et` is the
+  other half, and it exists because a forgotten admin password was a **total
+  lockout**: `change_own_password` needs the current one, the token
+  authenticates nothing once a user exists, no colleague can reset anybody,
+  and recovery codes recover the *second* factor. It **revokes every session**
+  (as the route does — a reset that left them alive keeps whoever knew the old
+  password signed in) and **never touches the second factor**: clearing MFA
+  from a command line would make ADR-0027's second factor something one
+  command removes. It reports whether one is enrolled instead. Runbook:
+  `docs/runbooks/create-the-first-administrator.md`.
 
 ## Multilingual completeness (GOLDEN RULE — applies to every Olink product)
 
