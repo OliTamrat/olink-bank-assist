@@ -1,0 +1,118 @@
+# Bootstrap a tenant's first administrator against the production database.
+#
+# ADR-0031 retired the admin token as a login: it opens exactly one door —
+# creating the first administrator — and nothing else. That is the right
+# shape, and it shipped with no way to walk through it. The cost arrived on
+# 2026-08-26, when every sign-in on every tenant failed because the seeds
+# create documents and roles and deliberately no users, and the only fix
+# needed a connection string nobody had to hand.
+#
+# `python -m bankassist.create_admin` is that fix for anyone holding the
+# database URL. This workflow is the same command for anyone who does not: it
+# runs on the deployer's credentials, exactly like the migration step in
+# deploy.yml, and reaches the database the same way.
+#
+# THE PASSWORD IS A REPOSITORY SECRET, NEVER AN INPUT. A workflow_dispatch
+# input is rendered in the Actions UI, stored on the run, and readable by
+# anyone with read access to this repository — a password typed into one is a
+# password published. GitHub masks secrets in logs instead, and this job pipes
+# it to the command's `--stdin`, so it never reaches argv or a process list
+# either. Set BOOTSTRAP_ADMIN_PASSWORD, run this, then delete it.
+name: Create first administrator
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "Bank slug (demo, cbe, dashen, awash)"
+        required: true
+      email:
+        description: "Sign-in address for the new administrator"
+        required: true
+      display_name:
+        description: "Display name (optional)"
+        required: false
+        default: ""
+      role:
+        description: "Role for this account"
+        required: false
+        default: "admin"
+        type: choice
+        # Must match permissions.BUILTIN_ROLES — a choice the command will
+        # reject is worse than a free-text box, because the menu implies it is
+        # valid. tests/test_create_admin.py compares the two.
+        options: [admin, operator, teller]
+
+# Serialised against itself. Two runs creating the first administrator of the
+# same tenant at once is not a state worth reasoning about.
+concurrency:
+  group: create-first-administrator
+  cancel-in-progress: false
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create the account
+        env:
+          # Every value the run block uses arrives through the environment,
+          # never through `${{ }}` interpolated into the script itself: an
+          # input expanded inline is expanded by the *runner*, before any
+          # shell quoting can apply to it, which is a command-injection hole
+          # regardless of who is allowed to press the button.
+          SLUG: ${{ inputs.slug }}
+          EMAIL: ${{ inputs.email }}
+          ROLE: ${{ inputs.role }}
+          DISPLAY_NAME: ${{ inputs.display_name }}
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          # This project rotated four admin tokens on 2026-08-10 after one
+          # appeared in a build log. `create_admin` has no --password flag for
+          # exactly that reason, and tests/test_create_admin.py keeps it that
+          # way; the pipe below is the supported alternative.
+          BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.BOOTSTRAP_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BOOTSTRAP_ADMIN_PASSWORD}" ]; then
+            echo "::error::Set a repository secret named BOOTSTRAP_ADMIN_PASSWORD first (Settings → Secrets and variables → Actions), at least 12 characters. Delete it once you have signed in."
+            exit 1
+          fi
+
+          pip install .
+
+          # Same fetch, same failure mode and same BOM/whitespace strip as the
+          # migration step in deploy.yml — see the comments there. `set -e`
+          # does not propagate a failing command substitution through a plain
+          # assignment, hence the explicit `|| exit`.
+          DB_URL="$(gcloud secrets versions access latest --secret=bankassist-database-url --project="${PROJECT_ID}")" \
+            || { echo "::error::Failed to fetch bankassist-database-url from Secret Manager — check it exists and the deployer service account has secretAccessor on it."; exit 1; }
+          export BANKASSIST_DATABASE_URL="$(printf '%s' "$DB_URL" | sed '1s/^\xef\xbb\xbf//' | tr -d '[:space:]')"
+
+          args=("$SLUG" --email "$EMAIL" --role "$ROLE")
+          if [ -n "${DISPLAY_NAME}" ]; then
+            args+=(--name "$DISPLAY_NAME")
+          fi
+
+          printf '%s' "${BOOTSTRAP_ADMIN_PASSWORD}" \
+            | python -m bankassist.create_admin "${args[@]}" --stdin
+
+      - name: What to do next
+        if: success()
+        run: |
+          echo "::notice::Sign in at https://bankassist-430565798339.us-east1.run.app/admin"
+          echo "::warning::Now DELETE the BOOTSTRAP_ADMIN_PASSWORD secret, and change the password from the Account page once you are in."

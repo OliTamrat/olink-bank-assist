@@ -367,6 +367,23 @@ The load-bearing parts, none of which are obvious from the diff:
   because `conftest.create_user` bootstraps through that one door and then
   signs in as that person for everyone after.
 
+  **And a door needs a handle.** ADR-0031 shipped without one, and the bill
+  came on 2026-08-26: a seeded tenant holds documents and roles and **no
+  users**, so every sign-in on all four banks failed with "that email and
+  password did not match" — true, and it names nothing — with no supported
+  command to fix it. There are two now, and neither ever puts a password on a
+  command line: `python -m bankassist.create_admin <slug> --email you@bank.et`
+  prompts for it twice via `getpass`, and the **Create first administrator**
+  workflow reads it from the `BOOTSTRAP_ADMIN_PASSWORD` repository secret and
+  pipes it to `--stdin` for whoever does not hold the connection string. **Do
+  not add a `--password` flag**: argv is the shell's history, the process list
+  and every CI log, and this project rotated four admin tokens on 2026-08-10
+  over exactly that. `tests/test_create_admin.py` guards both the flag's
+  absence and the workflow's agreement with the code it calls — its role menu
+  offered a `viewer` role this product does not have, which would have
+  authenticated, fetched the database secret, and failed on the last line.
+  Runbook: `docs/runbooks/create-the-first-administrator.md`.
+
 ## Multilingual completeness (GOLDEN RULE — applies to every Olink product)
 
 **Founder rule, 2026-08-10, and it governs every product with multilingual

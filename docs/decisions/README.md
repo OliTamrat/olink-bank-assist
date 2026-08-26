@@ -46,3 +46,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0034 | Narrow documents add, broad ones displace |
 | 0035 | A miss offers questions, not filing labels |
 | 0036 | The Live Preview is real traffic, and no report counts it |
+| 0037 | The bootstrap door gets a handle, and the password never touches argv |
