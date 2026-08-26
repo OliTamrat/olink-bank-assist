@@ -106,6 +106,30 @@ def second_bank(client: TestClient, db_session: Session) -> object:
     return bank
 
 
+@pytest.fixture()
+def bare_bank(client: TestClient, db_session: Session) -> object:
+    """A tenant with nothing in it — no documents, no traffic, default colour.
+
+    What a pilot bank actually is on the morning somebody first signs in, and
+    the state every other fixture skips past: `demo_bank` and the prospect
+    tenants all arrive pre-seeded, so nothing in the suite had ever rendered
+    the product empty. That is how a dashboard of zeroes with no explanation
+    survived to be found in a browser instead.
+
+    Roles are seeded because a tenant created through the product gets them;
+    a bank row inserted without them cannot create its first administrator.
+    """
+    from bankassist.models import Bank
+    from bankassist.roles import ensure_builtin_roles
+
+    bank = Bank(slug="bare", name="Bare Bank")
+    db_session.add(bank)
+    db_session.flush()
+    ensure_builtin_roles(db_session, bank.id)
+    db_session.commit()
+    return bank
+
+
 os.environ.setdefault("BANKASSIST_DATABASE_URL", "sqlite:///:memory:")
 
 

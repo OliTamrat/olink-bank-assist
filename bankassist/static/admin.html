@@ -1174,6 +1174,40 @@ main { padding: 20px 24px 40px; }
 .hello .big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .hello .cap { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 
+/* ------------------------------------------------------------ cold start
+   Shown only while a tenant has never had a real customer conversation. It
+   is the first thing on the page in that state, because on a fresh tenant
+   every number below it is zero and none of them say why. */
+.setup { background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 18px 20px; margin-bottom: 18px; }
+.setup .head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.setup h2 { font-size: 17px; letter-spacing: -.01em; }
+.setup .count { margin-left: auto; font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+.setup .lead { color: var(--muted); font-size: 13.5px; margin: 4px 0 14px;
+  max-width: 62ch; }
+.setup ol { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.setup li { display: flex; align-items: flex-start; gap: 12px;
+  padding: 11px 0; border-top: 1px solid var(--line); }
+.setup li:first-child { border-top: 0; }
+.setup .tick { flex: none; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 11px; margin-top: 1px;
+  border: 1px solid var(--line); color: var(--faint); }
+.setup li.done .tick { background: var(--ok-bg); border-color: transparent;
+  color: var(--ok); }
+.setup .what { flex: 1; min-width: 0; }
+.setup .what b { font-size: 14px; font-weight: 600; }
+.setup li.done .what b { color: var(--muted); font-weight: 500; }
+.setup .what p { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.setup .act { flex: none; align-self: center; }
+.setup .isdone { font-size: 11.5px; color: var(--ok); text-transform: uppercase;
+  letter-spacing: .06em; }
+@media (max-width: 640px) {
+  .setup li { flex-wrap: wrap; }
+  .setup .act { margin-left: 32px; }
+}
+
 /* ---------------------------------------------------------------- cards */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(198px, 1fr));
   gap: 14px; margin-bottom: 18px; }
@@ -3925,11 +3959,17 @@ function channelPanel(rows, opts) {
    chart and the ~40 lines of pointer-mapping its hover tooltip needed —
    native titles on each bar carry the same readout. */
 function dayBars(daily) {
-  if (!daily || !daily.length) {
+  var max = 0;
+  (daily || []).forEach(function (d) { if (d.conversations > max) max = d.conversations; });
+  // Emptiness is a series with nothing IN it, not an absent series. The
+  // backend fills the whole window so every day has a bar to draw, so a fresh
+  // tenant handed thirty zero-count days passed the old `!daily.length` check
+  // and rendered a tall silent rectangle with a date axis under it — the
+  // largest thing on the dashboard, and the only card that did not say what
+  // every other one said. Found by looking at the page on an empty tenant.
+  if (!max) {
     return '<div class="empty">' + esc(A("no_days_yet")) + "</div>";
   }
-  var max = 0;
-  daily.forEach(function (d) { if (d.conversations > max) max = d.conversations; });
   // ~6 date labels whatever the window; the last day always gets one, so the
   // step-labelled neighbour just before it yields rather than crowding.
   var step = Math.max(1, Math.ceil(daily.length / 6));
@@ -3949,8 +3989,70 @@ function dayBars(daily) {
   }).join("") + "</div>";
 }
 
+/* The first five minutes. A fresh tenant's dashboard was every number zeroed
+   and every card saying "nothing yet" — all true, and none of it saying the
+   one thing that mattered: this bank has no knowledge base, so the assistant
+   cannot answer anything. Meanwhile the Live Preview underneath offered "How
+   do I open an account?", which was exactly the question it could not answer.
+
+   Ordered by what blocks what. Knowledge first because nothing works without
+   it; team last because a bank can run on one account.
+
+   Only for someone who can act on it: the blocking step is writing documents,
+   and a checklist of things you cannot do is worse than no checklist. Each
+   row offers its link only if that page would actually open for this person,
+   so the card never advertises a door that is locked. */
+var SETUP_STEPS = [
+  { key: "knowledge", page: "docs" },
+  { key: "brand", page: "settings" },
+  { key: "channels", page: "channels" },
+  { key: "team", page: "team" },
+];
+
+function setupCard(setup) {
+  if (!setup || setup.live || !can("documents.write")) return "";
+  var rows = setup.steps.map(function (step) {
+    var meta = SETUP_STEPS.filter(function (m) { return m.key === step.key; })[0];
+    if (!meta) return "";
+    var page = PAGES.filter(function (p) { return p.id === meta.page; })[0];
+    var act = step.done
+      ? '<span class="isdone">' + esc(A("setup_step_done")) + "</span>"
+      : (page && mayOpen(page)
+        ? '<button class="btn ghost sm" data-setup="' + esc(meta.page) + '">' +
+          esc(A("setup_open")) + "</button>"
+        : "");
+    return '<li class="' + (step.done ? "done" : "") + '">' +
+      '<span class="tick" aria-hidden="true">' + (step.done ? "\u2713" : "") + "</span>" +
+      '<span class="what"><b>' + esc(A("setup_" + step.key)) + "</b>" +
+      "<p>" + esc(A("setup_" + step.key + "_help")) + "</p></span>" +
+      '<span class="act">' + act + "</span></li>";
+  }).join("");
+  return '<div class="setup noprint"><div class="head"><h2>' +
+    esc(A("setup_title")) + "</h2>" +
+    '<span class="count">' + esc(A("setup_progress", null,
+      { done: setup.done_count, total: setup.total })) + "</span></div>" +
+    '<p class="lead">' + esc(A("setup_sub")) + "</p>" +
+    "<ol>" + rows + "</ol></div>";
+}
+
+function wireSetupCard() {
+  Array.prototype.forEach.call(
+    document.querySelectorAll("[data-setup]"), function (b) {
+      b.onclick = function () { go(b.getAttribute("data-setup")); };
+    });
+}
+
 function loadDashboard() {
-  api("/analytics?days=" + state.days).then(function (a) {
+  // Two requests, because they answer different questions and one of them
+  // must not move with the window: `live` is all-time, so an established
+  // tenant with a quiet month never gets its setup card back.
+  Promise.all([
+    api("/analytics?days=" + state.days),
+    can("documents.write") ? api("/setup").catch(function () { return null; })
+      : Promise.resolve(null),
+  ]).then(function (both) {
+    var a = both[0];
+    state.setup = both[1];
     state.analytics = a;
     var langTotal = a.languages.reduce(function (s, r) { return s + r.count; }, 0);
     var qRows = a.outcomes.filter(function (r) { return SUBSTANTIVE.indexOf(r.outcome) > -1; });
@@ -3983,6 +4085,8 @@ function loadDashboard() {
       '<div style="flex:1"></div>' +
       '<button class="btn ghost sm" id="dl-csv">' + esc(A("export_csv")) + "</button>" +
       '<button class="btn ghost sm" id="do-print">' + esc(A("print")) + "</button></div>";
+
+    h += setupCard(state.setup);
 
     var openNow = a.handoffs.open;
     h += '<div class="hello noprint"><div>' +
@@ -4130,6 +4234,7 @@ function loadDashboard() {
     Array.prototype.forEach.call(document.querySelectorAll("[data-days]"), function (b) {
       b.onclick = function () { state.days = parseInt(b.getAttribute("data-days"), 10); loadDashboard(); };
     });
+    wireSetupCard();
     $("dl-csv").onclick = exportAnalytics;
     $("do-print").onclick = function () { window.print(); };
     wireDrills();
