@@ -30,10 +30,54 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bankassist.i18n import STRINGS_PATH, SUPPORTED_LANGUAGES  # noqa: E402
+from bankassist.i18n import (  # noqa: E402
+    ADMIN_STRINGS_PATH,
+    STRINGS_PATH,
+    SUPPORTED_LANGUAGES,
+    UI_STRINGS_PATH,
+)
 
 SRC = Path(__file__).resolve().parent.parent / "review" / "strings.tsv"
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+# The sheet carries three tables, distinguished by a key prefix, and this
+# script used to know about one of them. Every `ui.` and `admin.` row — of 551
+# rows, 528 of them — was rejected as an unknown key, so a reviewer could
+# correct every word the staff read and have none of it land. Longest prefix
+# first: "" matches everything, so it has to be tried last.
+TABLES: tuple[tuple[str, Path], ...] = (
+    ("admin.", ADMIN_STRINGS_PATH),
+    ("ui.", UI_STRINGS_PATH),
+    ("", STRINGS_PATH),
+)
+
+
+def unescape(cell: str) -> str:
+    """Reverse `i18n_export.escape`.
+
+    Scanned rather than three chained `.replace()` calls, which get `\\n` — a
+    real backslash followed by an n — wrong in both orders.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(cell):
+        if cell[i] == "\\" and i + 1 < len(cell):
+            nxt = cell[i + 1]
+            if nxt == "n":
+                out.append("\n")
+                i += 2
+                continue
+            if nxt == "t":
+                out.append("\t")
+                i += 2
+                continue
+            if nxt == "\\":
+                out.append("\\")
+                i += 2
+                continue
+        out.append(cell[i])
+        i += 1
+    return "".join(out)
 
 
 def main() -> int:
@@ -57,25 +101,41 @@ def main() -> int:
             return 1
         col[lang] = found[0]
 
-    current: dict[str, dict[str, str]] = json.loads(STRINGS_PATH.read_text(encoding="utf-8"))
-    known = set(current["en"])
-    seen: set[str] = set()
-    changes: list[tuple[str, str, str, str]] = []
+    tables: dict[str, dict[str, dict[str, str]]] = {
+        prefix: json.loads(path.read_text(encoding="utf-8")) for prefix, path in TABLES
+    }
+    known = {prefix: set(tables[prefix]["en"]) for prefix, _ in TABLES}
+    seen: dict[str, set[str]] = {prefix: set() for prefix, _ in TABLES}
+    changes: list[tuple[str, str, str, str, str]] = []
     problems: list[str] = []
 
     for row in body:
         key = row[0].strip()
         if not key:
             continue
-        if key not in known:
-            problems.append(f"unknown key {key!r} — not in strings.json")
+        # The separator rows the export writes between tables. They are
+        # signposts for a human reading the sheet, not data.
+        if key.startswith("—"):
             continue
-        seen.add(key)
-        english = row[col["en"]].strip()
+        prefix = next(p for p, _ in TABLES if key.startswith(p))
+        bare = key[len(prefix):]
+        if bare not in known[prefix]:
+            problems.append(f"unknown key {key!r} — not in the {prefix or 'assistant'} table")
+            continue
+        seen[prefix].add(bare)
+        english = unescape(row[col["en"]]).strip()
         expected = set(_PLACEHOLDER.findall(english))
         for lang in SUPPORTED_LANGUAGES:
-            new = row[col[lang]].strip() if col[lang] < len(row) else ""
-            if not new:
+            # Stripped to decide whether the cell is EMPTY, never to decide
+            # what it says. `couldnt_connect` ends in a space in all six
+            # languages because the panel writes it as
+            # `A("couldnt_connect") + err.message`; stripping the value
+            # silently turned six error messages into "Couldn't
+            # connect:Network error". Whitespace now survives the TSV intact
+            # (see `escape`), so preserving it costs nothing and losing it
+            # cost a round trip nobody could see.
+            new = unescape(row[col[lang]]) if col[lang] < len(row) else ""
+            if not new.strip():
                 problems.append(f"{key} [{lang}] is empty")
                 continue
             got = set(_PLACEHOLDER.findall(new))
@@ -84,12 +144,15 @@ def main() -> int:
                     f"{key} [{lang}] placeholders {sorted(got)} != English {sorted(expected)}"
                 )
                 continue
-            old = current[lang].get(key, "")
+            old = tables[prefix][lang].get(bare, "")
             if old != new:
-                changes.append((key, lang, old, new))
+                changes.append((prefix, bare, lang, old, new))
 
-    for key in sorted(known - seen):
-        problems.append(f"{key} is missing from the sheet — refusing to drop it")
+    for prefix, _ in TABLES:
+        for bare in sorted(known[prefix] - seen[prefix]):
+            problems.append(
+                f"{prefix}{bare} is missing from the sheet — refusing to drop it"
+            )
 
     if problems:
         print(f"{len(problems)} problem(s), nothing written:")
@@ -102,19 +165,26 @@ def main() -> int:
         return 0
 
     print(f"{len(changes)} change(s):")
-    for key, lang, old, new in changes:
-        print(f"\n  {key} [{lang}]\n    - {old}\n    + {new}")
+    for prefix, bare, lang, old, new in changes:
+        print(f"\n  {prefix}{bare} [{lang}]\n    - {old}\n    + {new}")
 
     if not write:
         print("\ndry run — re-run with --write to apply")
         return 0
 
-    for key, lang, _old, new in changes:
-        current[lang][key] = new
-    with STRINGS_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(current, fh, ensure_ascii=False, indent=2, sort_keys=False)
-        fh.write("\n")
-    print(f"\nwrote {STRINGS_PATH}")
+    touched = {prefix for prefix, _, _, _, _ in changes}
+    for prefix, bare, lang, _old, new in changes:
+        tables[prefix][lang][bare] = new
+    for prefix, path in TABLES:
+        # Only the files that actually changed. Rewriting an untouched table
+        # would churn the diff and invite a reviewer to skim past the one file
+        # that did change.
+        if prefix not in touched:
+            continue
+        with path.open("w", encoding="utf-8") as fh:
+            json.dump(tables[prefix], fh, ensure_ascii=False, indent=2, sort_keys=False)
+            fh.write("\n")
+        print(f"\nwrote {path}")
     return 0
 
 
