@@ -720,6 +720,28 @@ def chat(
 _NO_STORE = {"Cache-Control": "no-store, must-revalidate"}
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon() -> FileResponse:
+    """One mark for all three surfaces.
+
+    Every page was 404ing on `/favicon.ico` — a request the browser makes
+    whether or not anything answers it, on the panel a bank's staff leave open
+    all day, and a blank tab beside however many other tabs they have.
+
+    An SVG at both paths rather than a real .ico: a browser that asks for
+    `/favicon.ico` by convention still renders SVG, and one file cannot drift
+    from the other. Vendored like the fonts and the LiveKit SDK — this is
+    served to a bank's own production pages, so a third-party icon host would
+    be a CSP entry and a security-review question in exchange for nothing.
+    """
+    return FileResponse(
+        _STATIC / "favicon.svg",
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/embed.js")
 def embed_script() -> FileResponse:
     """The loader a bank pastes onto its own site.
