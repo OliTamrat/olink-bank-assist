@@ -45,3 +45,4 @@ the costs — an ADR with no downside listed is marketing), References.
 | 0033 | The corpus is not the only ceiling |
 | 0034 | Narrow documents add, broad ones displace |
 | 0035 | A miss offers questions, not filing labels |
+| 0036 | The Live Preview is real traffic, and no report counts it |
