@@ -92,8 +92,18 @@ other repo.
 - **Admin:** single-page panel (`static/admin.html`) — KB CRUD + bulk import,
   transcripts, handoff queue, **Content Gaps**, **Overview** (the landing tab)
 
-`GET /health` → `{"status", "llm", "llm_ready", "revision"}`. `llm` is which
-backend is *configured*; `llm_ready` is whether credentials actually resolve.
+`GET /health` → `{"status", "llm", "db", "llm_ready", "revision"}`. `llm` is
+which backend is *configured*; `llm_ready` is whether credentials actually
+resolve; **`db` is whether a query reached the database on this request**, and
+`status` degrades when it did not. **`db` is not a data check**: the login
+outage of 2026-08-26 ran on a perfectly reachable database that simply held no
+user accounts, and this field would have read `true` throughout it. It catches
+a database that dies *after* startup — a partition, a rotated credential, a
+provider's maintenance — which was previously invisible here; one that is dead
+*before* startup already exits in the lifespan rather than serving. It stays **HTTP 200 when the database
+is down**: CI's container check and any readiness probe read the status code,
+and a 5xx would restart a revision whose process is fine and whose dependency
+is not.
 `revision` is the short sha the running instance was built from, so
 **"is `main` actually live?" is one request** compared against
 `git rev-parse origin/main` — rather than an archaeology exercise in Actions
