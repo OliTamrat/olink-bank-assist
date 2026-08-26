@@ -7,9 +7,19 @@ needs to get it right rather than merely accurate. Generated from
 strings.json every time, so the sheet cannot drift from what is deployed.
 
 TSV rather than CSV because Ge'ez text is full of commas in ordinary use and
-quoting rules are the commonest way a review sheet arrives corrupted. Tabs
-never appear inside these strings; a check below fails the export if one ever
-does rather than writing a file that silently loses a column.
+quoting rules are the commonest way a review sheet arrives corrupted.
+
+A tab or a newline inside a cell would end the column or the row early, so
+both are escaped to a literal `\\t` and `\\n`, and a backslash to `\\\\` so the
+escaping is reversible. `i18n_import.py` reverses it on the way back.
+
+This is not hypothetical tidiness. The original version refused to write at
+all if it met either, on the stated assumption that neither ever appears — and
+`greeting` and `greeting_named` carry a blank line and the language-picker row
+in **all six languages**, so the script had never once produced a file. The
+loop CLAUDE.md names in rule 2b for reviewing what the assistant says was
+unrunnable, and went unnoticed because `build_review_workbook.py` covers the
+same strings and works.
 
 Opens in Excel, Google Sheets and LibreOffice. The BOM is what makes Excel
 read it as UTF-8 instead of mojibake — without it Amharic arrives as garbage
@@ -33,6 +43,16 @@ from bankassist.i18n import (  # noqa: E402
 )
 
 OUT = Path(__file__).resolve().parent.parent / "review" / "strings.tsv"
+
+
+def escape(cell: str) -> str:
+    """Make a cell safe to sit between two tabs and a newline.
+
+    Backslash first, or escaping the others would corrupt a value that already
+    contained one — there are none today, and a round trip that only works
+    while that stays true is not a round trip.
+    """
+    return cell.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")
 
 
 def main() -> int:
@@ -78,10 +98,15 @@ def main() -> int:
         row.append("")
         rows.append(row)
 
+    rows = [[escape(cell) for cell in row] for row in rows]
+
+    # Belt and braces: after escaping nothing raw can remain, so this fires
+    # only if `escape` itself is ever broken — which is worth catching loudly
+    # rather than writing a sheet that silently loses a column.
     for row in rows:
         for cell in row:
             if "\t" in cell or "\n" in cell:
-                print(f"refusing to write: a cell contains a tab or newline: {cell!r}")
+                print(f"escaping failed to clear a cell: {cell!r}")
                 return 1
 
     OUT.parent.mkdir(exist_ok=True)
