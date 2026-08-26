@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>Bank Assist — Admin</title>
 <!-- Only the Latin file, and only here. The sign-in stage is the first thing
      anyone sees and it is nearly all type, so a swap-in halfway through the
@@ -1204,8 +1205,13 @@ main { padding: 20px 24px 40px; }
 .setup .isdone { font-size: 11.5px; color: var(--ok); text-transform: uppercase;
   letter-spacing: .06em; }
 @media (max-width: 640px) {
+  /* The button is narrow enough to sit beside the text, which is exactly the
+     problem: it squeezes a two-line title into a 250px column on a phone.
+     Giving the text the whole row pushes the action below it, where there is
+     room for both. */
   .setup li { flex-wrap: wrap; }
-  .setup .act { margin-left: 32px; }
+  .setup .what { flex-basis: 100%; }
+  .setup .act { margin-left: 32px; margin-top: 8px; }
 }
 
 /* ---------------------------------------------------------------- cards */
@@ -1292,8 +1298,58 @@ main { padding: 20px 24px 40px; }
 @media (max-width: 1100px) {
   .row-main, .row-half { grid-template-columns: 1fr; }
 }
-@media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } .shell { grid-template-columns: 1fr; }
-  .side { position: static; height: auto; } }
+/* Above the breakpoint the rail is always on screen, so neither the menu
+   button nor the scrim exists. Declared BEFORE the small-screen block on
+   purpose: these carry the same specificity as the rules that turn them on,
+   so whichever comes last wins — put after, this quietly hid the only
+   control a phone has, and the drawer could not be opened at all. */
+.navtoggle { display: none; }
+.scrim { display: none; }
+
+/* -------------------------------------------------------- the nav drawer
+   Below 980px the sidebar used to keep its markup and lose its column:
+   `position: static` dropped it into normal flow, so twenty-one nav items
+   and an expanded Channels submenu stacked ABOVE the page and a phone
+   scrolled roughly 450px before reaching the dashboard. The collapse control
+   could not help — `data-rail="mini"` narrows a column that is no longer
+   there.
+
+   So it becomes a drawer: off-canvas, over the content rather than above it,
+   with the topbar's only mobile control to open it. `transform` rather than
+   `left`, so it composites instead of reflowing on a cheap phone, and the
+   page keeps its full width when the drawer is shut. */
+@media (max-width: 980px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: 1fr; background: var(--bg); }
+  .side {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 60;
+    width: min(84vw, 290px); height: 100dvh; overflow-y: auto;
+    transform: translateX(-100%); transition: transform .2s ease;
+    box-shadow: none;
+  }
+  /* The rail is a drawer here, so the desktop icon-collapse must not also
+     apply — a 62px drawer is neither one thing nor the other. */
+  [data-rail="mini"] .side { width: min(84vw, 290px); align-items: stretch;
+    padding: 16px 12px; }
+  [data-rail="mini"] .side-name, [data-rail="mini"] .side-sub,
+  [data-rail="mini"] .navitem .label, [data-rail="mini"] .who .n,
+  [data-rail="mini"] .who .r { display: revert; }
+  [data-rail="mini"] .navitem { justify-content: flex-start; padding: 9px 10px; }
+  [data-rail="mini"] .side-brand { padding: 4px 8px 18px; justify-content: flex-start; }
+  [data-rail="mini"] .who { justify-content: flex-start; padding: 4px 8px 10px; }
+  .railtoggle { display: none; }
+  body.nav-open .side { transform: none; box-shadow: 0 0 40px rgba(0, 0, 0, .5); }
+  body.nav-open { overflow: hidden; }
+  .navtoggle { display: inline-flex; align-items: center; }
+  /* `display` has to be restated here: the base rule above hides the scrim on
+     desktop, and overriding only position/inset would leave it hidden at
+     every width — which is how it first shipped, opening a drawer with
+     nothing behind it to dim the page or catch a stray tap. */
+  .scrim { display: block; position: fixed; inset: 0; z-index: 50;
+    background: rgba(0, 0, 0, .45); }
+  .scrim[hidden] { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .side { transition: none; } }
 
 /* --------------------------------------------------------------- donut */
 .donutwrap { display: flex; gap: 18px; align-items: center; flex: 1; flex-wrap: wrap; }
@@ -2034,6 +2090,12 @@ td.title { color: var(--ink); font-weight: 550; }
 </head>
 <body>
 
+<!-- Dims and swallows taps on the page behind an open drawer. A sibling of
+     the shell rather than a child of the sidebar, so it covers the content
+     without the sidebar having to grow a stacking context that would trap it
+     under its own backdrop. -->
+<div class="scrim" id="nav-scrim" hidden></div>
+
 <!-- Confirmations used to be 12.5px muted text wedged into the topbar beside
      the refresh button. "160 imported as drafts" and a failed save looked
      identical, and on a laptop screen in daylight neither was readable. A
@@ -2242,6 +2304,16 @@ td.title { color: var(--ink); font-weight: 550; }
 
   <div class="content">
     <div class="topbar">
+      <!-- Below 980px the sidebar is a drawer, and this is its only handle.
+           Hidden above that breakpoint, where the rail is always on screen. -->
+      <button class="iconbtn navtoggle" id="nav-toggle" type="button"
+              aria-expanded="false" aria-controls="side" aria-label="Menu">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16"/>
+        </svg>
+      </button>
       <h2 id="page-title">Dashboard</h2>
       <div class="spacer"></div>
       <div class="gsearch" id="gsearch">
@@ -3373,7 +3445,8 @@ function paintAdminChrome() {
   var t = {
     cMic: "mute", cCam: "camera", cHang: "end_session", adminLang: "search",
     "queue-btn": "open_escalation_queue", "live-btn": "open_live_queue",
-    "theme-toggle": "switch_dark_light"
+    "theme-toggle": "switch_dark_light",
+    "nav-toggle": "nav_menu"
   };
   Object.keys(t).forEach(function (id) {
     var n = document.getElementById(id);
@@ -3381,7 +3454,7 @@ function paintAdminChrome() {
   });
   // A hover title a screen reader never speaks is half the job. Each of these
   // carries an aria-label as well, and it has to follow the language with it.
-  ["queue-btn", "live-btn", "theme-toggle"].forEach(function (id) {
+  ["queue-btn", "live-btn", "theme-toggle", "nav-toggle"].forEach(function (id) {
     var n = document.getElementById(id);
     if (n && n.getAttribute("aria-label")) n.setAttribute("aria-label", A(t[id]));
   });
@@ -3495,6 +3568,9 @@ function go(id) {
   // with it, and "copy this now, it is shown once" must not greet somebody
   // who merely came back to the page later.
   if (!(id === "channels" && state.channel === "sms")) state.smsSecret = null;
+  // On a phone the nav is a drawer over the page. Navigating without closing
+  // it leaves the menu covering the thing that was just asked for.
+  closeNav();
   state.page = id;
   markNav();
   var chan = state.page === "channels" && state.channel
@@ -8072,6 +8148,37 @@ function applyRail(mode) {
 /* ------------------------------------------------------------ boot */
 applyTheme(localStorage.getItem("ba_theme") || "dark");
 applyRail(localStorage.getItem("ba_rail") || "full");
+/* ------------------------------------------------------- the nav drawer
+   Everything that opens it is one function, so there is exactly one place
+   that knows what "open" means. The class lives on <body> because the scrim
+   and the sidebar are siblings and both need to react to it.
+
+   Closing on navigation is the part that is easy to leave out and worst to
+   miss: tapping a nav item on a phone otherwise leaves the drawer sitting
+   over the page you just asked for. */
+function setNav(open) {
+  document.body.classList.toggle("nav-open", open);
+  var scrim = $("nav-scrim");
+  if (scrim) scrim.hidden = !open;
+  var btn = $("nav-toggle");
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function closeNav() { setNav(false); }
+
+$("nav-toggle").onclick = function () {
+  setNav(!document.body.classList.contains("nav-open"));
+};
+$("nav-scrim").onclick = closeNav;
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" && document.body.classList.contains("nav-open")) closeNav();
+});
+/* A resize back to desktop must not leave the body scroll-locked by a state
+   that no longer has anything to show. */
+window.addEventListener("resize", function () {
+  if (window.innerWidth > 980) closeNav();
+});
+
 $("rail-toggle").onclick = function () {
   applyRail(localStorage.getItem("ba_rail") === "mini" ? "full" : "mini");
 };

@@ -470,7 +470,8 @@
     "setup_team": "Bring your colleagues in",
     "setup_team_help": "Whoever answers escalations needs their own sign-in, not a shared one.",
     "setup_open": "Open",
-    "setup_step_done": "Done"
+    "setup_step_done": "Done",
+    "nav_menu": "Menu"
   },
   "am": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -943,7 +944,8 @@
     "setup_team": "ባልደረቦችዎን ያስገቡ",
     "setup_team_help": "ጥያቄዎችን የሚመልሱ ሰዎች የየራሳቸው መግቢያ ያስፈልጋቸዋል፣ የጋራ አይደለም።",
     "setup_open": "ክፈት",
-    "setup_step_done": "ተጠናቋል"
+    "setup_step_done": "ተጠናቋል",
+    "nav_menu": "ዝርዝር"
   },
   "om": {
     "nav_dashboard": "Daashboordii",
@@ -1416,7 +1418,8 @@
     "setup_team": "Hojjettoota hiriyoota kee galchi",
     "setup_team_help": "Namni gaaffii deebisu seensa mataa isaa qabaachuu qaba, kan waliin qooddamu miti.",
     "setup_open": "Bani",
-    "setup_step_done": "Xumurameera"
+    "setup_step_done": "Xumurameera",
+    "nav_menu": "Baafata"
   },
   "ti": {
     "nav_dashboard": "ዳሽቦርድ",
@@ -1889,7 +1892,8 @@
     "setup_team": "ንመሳርሕትኻ ኣእቱ",
     "setup_team_help": "ነቲ ናብ ሰብ ዝመሓላለፍ ዝምልስ ሰብ ናይ ገዛእ ርእሱ መእተዊ የድልዮ፡ ናይ ሓባር ዘይኮነ።",
     "setup_open": "ክፈት",
-    "setup_step_done": "ተዛዚሙ"
+    "setup_step_done": "ተዛዚሙ",
+    "nav_menu": "ዝርዝር"
   },
   "so": {
     "nav_dashboard": "Dashboard-ka",
@@ -2362,7 +2366,8 @@
     "setup_team": "Asxaabtaada shaqada soo gali",
     "setup_team_help": "Qofka ka jawaabaya kordhinta wuxuu u baahan yahay gelitaan u gaar ah, ee ma aha mid la wadaago.",
     "setup_open": "Fur",
-    "setup_step_done": "Waa dhammaatay"
+    "setup_step_done": "Waa dhammaatay",
+    "nav_menu": "Liiska"
   },
   "sw": {
     "nav_dashboard": "Dashibodi",
@@ -2835,6 +2840,7 @@
     "setup_team": "Waingize wenzako",
     "setup_team_help": "Yeyote anayejibu maswali yaliyopandishwa anahitaji kuingia kwake mwenyewe, si kwa pamoja.",
     "setup_open": "Fungua",
-    "setup_step_done": "Imekamilika"
+    "setup_step_done": "Imekamilika",
+    "nav_menu": "Menyu"
   }
 }
