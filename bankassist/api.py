@@ -527,6 +527,11 @@ class DocumentBulkIn(BaseModel):
 class HealthOut(BaseModel):
     status: str
     llm: str
+    # Whether a query actually reached the database on this request. Not a
+    # configuration read — the URL can be perfectly well-formed and the
+    # database unreachable, and this route existed to answer "is it working"
+    # while being unable to tell those apart.
+    db: bool = False
     # Whether the configured backend can actually authenticate. A backend can
     # be configured correctly and still never run — that exact silent
     # fallback shipped once — so this makes it checkable from outside without
@@ -564,10 +569,56 @@ class HealthOut(BaseModel):
 # Hit once during a deploy, a cached response keeps reporting the old build's
 # fields long after the new revision is serving.
 @app.get("/health", response_model=HealthOut)
-def health(response: Response) -> HealthOut:
+def health(response: Response, db: Session = Depends(get_db)) -> HealthOut:
+    """What is running right now, including whether it can reach its data.
+
+    **What this does not cover, stated first because it was nearly written
+    down the other way round.** The outage that prompted it — every login on
+    every tenant failing — was not a connectivity failure. The database was
+    perfectly reachable and simply held no user accounts, so this probe would
+    have returned `db: true` throughout and reported `ok` exactly as before.
+    A health check answers "can I reach my dependencies", never "is the data
+    in them what somebody expects", and mistaking one for the other is how a
+    green dashboard gets trusted through the next incident.
+
+    What it does cover is the gap that made that incident hard to diagnose: a
+    route the README and DEPLOY.md both point at for "is this working" that
+    took no database session at all, and so could report a process being
+    alive and nothing more. A database that dies *after* startup — a network
+    partition, a rotated credential, a pool exhausted, a provider's
+    maintenance window — was invisible here. One that is dead *before*
+    startup already fails loudly: `init_db()` runs in the lifespan and the
+    process exits rather than serving.
+
+    **Still HTTP 200 when the database is down, deliberately.** The container
+    check in CI (`curl -fs`) and any platform readiness probe read the status
+    code, and a 5xx here would have them restart or fail a revision whose
+    process is perfectly healthy and whose dependency is not — turning a
+    diagnostic into an outage amplifier. The answer goes in the body, where a
+    human or a monitor reads it: `db` says whether a query landed, and
+    `status` degrades so nobody has to know which field to look at.
+
+    The probe is the cheapest statement the database understands. On a live
+    pool it is a round trip on an open connection; against a dead one it can
+    take as long as the driver's connect timeout, which is the honest cost of
+    asking a real question instead of a cached one.
+    """
     response.headers["Cache-Control"] = "no-store, must-revalidate"
+    try:
+        db.execute(select(1))
+        reachable = True
+    except Exception:
+        # Deliberately broad and deliberately silent about the detail. Every
+        # way a database can be unreachable — refused, timed out, bad
+        # credentials, a URL that did not parse — is the same fact to a
+        # caller, and the specifics belong in the logs rather than in a public
+        # response.
+        logger.exception("health check could not reach the database")
+        reachable = False
+
     return HealthOut(
-        status="ok",
+        db=reachable,
+        status="ok" if reachable else "degraded",
         llm=active_backend(),
         llm_ready=credentials_ready(),
         revision=get_settings().git_sha[:7],
