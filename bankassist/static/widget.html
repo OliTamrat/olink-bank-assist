@@ -809,6 +809,15 @@
 (function () {
   var params = new URLSearchParams(location.search);
   var slug = params.get("bank") || "demo";
+  // Preview mode: this widget is the Live Preview inside the admin panel
+  // rather than a customer's chat. The flag changes nothing about the
+  // conversation — same endpoint, same assistant, same guardrails — it only
+  // decides where the FIRST message's conversation comes from. Asking the
+  // admin API to open it stamps the conversation as preview, and the reports
+  // skip it from then on. Same origin, so the staff session cookie rides
+  // along; a customer's widget on a bank's own site can never take this path.
+  var preview = params.get("preview") === "1";
+  var previewOpening = null;
 
   var api = location.origin;
   var conversationId = null;
@@ -1258,10 +1267,18 @@
     send.disabled = true;
     var t = thinking();
 
-    var body = { message: text, conversation_id: conversationId };
-    if (langSel.value) body.language = langSel.value;
+    // In preview mode the first message waits for an uncounted conversation
+    // to exist. If that call fails the message is simply not sent, rather
+    // than falling back to an ordinary conversation: silently counting a
+    // staff member's test as a customer is the exact bug this path exists to
+    // prevent, and a preview that says nothing is better than a report that
+    // lies.
+    openConversation().then(function (cid) {
+      conversationId = cid;
+      var body = { message: text, conversation_id: conversationId };
+      if (langSel.value) body.language = langSel.value;
 
-    fetch(api + "/chat/" + encodeURIComponent(slug), {
+      return fetch(api + "/chat/" + encodeURIComponent(slug), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -1315,6 +1332,27 @@
         addBot(msg, false);
       })
       .finally(function () { send.disabled = false; input.focus(); });
+    });
+  }
+
+  // Where a conversation comes from. Ordinary customers get one from /chat
+  // itself, exactly as before — this resolves immediately with whatever we
+  // already hold (null on the first message) and costs nothing. Preview mode
+  // is the only caller that has to ask for one first, and only once: after
+  // that the id is reused like any other.
+  function openConversation() {
+    if (conversationId || !preview) return Promise.resolve(conversationId);
+    if (!previewOpening) {
+      previewOpening = fetch(
+        api + "/admin/api/" + encodeURIComponent(slug) + "/preview/conversation",
+        { method: "POST", credentials: "same-origin" }
+      ).then(function (r) {
+        if (!r.ok) { var e = new Error("preview"); e.status = r.status; throw e; }
+        return r.json();
+      }).then(function (d) { return d.conversation_id; })
+        .catch(function (err) { previewOpening = null; throw err; });
+    }
+    return previewOpening;
   }
 
   // ------------------------------------------------------- talk to a teller

@@ -163,3 +163,22 @@ def catalogue(**connected: bool) -> list[dict[str, Any]]:
             row["status"] = LIVE
         out.append(row)
     return out
+
+
+# --------------------------------------------------------------- preview
+#
+# The Live Preview on the admin Dashboard runs the real widget against the
+# real assistant, because a preview that mocks its answers is worth nothing
+# to the staff member deciding whether their content reads well. What it must
+# never do is *count*: a bank's own admin trying "How do I open an account?"
+# is not a customer asking it.
+#
+# Left deliberately OUT of `CATALOGUE`. The catalogue is the list of channels
+# a bank can connect, and `tests/test_channel_connect_ui.py` walks it
+# demanding a connect form for each — a preview needs no form and is not a way
+# a customer reaches the bank. It is a conversation *origin*, not a channel.
+#
+# Reports exclude it by this constant rather than by a literal, and
+# `tests/test_preview_is_not_counted.py` walks the reporting endpoints so the
+# next report added cannot quietly start counting it.
+PREVIEW: Final = "preview"

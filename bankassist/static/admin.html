@@ -4122,8 +4122,8 @@ function loadDashboard() {
        widget is a real page, so this is the real thing rather than a mockup
        that can drift from it. */
     h += '<div class="panel preview noprint"><h3>' + esc(A("live_preview")) + "</h3>" +
-      '<iframe class="frame" title="' + esc(A("assistant_preview")) + '" src="/widget?bank=' +
-      encodeURIComponent(state.slug) + '"></iframe>' +
+      '<iframe class="frame" id="preview-frame" title="' + esc(A("assistant_preview")) +
+      '" src="' + previewSrc() + '"></iframe>' +
       '<div class="cap">' + esc(A("preview_caption")) + "</div></div>";
 
     $("main").innerHTML = h;
@@ -7929,6 +7929,31 @@ function applyTheme(name) {
   if (g) g.textContent = name === "light" ? "☀" : "☾";
 }
 
+/* The preview is the widget, and the widget has its own theme. Left to
+   itself it reads `prefers-color-scheme` — so a bank whose staff run a light
+   OS met a white panel inside this dark one, and the same panel went dark for
+   the colleague sitting next to them. That is the one setting meaningful in
+   no frame of reference: not this panel's theme, and not the customer's site
+   either. The widget already takes `?theme=`; this passes it, so the preview
+   is whatever the panel currently is.
+
+   `preview=1` is what makes the conversation uncounted — see
+   `start_preview_conversation` in api.py. The widget only reaches that route
+   with a staff session, which is why the flag can live in a query string. */
+function previewSrc() {
+  var theme = localStorage.getItem("ba_theme") === "light" ? "light" : "dark";
+  return "/widget?bank=" + encodeURIComponent(state.slug) +
+    "&preview=1&theme=" + theme;
+}
+
+/* Re-pointed rather than re-rendered: reloading the card would throw away a
+   conversation the staff member is in the middle of, and the theme flip is
+   the one moment they are most likely to be looking at it. */
+function rethemePreview() {
+  var f = $("preview-frame");
+  if (f) f.src = previewSrc();
+}
+
 function applyRail(mode) {
   if (mode === "mini") document.documentElement.setAttribute("data-rail", "mini");
   else document.documentElement.removeAttribute("data-rail");
@@ -7947,6 +7972,7 @@ $("rail-toggle").onclick = function () {
 };
 $("theme-toggle").onclick = function () {
   applyTheme(localStorage.getItem("ba_theme") === "light" ? "dark" : "light");
+  rethemePreview();
 };
 
 /* Reload whatever is on screen, without a full page load that would drop the

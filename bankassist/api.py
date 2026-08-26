@@ -396,6 +396,70 @@ def require(permission: str) -> Callable[..., Principal]:
 # This block is the entire access-control policy of the admin API, in one
 # screen. `tests/test_permissions.py` fails if it drifts from the registry or
 # leaves an admin route unguarded.
+# --------------------------------------------------------- preview traffic
+#
+# The Live Preview on the Dashboard runs the real widget against the real
+# assistant. Its messages are therefore real messages — they appear in
+# Conversations, exactly as the card's own caption promises — but they are the
+# bank's own staff trying their product, and a report that counts them is
+# lying about customers.
+#
+# It was not a cosmetic lie. On a tenant with no content, the preview's own
+# suggestion chips ("How do I open an account?") each returned the
+# I-don't-know reply, filed a Handoff, asked the admin for their phone number,
+# and seeded Content Gaps with the questions the admin had just tapped — so
+# the one report a bank cannot get anywhere else opened full of the bank's own
+# clicks. Found by driving an empty tenant in a browser; no API test could see
+# it, because every report was individually correct about the rows it was given.
+#
+# Excluded here rather than at the write: `handle_message` stays identical for
+# a preview and a customer, which is the point of a preview.
+def _not_preview(column: Any) -> Any:
+    """`column IS DISTINCT FROM 'preview'`, NULL-safe.
+
+    A plain `!=` drops rows whose conversation is NULL — a handoff can outlive
+    its conversation, and those belong in the report. Every reporting query
+    filters through this, and `tests/test_preview_is_not_counted.py` walks the
+    reporting endpoints so a report added later cannot quietly start counting
+    preview traffic.
+    """
+    return column.is_distinct_from(channels.PREVIEW)
+
+
+def _messages_not_preview(bank_id: str) -> Any:
+    """The same exclusion for queries that start from `Message`.
+
+    Expressed as a subquery rather than a join so a report keeps its existing
+    shape — several of these group by outcome, and widening their FROM clause
+    to add a filter is how an aggregate quietly changes meaning.
+    """
+    preview = select(Conversation.id).where(
+        Conversation.bank_id == bank_id,
+        Conversation.channel == channels.PREVIEW,
+    )
+    return Message.conversation_id.not_in(preview)
+
+
+def _handoffs_not_preview(bank_id: str) -> Any:
+    """The same exclusion for queries that start from `Handoff`.
+
+    The NULL arm is not defensive tidiness: a handoff can outlive the
+    conversation that produced it, and `not_in` over a NULL column yields NULL
+    — which drops exactly the rows an operator most needs to see. The
+    dashboard's waiting-customer count and the queue itself must both use
+    this: their existing comment says they have to agree, and a filter added
+    to one of them is precisely how they would stop agreeing.
+    """
+    preview = select(Conversation.id).where(
+        Conversation.bank_id == bank_id,
+        Conversation.channel == channels.PREVIEW,
+    )
+    return or_(
+        Handoff.conversation_id.is_(None),
+        Handoff.conversation_id.not_in(preview),
+    )
+
+
 NeedsAnalyticsRead = Depends(require(permissions.Perm.ANALYTICS_READ))
 NeedsConversationsRead = Depends(require(permissions.Perm.CONVERSATIONS_READ))
 NeedsHandoffsRead = Depends(require(permissions.Perm.HANDOFFS_READ))
@@ -2449,6 +2513,34 @@ def delete_document(
 # ---------------------------------------------------------------- admin: conversations & handoffs
 
 
+@app.post("/admin/api/{slug}/preview/conversation", status_code=201)
+def start_preview_conversation(
+    principal: Principal = NeedsAnalyticsRead,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Open a conversation the reports will not count.
+
+    The Dashboard's Live Preview is the real widget talking to the real
+    assistant — that is what makes it worth having, and its caption promises
+    the messages appear in Conversations. They do. What they must not do is
+    reach the reports, where a staff member trying their own product would
+    otherwise arrive as a customer.
+
+    **Why this is a route and not a query parameter on `/chat`.** A
+    `?preview=1` the widget could set would be a flag any caller could set —
+    and a stranger who can mark their own traffic preview can decide what a
+    bank's Content Gaps and deflection rate do not show. Marking traffic
+    uncounted is a privilege, so it is authenticated like one: the channel is
+    stamped here, by someone holding `analytics.read`, and `/chat` needs no
+    change at all — it resumes the conversation it is handed and never
+    rewrites the channel.
+    """
+    conversation = Conversation(bank_id=principal.bank.id, channel=channels.PREVIEW)
+    db.add(conversation)
+    db.commit()
+    return {"conversation_id": conversation.id}
+
+
 @app.get("/admin/api/{slug}/conversations")
 def list_conversations(
     language: str | None = None,
@@ -2592,7 +2684,7 @@ def list_handoffs(
     # nobody was.
     query = select(Handoff).where(
         Handoff.bank_id == bank.id, Handoff.needs_person.is_(True)
-    )
+    ).where(_handoffs_not_preview(bank.id))
     if status != "all":
         query = query.where(Handoff.status == status)
     if department and department != "all":
@@ -3859,6 +3951,7 @@ def content_gaps(
         .join(Conversation, Conversation.id == Handoff.conversation_id, isouter=True)
         .where(Handoff.bank_id == bank.id)
         .where(Handoff.reason.in_(["unanswered_question", "answered_from_general_knowledge"]))
+        .where(_not_preview(Conversation.channel))
         .order_by(Handoff.created_at.desc())
         .limit(1000)
     ).all()
@@ -3934,6 +4027,7 @@ def analytics(
     outcome_rows = db.execute(
         select(Message.outcome, func.count())
         .where(Message.bank_id == bank.id, Message.role == "assistant")
+        .where(_messages_not_preview(bank.id))
         .where(*_window(Message.created_at))
         .group_by(Message.outcome)
     ).all()
@@ -3963,6 +4057,7 @@ def analytics(
         prior_rows = db.execute(
             select(Message.outcome, func.count())
             .where(Message.bank_id == bank.id, Message.role == "assistant")
+            .where(_messages_not_preview(bank.id))
             .where(*prior)
             .group_by(Message.outcome)
         ).all()
@@ -3973,6 +4068,7 @@ def analytics(
         prior_conversations = db.execute(
             select(func.count()).select_from(Conversation).where(
                 Conversation.bank_id == bank.id,
+                _not_preview(Conversation.channel),
                 Conversation.created_at >= prior_start,
                 Conversation.created_at < since,
             )
@@ -3996,6 +4092,7 @@ def analytics(
         select(func.count())
         .select_from(Conversation)
         .where(Conversation.bank_id == bank.id)
+        .where(_not_preview(Conversation.channel))
         .where(*_window(Conversation.created_at))
     ).scalar_one()
 
@@ -4008,6 +4105,7 @@ def analytics(
         for lang, n in db.execute(
             select(Conversation.language, func.count())
             .where(Conversation.bank_id == bank.id)
+            .where(_not_preview(Conversation.channel))
             .where(*_window(Conversation.created_at))
             .group_by(Conversation.language)
         ).all()
@@ -4035,6 +4133,7 @@ def analytics(
     language_outcome_rows = db.execute(
         select(Conversation.language, Message.outcome, func.count())
         .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(_not_preview(Conversation.channel))
         .where(
             Message.bank_id == bank.id,
             Message.role == "user",
@@ -4066,6 +4165,7 @@ def analytics(
         for channel, n in db.execute(
             select(Conversation.channel, func.count())
             .where(Conversation.bank_id == bank.id)
+            .where(_not_preview(Conversation.channel))
             .where(*_window(Conversation.created_at))
             .group_by(Conversation.channel)
         ).all()
@@ -4118,6 +4218,7 @@ def analytics(
     started = db.execute(
         select(Conversation.created_at)
         .where(Conversation.bank_id == bank.id)
+        .where(_not_preview(Conversation.channel))
         .where(*_window(Conversation.created_at))
     ).scalars().all()
     per_day: dict[str, int] = {}
@@ -4152,6 +4253,7 @@ def analytics(
             Message.role == "user",
             Message.outcome.in_(agent_module.SUBSTANTIVE),
         )
+        .where(_messages_not_preview(bank.id))
         .where(*_window(Message.created_at))
         .order_by(Message.created_at.desc())
         .limit(2000)
@@ -4178,6 +4280,7 @@ def analytics(
         # Same filter as the queue, and it has to be the same or the dashboard
         # would advertise a number of waiting customers the queue cannot show.
         .where(Handoff.bank_id == bank.id, Handoff.needs_person.is_(True))
+        .where(_handoffs_not_preview(bank.id))
         .where(*_window(Handoff.created_at))
     ).all()
     open_handoffs = [h for h in handoff_rows if h.status == "open"]
@@ -4283,6 +4386,7 @@ def analytics_operations(
                 Handoff.needs_person.is_(True),
                 Handoff.status == "open",
             )
+            .where(_handoffs_not_preview(bank.id))
             .group_by(Handoff.department)
         ).tuples().all()
     )
@@ -4295,6 +4399,7 @@ def analytics_operations(
                 Handoff.status == "open",
                 Handoff.priority == departments.URGENT,
             )
+            .where(_handoffs_not_preview(bank.id))
             .group_by(Handoff.department)
         ).tuples().all()
     )
@@ -4302,6 +4407,7 @@ def analytics_operations(
         db.execute(
             select(Handoff.department, func.count())
             .where(Handoff.bank_id == bank.id, Handoff.needs_person.is_(True))
+            .where(_handoffs_not_preview(bank.id))
             .where(*_window(Handoff.created_at))
             .group_by(Handoff.department)
         ).tuples().all()
@@ -4312,6 +4418,7 @@ def analytics_operations(
     # window, whenever the row was filed.
     resolved_rows = db.execute(
         select(Handoff)
+        .where(_handoffs_not_preview(bank.id))
         .where(
             Handoff.bank_id == bank.id,
             Handoff.needs_person.is_(True),
@@ -4395,6 +4502,7 @@ def analytics_operations(
     for (created,) in db.execute(
         select(Message.created_at)
         .where(Message.bank_id == bank.id, Message.role == "user")
+        .where(_messages_not_preview(bank.id))
         .where(*_window(Message.created_at))
     ).all():
         stamp = _utc(created)
@@ -4614,6 +4722,7 @@ def handoff_desks(
                 Handoff.needs_person.is_(True),
                 Handoff.status == "open",
             )
+            .where(_handoffs_not_preview(bank.id))
             .group_by(Handoff.department)
         ).tuples().all()
     )
@@ -4626,6 +4735,7 @@ def handoff_desks(
                 Handoff.status == "open",
                 Handoff.priority == departments.URGENT,
             )
+            .where(_handoffs_not_preview(bank.id))
             .group_by(Handoff.department)
         ).tuples().all()
     )
