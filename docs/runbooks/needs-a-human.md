@@ -10,7 +10,33 @@ Ordered by value per minute of your time.
 
 ---
 
-## 1. Apply the corpus to the live tenants · ~5 minutes
+## 1. Create yourself an administrator account · ~5 minutes
+
+**Why first:** nothing else on this list can be done without it. A seeded
+tenant holds documents and roles and **no users**, so on 2026-08-26 every
+sign-in on all four banks failed with "that email and password did not match"
+— true, and it names nothing. Item 2 below needs a signed-in account with
+`documents.write`; there is currently no account at all.
+
+If you hold the production connection string:
+
+```bash
+export BANKASSIST_DATABASE_URL='postgresql://…'
+python -m bankassist.create_admin dashen --email you@bank.et
+```
+
+If you do not: set a repository secret `BOOTSTRAP_ADMIN_PASSWORD`, run the
+**Create first administrator** workflow from the Actions tab, then delete the
+secret. Full detail, and why the password is never a workflow input:
+**`docs/runbooks/create-the-first-administrator.md`**.
+
+**Check:** sign in at `/admin`. The tenant's admin token now returns `403`
+naming its replacement — that is the intended end state (ADR-0031), not a
+regression.
+
+---
+
+## 2. Apply the corpus to the live tenants · ~5 minutes
 
 **Why first:** the corpus work of 2026-08-14 took the four tenants from 66
 measured gaps to 58, and **none of it is visible to a customer yet.**
@@ -34,7 +60,7 @@ this any more (ADR-0031).
 
 ---
 
-## 2. Trigger the branch-prune workflow once · ~5 minutes
+## 3. Trigger the branch-prune workflow once · ~5 minutes
 
 **Why:** `.github/workflows/prune-merged-branches.yml` (PR #114) has never been
 run, and there are roughly 160 stale remote branches behind it. Every one of
@@ -49,7 +75,7 @@ proposes to delete, then run again with write enabled.
 
 ---
 
-## 3. Split the Cloud Run runtime identity · ~15 minutes
+## 4. Split the Cloud Run runtime identity · ~15 minutes
 
 **Why:** `bankassist-deployer` is currently both the CI identity that pushes
 images and runs migrations *and* the identity the running container executes
@@ -71,7 +97,7 @@ Vertex credentials.
 
 ---
 
-## 4. Run "Ask OKM" for the first time · ~30 minutes
+## 5. Run "Ask OKM" for the first time · ~30 minutes
 
 **Why:** `bankassist/seed_okm.py` (ADR-0015, PR #115) has never touched a real
 database. It is Phase 3 of the knowledge work — the product answering questions

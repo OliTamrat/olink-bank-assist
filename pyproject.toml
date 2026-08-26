@@ -79,6 +79,12 @@ dev = [
     # brotli is not used directly — fontTools needs it to decompress woff2.
     "fonttools>=4.50",
     "brotli>=1.1",
+    # Parses .github/workflows/*.yml so a test can hold a workflow to the code
+    # it calls. The bootstrap workflow's role menu offered `viewer`, which is
+    # not a role this product has — the run would have authenticated, fetched
+    # the database secret and failed on its last line. Declared for the same
+    # reason as the two above: an undeclared import makes the guard vanish.
+    "pyyaml>=6.0",
 ]
 
 [tool.setuptools]
