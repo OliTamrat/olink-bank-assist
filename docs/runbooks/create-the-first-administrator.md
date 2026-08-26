@@ -56,13 +56,51 @@ which is why the first one should almost always be an `admin`: only an admin
 can add colleagues. The command will make an `operator` or a `teller` if you
 ask it to, and then that tenant still has nobody who can grow the team.
 
+## Forgot the password on an account that already exists
+
+Different command — `create_admin` creates, it does not repair:
+
+```bash
+export BANKASSIST_DATABASE_URL='postgresql://…'
+python -m bankassist.reset_password dashen --email you@bank.et
+```
+
+Prompts twice, same as the other one, and has no `--password` flag for the
+same reason. Two things it does that are worth knowing before you run it:
+
+- **Every existing session is revoked.** Whoever was signed in as that account
+  is signed out, including you on another machine. That is the point: a reset
+  that left old sessions alive keeps whoever knew the old password in.
+- **It does not remove two-factor.** If the account has MFA enrolled, the new
+  password alone will not sign you in — you need the authenticator or a
+  recovery code, and the command tells you how many unused codes are left.
+  Clearing a second factor from a command line is a decision somebody should
+  take on purpose, so it is not a flag here.
+
+## Which is it? — a sign-in failing tells you almost nothing
+
+"That email and password did not match" is what you get for a tenant with no
+accounts, for a wrong password, and for a mistyped address alike, and the
+token tab's "not accepted for this bank" covers both a wrong token and a
+retired one. Distinguish them from the outside:
+
+```bash
+curl -si -H "X-Admin-Token: <token>" \
+  "https://<host>/admin/api/<slug>/analytics?days=1" | head -1
+```
+
+- **200** → the tenant has **no users**; you are already in, and `create_admin`
+  is the command you want.
+- **403** → the tenant **has users** (ADR-0031 retired the token); somebody's
+  password is the problem, so `reset_password`.
+- **401** → wrong or stale token; this tells you nothing either way.
+
+The commands themselves also report it: `create_admin` prints `Note: … already
+has N account(s)` and `reset_password` prints the tenant's account count when
+the address does not match.
+
 ## What this is not
 
-- **Not a password reset.** It creates an account; it cannot change an
-  existing one's credential. Somebody locked out of their own tenant can make
-  themselves a second account with this — the command says so out loud rather
-  than refusing, because whoever can run it already holds more power than any
-  account it creates.
 - **Not reachable from an agent sandbox.** Same boundary as
   `scripts/faq_export.py`: the production database and the Cloud Run host are
   both outside it. The workflow exists partly for that reason.
