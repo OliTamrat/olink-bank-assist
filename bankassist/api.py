@@ -3925,6 +3925,86 @@ def audit_log(
     }
 
 
+@app.get("/admin/api/{slug}/setup")
+def setup_state(
+    principal: Principal = NeedsAnalyticsRead,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """What a tenant still has to do before its assistant is worth switching on.
+
+    A fresh tenant's dashboard was honest and useless: every number nulled or
+    zeroed, every card saying "nothing yet", and nowhere on the screen the one
+    fact that matters — **this bank has no knowledge base, so the assistant
+    cannot answer anything**. The Live Preview sat under it offering "How do I
+    open an account?", which is precisely the question that could not be
+    answered. Found by signing in to an empty tenant rather than by reading
+    the code.
+
+    Three decisions worth keeping:
+
+    **Staged by data, not by date.** The obvious design stages onboarding by
+    time — first login, week one, month one — which suits a product with
+    thousands of self-serve users on parallel journeys. A tenant here is a
+    handful of staff at one bank, and what it needs shown depends on what it
+    has, not on how long it has had it.
+
+    **It retires itself.** `live` is true once one real customer conversation
+    exists, and the card is gone from then on — no dismissal to persist, no
+    setting to forget, and no checklist nagging a bank that has been running
+    for a year. Preview traffic cannot trip it (ADR-0036), which is what makes
+    the signal trustworthy: a staff member testing the widget is not a bank
+    going live.
+
+    **All-time, deliberately.** The dashboard's own window is 7/30/90 days, and
+    reading `live` from that window would resurrect the setup card for any
+    established tenant that had a quiet month.
+
+    Every step reports what it counted, so the panel never has to claim
+    progress the database cannot show.
+    """
+    bank = principal.bank
+
+    documents = db.execute(
+        select(func.count()).select_from(Document).where(Document.bank_id == bank.id)
+    ).scalar_one()
+    people = db.execute(
+        select(func.count()).select_from(User).where(
+            User.bank_id == bank.id, User.disabled_at.is_(None)
+        )
+    ).scalar_one()
+    connected = sum(1 for on in _connected_channels(bank).values() if on)
+    # The web widget is live for every tenant the moment it exists, so it is
+    # not something to "do" — the step is about reaching customers somewhere
+    # they already are, which is what the other adapters are for.
+    live_conversation = db.execute(
+        select(func.count()).select_from(Conversation).where(
+            Conversation.bank_id == bank.id,
+            _not_preview(Conversation.channel),
+        )
+    ).scalar_one()
+
+    # Branding counts as done when the bank has replaced something with its
+    # own: a logo, or a colour that is no longer the product default. Checked
+    # against the column default rather than a hard-coded literal so the two
+    # cannot drift apart.
+    default_colour = Bank.__table__.c.primary_color.default.arg
+    branded = bool(bank.logo_url) or bank.primary_color != default_colour
+
+    steps = [
+        {"key": "knowledge", "done": documents > 0, "count": documents},
+        {"key": "brand", "done": branded, "count": None},
+        {"key": "channels", "done": connected > 0, "count": connected},
+        {"key": "team", "done": people > 1, "count": people},
+    ]
+    return {
+        "live": live_conversation > 0,
+        "complete": all(step["done"] for step in steps),
+        "done_count": sum(1 for step in steps if step["done"]),
+        "total": len(steps),
+        "steps": steps,
+    }
+
+
 @app.get("/admin/api/{slug}/content-gaps")
 def content_gaps(
     principal: Principal = NeedsGapsRead, db: Session = Depends(get_db)
