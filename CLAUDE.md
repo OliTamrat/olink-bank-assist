@@ -933,6 +933,21 @@ These are the durable ones. Each has a regression test.
    coincidental overlap, which is the pattern behind every adversarial case
    found. Tune this and re-run both eval suites plus all three
    `test_*_adversarial.py` files.
+
+   **Measured 2026-08-27, and the answer was no** (ADR-0038). Sweeping both
+   constants buys real coverage — 39 → 49 sourced answers out of 52 — and
+   **every** candidate breaks 9–10 safety tests, including the mildest, which
+   moves only the ratio. Three are the gate's own purpose: endorsement
+   probing, a cross-tenant probe and hostile input all start returning
+   confident irrelevant answers. **Six are the clarify path** (ADR-0024),
+   which fires *only when the gate rejects* — the gate is how the assistant
+   knows it did not understand, so loosening it does not make it ask a better
+   question, it stops it asking at all. `SHORT_QUERY_CONTENT_WORDS` is the
+   more tempting and the more dangerous: raising it lets more queries bypass
+   the ratio entirely, and the adversarial cases sit at five to seven content
+   words. **The 25% of questions answered with no sources is a corpus
+   problem** (ADR-0033), not a tuning one — read ADR-0038 before touching
+   either constant.
 2. **"Informative" means strictly below half the corpus**, not at it:
    `informative_df_ceiling = max(1, (n + 1) // 2 - 1)`. On Awash's 22-chunk
    corpus the word "bank" sat in exactly 11 chunks and was the only thing
