@@ -1486,6 +1486,30 @@ main { padding: 20px 24px 40px; }
 .topicdetail .btn { margin-top: 8px; }
 
 /* ---------------------------------------------------------------- tables */
+
+/* A table is the one thing on these pages that cannot be made narrow.
+ *
+ * Five columns of real content need roughly 450px; a phone gives the panel
+ * 325px. With the table as a direct child of `.panel` — which has padding and
+ * a border-radius but no `overflow` — the surplus did not stay inside the
+ * card. It painted straight through the rounded border and widened the
+ * DOCUMENT, so the whole page scrolled sideways: rows ran out past the card
+ * edge and, because the page was then scrolled right, "Add article",
+ * "Export CSV" and the filter select were all clipped off the left. Measured
+ * at 390px: Knowledge Base spilled 122px, Audit 111px, Conversations 111px,
+ * Team 180px. Reported as "blending/bleeding outside the card", which is
+ * exactly what it is.
+ *
+ * The surplus has to go somewhere, and the only honest place is a scroll
+ * container around the table itself — so the table scrolls and the page does
+ * not. Shrinking the columns is not the alternative it looks like: these are
+ * dates, emails and role names, and squeezing them only moves the damage.
+ *
+ * On the wrapper rather than on `.panel`, deliberately. Setting `overflow-x`
+ * on a box forces the other axis to compute to `auto` as well, so putting it
+ * on the panel would make every panel a vertical clipper too — for the sake
+ * of the four that hold a table. */
+.tablewrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-size: 11px; text-transform: uppercase;
   letter-spacing: .06em; color: var(--muted); font-weight: 600;
@@ -4513,7 +4537,7 @@ function loadPerformance() {
        re-find it. Open is now; filed and resolved are the window. */
     h += '<div class="row row-main">' +
       '<div class="panel"><h3>' + esc(A("perf_desk_load")) + "</h3>" +
-      "<table><thead><tr><th>" + esc(A("perf_desk")) + "</th>" +
+      "<div class='tablewrap'><table><thead><tr><th>" + esc(A("perf_desk")) + "</th>" +
       "<th>" + esc(A("perf_open")) + "</th>" +
       "<th>" + esc(A("perf_filed")) + "</th>" +
       "<th>" + esc(A("perf_resolved")) + "</th>" +
@@ -4526,7 +4550,7 @@ function loadPerformance() {
           "<td>" + num(d.filed) + "</td>" +
           "<td>" + num(d.resolved) + "</td>" +
           "<td>" + esc(fmtDur(d.avg_resolution_seconds)) + "</td></tr>";
-      }).join("") + "</tbody></table>" +
+      }).join("") + "</tbody></table></div>" +
       '<div class="note">' + esc(A("perf_desk_note")) + "</div></div>" +
 
       '<div class="stack">' +
@@ -5831,7 +5855,7 @@ function loadDocs() {
       (docs.length === 1 ? "" : "s") + "</span></div>" +
       '<div id="doc-form"></div>';
 
-    h += '<div class="panel">' + (docs.length ? '<table><thead><tr>' +
+    h += '<div class="panel">' + (docs.length ? '<div class="tablewrap"><table><thead><tr>' +
       "<th>Title</th><th>Category</th><th>Language</th><th>Updated</th>" +
       (writable ? '<th style="text-align:right">Actions</th>' : "") + "</tr></thead><tbody>" +
       docs.map(function (d) {
@@ -5843,7 +5867,7 @@ function loadDocs() {
             '<button class="iconbtn" title="Edit" data-edit="' + esc(d.id) + '">' + icon("edit", 15) + "</button>" +
             '<button class="iconbtn danger" title="Delete" data-del="' + esc(d.id) + '">' + icon("trash", 15) + "</button>" +
             "</div></td>" : "") + "</tr>";
-      }).join("") + "</tbody></table>" : '<div class="empty">No articles yet.</div>') + "</div>";
+      }).join("") + "</tbody></table></div>" : '<div class="empty">No articles yet.</div>') + "</div>";
 
     $("main").innerHTML = h;
     state.docs = docs;
@@ -6086,7 +6110,7 @@ function loadAudit(page) {
       '<button class="btn ghost sm" id="a-csv">Export CSV</button></div>';
 
     h += '<div class="panel">' + (d.entries.length
-      ? "<table><thead><tr><th>When</th><th>Who</th><th>Action</th>" +
+      ? "<div class='tablewrap'><table><thead><tr><th>When</th><th>Who</th><th>Action</th>" +
         "<th>On</th><th>Details</th></tr></thead><tbody>" +
         d.entries.map(function (e) {
           return "<tr><td class='meta' style='white-space:nowrap'>" +
@@ -6106,7 +6130,7 @@ function loadAudit(page) {
               ACTION_LABEL[e.action] || e.action.replace(/_/g, " "))) + "</td>" +
             "<td class='meta'>" + esc(e.entity_type) + "</td>" +
             "<td class='meta'>" + esc(describeMeta(e.metadata)) + "</td></tr>";
-        }).join("") + "</tbody></table>"
+        }).join("") + "</tbody></table></div>"
       : '<div class="empty">No entries match.</div>') + "</div>";
 
     var pages = Math.ceil(d.total / AUDIT_PAGE);
@@ -6188,7 +6212,7 @@ function loadTeam() {
       esc(A(users.length === 1 ? "one_account" : "n_accounts", null, { n: users.length })) +
       "</span></div><div id=\"user-form\"></div>";
 
-    h += '<div class="panel"><table><thead><tr>' +
+    h += '<div class="panel"><div class="tablewrap"><table><thead><tr>' +
       "<th>" + esc(A("person")) + "</th><th>" + esc(A("role")) + "</th><th>" +
       esc(A("status")) + "</th><th>" + esc(A("coverage")) + "</th><th>" +
       esc(A("last_signed_in")) + "</th>" +
@@ -6228,7 +6252,7 @@ function loadTeam() {
             : '<button class="btn ghost sm" data-active="' + esc(u.id) + '" data-to="' +
               (u.is_active ? "0" : "1") + '">' + esc(A(u.is_active ? "disable" : "restore")) + "</button>") +
           "</div></td></tr>";
-      }).join("") + "</tbody></table></div>";
+      }).join("") + "</tbody></table></div></div>";
 
     /* Desk teams — the roster organised the way the work arrives: one card
        per desk, listing everyone assigned to it. Desks are set by the
