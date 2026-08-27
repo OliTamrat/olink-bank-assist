@@ -589,11 +589,61 @@ _ADVICE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Does this message ask the assistant to READ SOMETHING OUT?
+#
+# The account guardrail's own doctrine, stated in `_ACCOUNT_RE` above: "Asking
+# to be TOLD something is the whole difference." That principle was applied to
+# the disclosure branch and never to the first one, which fires on a bare
+# possessive plus an account noun — so a customer REPORTING a problem was
+# refused as though they had asked for data. Measured on 52 real questions
+# against the `cbe` corpus, three were refused this way and every one was a
+# report:
+#
+#   "Someone withdrew money from my account without permission."
+#   "My transfer failed but the money left my account."
+#   "The app says my account is locked."
+#
+# The first is a fraud report. It was answered with "For your security, I
+# can't access individual account details", the knowledge base was never
+# read, and NO handoff was filed — so the bank never learned a customer had
+# said they were robbed.
+#
+# This is deliberately BROAD. Every phrasing it catches stays inside the
+# account guardrail, so erring wide errs safe; a phrasing it misses only ever
+# costs a report being answered as a report.
+_DISCLOSURE_ASK_RE = re.compile(
+    r"\b(tell|give|send|share|show|read|list|display|provide|confirm) "
+    r"(it |them |that )?(to |with )?(me|us)\b|"
+    r"\bwhat('| i)?s\b|\bwhat is\b|\bwhat are\b|"
+    r"\bhow much\b|\bhow many\b|"
+    r"\b(can|could|will|would) you (tell|give|send|share|show|check|confirm)\b|"
+    r"\b(check|look up|pull up|find out|read out)\b|"
+    # Ge'ez and Latin-script equivalents of "tell me" / "give me". The account
+    # rules for these languages already require a give-me marker of their own
+    # (`asks_for_someone_elses_account`), so this list only has to cover the
+    # first-person forms that reach `_ACCOUNT_RE`.
+    r"ንገረኝ|ንገሪኝ|ስጠኝ|አሳየኝ|ይንገሩኝ|"
+    r"\bnatti himi\b|\bnaaf himi\b|\bnaa himi\b|\bnaaf kenni\b",
+    re.IGNORECASE,
+)
+
 _COMPLAINT_RE = re.compile(
     r"\b(complaint|complain|stole|stolen|unauthorized|unauthorised|"
     r"missing money|lost my money|terrible|worst|angry|"
     r"(got|been|was) scammed|victim of fraud|fraud on my account|"
     r"report(ed|ing)? (a )?fraud)|"
+    # An unauthorised withdrawal described in plain words. `unauthorised`
+    # was already here and nobody says it: a customer writes "someone took
+    # money from my account" or "I did not authorise this". Measured on 52
+    # real questions, "Someone withdrew money from my account without
+    # permission" reached the ACCOUNT guardrail instead, was refused as a
+    # request for data, never read the knowledge base and filed NO handoff.
+    # The most urgent message a bank can receive, silently dropped.
+    r"\bwithout (my |his |her |their )?(permission|consent|authoris|authoriz|knowledge)|"
+    r"\b(did ?n'?t|did not|never) (authoris|authoriz|approv|mad|make|did|do)e?d?\b|"
+    r"\bi never (made|did|approved|authorised|authorized)\b|"
+    r"\bsomeone (took|withdrew|withdrawn|transferred|used|spent)\b|"
+    r"\bi (did ?n'?t|did not) (make|do|authorise|authorize) (this|that|it)\b|"
     # ተሰረቀ / ተሰርቋል / ሰረቁኝ — "was stolen". Theft is the single most urgent
     # thing a customer can report and the Amharic word for it was absent, so
     # "ገንዘቤ ተሰርቋል" was handled as an ordinary question. My own wording, not a
@@ -651,6 +701,12 @@ _SERVICE_ISSUE_RE = re.compile(
     r"\bstopped working\b|\bfailed transfer\b|\btransfer failed\b|"
     r"\b(can'?t|cannot|unable to) (log ?in|login|sign ?in|access|open|connect)\b|"
     r"\berror message\b|\bkeeps? failing\b|\bwas declined\b|\bkeeps? declining\b|"
+    # An account or card the customer cannot use. Being locked out is a
+    # service problem with a published remedy, not a request to be told a
+    # value — but "my account is locked" names an account, so it reached
+    # the guardrail and was refused without the documents being read.
+    r"\b(is|was|has been|got|been) (locked|blocked|frozen|suspended|disabled|deactivated)\b|"
+    r"\b(locked|blocked|frozen|suspended) (out|my account|my card)\b|"
     # Amharic: አይሰራም / አልሰራም ("it does not work"), ስህተት ("error"). These
     # reached the ordinary question path already, so adding them changes no
     # routing today — they are here so the intent means the same thing in
@@ -871,6 +927,25 @@ def classify_intent(text: str, bank_aliases: tuple[str, ...] = ()) -> str:
 
     if _COMPLAINT_RE.search(text):
         return COMPLAINT
+
+    # A report of something broken, from someone asking to be told NOTHING,
+    # is a service issue — even though it names an account.
+    #
+    # This runs BEFORE the account block, and the gate is what keeps the
+    # safety property the original ordering was defending. That comment (kept
+    # below) names its case exactly: "her PIN is not working, tell me what it
+    # is" must not use the words *not working* to walk past the guardrail. It
+    # still cannot — it says **tell me**, so `_DISCLOSURE_ASK_RE` matches and
+    # this branch declines to take it.
+    #
+    # What changes is the case the old order could not distinguish: a message
+    # that reports a fault and asks for nothing. "My transfer failed but the
+    # money left my account" was refused as a request for account data, with
+    # the knowledge base unread. It is a customer describing a payment that
+    # went wrong, and the bank has a document about exactly that.
+    if _SERVICE_ISSUE_RE.search(text) and not _DISCLOSURE_ASK_RE.search(text):
+        return SERVICE_ISSUE
+
     if (
         _ACCOUNT_RE.search(text)
         or _VALUE_ASK_RE.search(text)
