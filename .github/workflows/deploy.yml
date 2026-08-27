@@ -117,9 +117,57 @@ jobs:
           # a no-op on an up-to-date schema and says so identically either
           # way, so without these two lines the deploy log cannot tell you
           # whether production's schema actually changed on this push.
-          echo "Schema before: $(python -m alembic current 2>&1 | tail -1)"
+          #
+          # These used to read `echo "Schema before: $(… | tail -1)"`, and on
+          # 2026-08-26 that hid a REAL SIXTEEN-MINUTE DATABASE OUTAGE. The
+          # first connection hung and then failed, and the line printed:
+          #
+          #   Schema before: (Background on this error at: https://sqlalche.me/e/20/e3q8)
+          #
+          # — the last line of a Python traceback, which is a URL footer and
+          # names nothing. Two faults compounded: a command substitution
+          # inside `echo` makes `set -e` blind to the failure (the same quirk
+          # this file already guards against for the secret fetch above), and
+          # `tail -1` of a traceback throws away every line that says what
+          # broke. The step "succeeded", the deploy carried on, and the outage
+          # was invisible until somebody went looking for why a step was slow.
+          #
+          # Not fatal, deliberately: the `upgrade head` on the next line makes
+          # its own connection and fails loudly if the database is still gone,
+          # and a transient blip should not fail a deploy that then works. The
+          # requirement is that it be SEEN, not that it stop the world.
+          #
+          # The elapsed time is printed for the same reason. Sixteen minutes
+          # and two seconds are the same log line without it, and the duration
+          # was the only clue that anything had happened at all.
+          # The function PRINTS its own label and is called directly — never
+          # as `echo "Schema before: $(schema_at)"`. A substitution would
+          # capture the `::warning::` annotation and the traceback into the
+          # echoed string, so the annotation would never reach Actions and the
+          # error would be back inside one line. That is this same trap for
+          # the third time in these seven lines; it is not a subtle one to
+          # fall into, only a subtle one to notice.
+          # The assignment is the `if` CONDITION, not a statement of its own.
+          # This step runs under `bash -e`, where a bare `out="$(cmd)"` whose
+          # substitution fails takes the exit status of the substitution and
+          # kills the script on the spot — so a `rc=$?` on the next line never
+          # runs and nothing is reported at all. (Confirmed by running this
+          # against a refused connection: no output, exit 1.) A command used
+          # as a condition is exempt, which is what makes the else branch
+          # reachable.
+          schema_at() {
+            local out start=$SECONDS
+            if out="$(python -m alembic current 2>&1)"; then
+              printf '%s %s (%ss)\n' "$1" "$(printf '%s' "$out" | tail -1)" "$((SECONDS - start))"
+            else
+              echo "::warning::Could not read the schema revision — the database did not answer after $((SECONDS - start))s. Continuing; the upgrade below makes its own connection and will fail loudly if it is still unreachable."
+              printf '%s\n' "$out" | tail -5
+              echo "$1 UNREACHABLE after $((SECONDS - start))s"
+            fi
+          }
+          schema_at "Schema before:"
           python -m alembic upgrade head
-          echo "Schema after:  $(python -m alembic current 2>&1 | tail -1)"
+          schema_at "Schema after: "
           python -m bankassist.seed
           python -m bankassist.seed_cbe
           python -m bankassist.seed_dashen
