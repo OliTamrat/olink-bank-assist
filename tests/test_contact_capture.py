@@ -320,7 +320,12 @@ def test_an_account_request_alongside_a_number_still_gets_the_refusal(
     data = _ask(client, "demo", "call me on 0911234567 about my account balance", convo)
 
     assert data["intent"] == "account_specific"
-    assert "can't access individual account details" in data["reply"]
+    # The refusal is the fixed template, whatever its wording. Asserting a
+    # particular sentence is what made one copy change break sixteen tests.
+    # `in`, not `startswith`: the contact acknowledgement rides in FRONT of the
+    # refusal here, which is the documented design — a guarded intent always
+    # wins and the acknowledgement precedes the real answer.
+    assert t("en", "account_help") in data["reply"]
 
 
 def test_an_advice_question_alongside_a_number_still_carries_the_disclaimer(

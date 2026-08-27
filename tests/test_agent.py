@@ -1,3 +1,4 @@
+
 """Guardrail behavior through the public chat API (no LLM key: extractive mode)."""
 
 from __future__ import annotations
@@ -5,6 +6,8 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi.testclient import TestClient
+
+from bankassist.i18n import t
 
 
 def _chat(client: TestClient, message: str, slug: str = "demo", **extra: Any) -> dict[str, Any]:
@@ -38,7 +41,9 @@ def test_amharic_question_detected_and_answered(client: TestClient, demo_bank: A
 def test_account_specific_is_refused_safely(client: TestClient, demo_bank: Any) -> None:
     data = _chat(client, "What is my account balance?")
     assert data["intent"] == "account_specific"
-    assert "security" in data["reply"].lower()
+    # The refusal is the fixed template, whatever its wording. Asserting a
+    # particular sentence is what made one copy change break sixteen tests.
+    assert data["reply"].startswith(t("en", "account_help"))
     assert data["sources"] == []
 
 

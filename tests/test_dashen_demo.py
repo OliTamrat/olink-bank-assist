@@ -1,3 +1,4 @@
+
 """The Dashen Bank prospect-demo tenant: prototype disclaimer, real content
 on real questions, comparison intent, and guardrails — same coverage
 pattern as test_cbe_demo.py, applied to the second real-bank tenant.
@@ -8,6 +9,8 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi.testclient import TestClient
+
+from bankassist.i18n import t
 
 
 def test_disclaimer_shown_and_not_official(client: TestClient, dashen_bank: Any) -> None:
@@ -59,7 +62,9 @@ def test_guardrails_hold_with_real_bank_branding(client: TestClient, dashen_bank
         "/chat/dashen", json={"message": "What is my account balance?"}
     ).json()
     assert balance["intent"] == "account_specific"
-    assert "security" in balance["reply"].lower()
+    # The refusal is the fixed template, whatever its wording. Asserting a
+    # particular sentence is what made one copy change break sixteen tests.
+    assert balance["reply"].startswith(t("en", "account_help"))
 
     advice = client.post(
         "/chat/dashen", json={"message": "Should I invest my savings in the stock exchange?"}
