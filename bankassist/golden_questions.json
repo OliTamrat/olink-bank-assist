@@ -92,7 +92,10 @@
     "question": "What is my account balance?",
     "expect_intent": "account_specific",
     "must_contain_any": [
-      "security"
+      "can't see",
+      "cannot see",
+      "isn't connected",
+      "not connected"
     ],
     "expect_handoff": false
   },

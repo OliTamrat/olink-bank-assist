@@ -548,7 +548,50 @@ def handle_message(
         )
         result = ChatResult(greeting, intent, language, outcome=GREETING)
     elif intent == classifier.ACCOUNT_SPECIFIC:
-        result = ChatResult(t(language, "account_help"), intent, language, outcome=ACCOUNT_BLOCKED)
+        # A refusal that ends in a dead end is a call the bank pays for.
+        #
+        # The boundary is unchanged: this assistant has no core-banking
+        # connection, so it cannot state a value and must not pretend to. What
+        # changes is what happens next. The old reply ended "Is there anything
+        # general I can help you with?" — which sends a customer who asked
+        # something answerable ("how do I check my balance") to a branch, and
+        # every one of those is a visit or a call somebody paid for. On a bank
+        # the size of Awash, a fraction of a percent of customers is tens of
+        # thousands of them.
+        #
+        # So the same near-miss machinery the miss path uses is attached here:
+        # this bank's own published questions where it has a relevant one, its
+        # real document titles otherwise. Nothing is generated, nothing crosses
+        # a tenant, and tapping a chip sends that text as an ordinary message —
+        # so it runs the whole pipeline again and meets every guardrail on the
+        # way, including this one. A question the bank should never have
+        # published still gets refused rather than served (ADR-0035).
+        # Never offer a question that would land right back here.
+        #
+        # `suggest` matches on shared content words, so the refusal for "what
+        # is my balance" cheerfully offered the bank's own published question
+        # "What is my account balance?" as something to tap — which refuses
+        # again. A chip is an ordinary message when tapped (ADR-0035), so the
+        # loop is real, and a customer who followed it would conclude the
+        # assistant is broken rather than bounded.
+        #
+        # Filtered by running each candidate through the classifier that will
+        # judge it, rather than by a word list: the two can then never drift,
+        # and a bank that publishes an answer it should not have gets the same
+        # protection here as it does at the lookup itself.
+        offers = [
+            s
+            for s in suggestions_for(db, bank.id, text, language)
+            if classifier.classify_intent(s["title"], bank_aliases=_bank_aliases(bank))
+            != classifier.ACCOUNT_SPECIFIC
+        ]
+        reply = t(language, "account_help")
+        if offers:
+            listed = "\n".join(f"• {s['title']}" for s in offers)
+            reply = f"{reply}\n\n{t(language, _offer_intro(offers))}\n{listed}"
+        result = ChatResult(
+            reply, intent, language, suggestions=offers, outcome=ACCOUNT_BLOCKED
+        )
     elif intent == classifier.COMPLAINT:
         _create_handoff(db, bank, conversation, REASON_COMPLAINT, text[:2000], handoffs)
         ack = t(language, "complaint_ack")

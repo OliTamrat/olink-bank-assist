@@ -26,6 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bankassist.classifier import classify_intent
+from bankassist.i18n import t
 
 ALIASES = ("awash", "Awash Bank")
 
@@ -78,7 +79,9 @@ def test_the_reported_message_gets_the_security_refusal(
     )
     data = resp.json()
     assert data["intent"] == "account_specific"
-    assert "can't access individual account details" in data["reply"]
+    # The refusal is the fixed template, whatever its wording. Asserting a
+    # particular sentence is what made one copy change break sixteen tests.
+    assert data["reply"].startswith(t("en", "account_help"))
     assert not data["sources"], "a security refusal must never cite documents"
 
 

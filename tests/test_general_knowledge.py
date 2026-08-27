@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from bankassist import agent, llm
+from bankassist.i18n import t
 from bankassist.models import Bank, Handoff
 
 UNIVERSAL_ANSWER = (
@@ -156,7 +157,9 @@ def test_the_account_data_refusal_is_unaffected(
     ).json()
     assert data["intent"] == "account_specific"
     assert data["general_knowledge"] is False
-    assert "security" in data["reply"].lower()
+    # The refusal is the fixed template, whatever its wording. Asserting a
+    # particular sentence is what made one copy change break sixteen tests.
+    assert data["reply"].startswith(t("en", "account_help"))
     assert _answers == []
 
 
